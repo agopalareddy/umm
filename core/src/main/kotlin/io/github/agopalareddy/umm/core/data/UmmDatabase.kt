@@ -8,12 +8,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
 
 @Database(
-    entities = [CategoryEntity::class, AppAssignmentEntity::class],
+    entities = [CategoryEntity::class, AppAssignmentEntity::class, HistoryEntity::class],
     version = 1,
     exportSchema = true,
 )
 abstract class UmmDatabase : RoomDatabase() {
     internal abstract fun categoryDao(): CategoryDao
+    internal abstract fun historyDao(): HistoryDao
 
     companion object {
         fun build(context: Context): UmmDatabase =
