@@ -30,6 +30,9 @@ import io.github.agopalareddy.umm.auth.SignInLauncher
 import io.github.agopalareddy.umm.core.data.UmmSettings
 import io.github.agopalareddy.umm.graph
 import io.github.agopalareddy.umm.ui.UmmTheme
+import io.github.agopalareddy.umm.ui.isUmmDark
+import androidx.activity.SystemBarStyle
+import android.graphics.Color
 import kotlinx.coroutines.launch
 
 internal object Routes {
@@ -53,6 +56,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
+            // Status and navigation bar icons follow the app's theme, not the phone's.
+            val dark = isUmmDark()
+            LaunchedEffect(dark) {
+                val style = if (dark) SystemBarStyle.dark(Color.TRANSPARENT) else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+            }
             UmmTheme {
                 Surface(Modifier.fillMaxSize()) { App() }
             }

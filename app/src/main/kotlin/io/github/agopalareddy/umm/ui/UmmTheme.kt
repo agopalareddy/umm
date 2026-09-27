@@ -50,13 +50,23 @@ fun UmmTheme(content: @Composable () -> Unit) {
     UmmTheme(settings.themeMode, settings.dynamicColor, content)
 }
 
+/** Whether the app is dark, which can differ from the phone when the user picks Light or Dark. */
+@Composable
+fun isUmmDark(): Boolean {
+    val settings by LocalContext.current.graph.settings.settings.collectAsStateWithLifecycle(UmmSettings())
+    return isDark(settings.themeMode)
+}
+
+@Composable
+private fun isDark(mode: ThemeMode) = when (mode) {
+    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
+}
+
 @Composable
 fun UmmTheme(mode: ThemeMode, dynamicColor: Boolean, content: @Composable () -> Unit) {
-    val dark = when (mode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
-    }
+    val dark = isDark(mode)
     val context = LocalContext.current
     val colors = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
