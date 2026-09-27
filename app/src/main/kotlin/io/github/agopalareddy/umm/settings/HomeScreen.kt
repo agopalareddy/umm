@@ -22,6 +22,9 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -92,10 +95,21 @@ internal fun HomeScreen(setupComplete: Boolean, onSetup: () -> Unit, onOpen: (St
                         "Double-tap the mic to whisper or pause as long as you like.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                FilledTonalButton(
-                    onClick = { context.getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
-                    modifier = Modifier.padding(top = 8.dp),
-                ) { Text("Choose keyboard") }
+                var tryText by rememberSaveable { mutableStateOf("") }
+                OutlinedTextField(
+                    value = tryText,
+                    onValueChange = { tryText = it },
+                    label = { Text("Try it here") },
+                    placeholder = { Text("Tap here, switch to Umm, and talk") },
+                    minLines = 3,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                    FilledTonalButton(
+                        onClick = { context.getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
+                    ) { Text("Choose keyboard") }
+                    if (tryText.isNotEmpty()) TextButton(onClick = { tryText = "" }) { Text("Clear") }
+                }
             }
         }
 

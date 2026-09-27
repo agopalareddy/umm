@@ -31,6 +31,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -66,13 +73,20 @@ internal fun SettingsHome(settings: UmmSettings, keyConnected: Boolean, onBack: 
 
 @Composable
 internal fun AccountPage(onBack: () -> Unit, onConnect: () -> Unit, onPasteKey: (String) -> Unit, onDisconnect: () -> Unit) {
+    val context = LocalContext.current
+    val key by context.graph.apiKeyStore.key.collectAsStateWithLifecycle()
+    val check = rememberKeyCheck(key)
+    var confirmDisconnect by remember { mutableStateOf(false) }
     Page("Account", onBack) {
-        ConnectionCard()
+        ConnectionCard(key, check)
         Spacer(Modifier.height(16.dp))
-        val connected = LocalContext.current.graph.apiKeyStore.key.collectAsStateWithLifecycle().value != null
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onConnect) { Text(if (connected) "Sign in again" else "Connect with OpenRouter") }
-            if (connected) OutlinedButton(onClick = onDisconnect) { Text("Disconnect") }
+            // Every OpenRouter sign-in creates a new key, so only offer it when the current one can't be used.
+            when {
+                key == null -> Button(onClick = onConnect) { Text("Connect with OpenRouter") }
+                check == KeyCheck.Rejected -> Button(onClick = onConnect) { Text("Sign in again") }
+            }
+            if (key != null) OutlinedButton(onClick = { confirmDisconnect = true }) { Text("Disconnect") }
         }
         Spacer(Modifier.height(8.dp))
         PasteKeyField(onPasteKey)
@@ -82,21 +96,37 @@ internal fun AccountPage(onBack: () -> Unit, onConnect: () -> Unit, onPasteKey: 
             style = MaterialTheme.typography.bodySmall,
         )
     }
+    if (confirmDisconnect) {
+        AlertDialog(
+            onDismissRequest = { confirmDisconnect = false },
+            title = { Text("Disconnect OpenRouter?") },
+            text = {
+                Column {
+                    Text("Umm will forget this key. The key itself stays in your OpenRouter account until you delete it there.")
+                    TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(OPENROUTER_KEYS_URL))) }) {
+                        Text("Manage keys on OpenRouter")
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { confirmDisconnect = false; onDisconnect() }) { Text("Disconnect") } },
+            dismissButton = { TextButton(onClick = { confirmDisconnect = false }) { Text("Cancel") } },
+        )
+    }
 }
 
-private sealed interface KeyCheck {
+private const val OPENROUTER_KEYS_URL = "https://openrouter.ai/settings/keys"
+
+internal sealed interface KeyCheck {
     data object Checking : KeyCheck
     data class Ok(val info: KeyInfo) : KeyCheck
     data object Rejected : KeyCheck
     data object Unreachable : KeyCheck
 }
 
-/** Whether a key is set, how it was added, and what OpenRouter says about it right now. */
+/** What OpenRouter says about [key] right now. */
 @Composable
-internal fun ConnectionCard() {
+internal fun rememberKeyCheck(key: String?): KeyCheck {
     val graph = LocalContext.current.graph
-    val key by graph.apiKeyStore.key.collectAsStateWithLifecycle()
-    val source by graph.apiKeyStore.source.collectAsStateWithLifecycle()
     val check by produceState<KeyCheck>(KeyCheck.Checking, key) {
         value = KeyCheck.Checking
         if (key != null) {
@@ -109,8 +139,14 @@ internal fun ConnectionCard() {
             }
         }
     }
-    val current = key
-    val bad = current == null || check == KeyCheck.Rejected
+    return check
+}
+
+/** Whether a key is set, how it was added, and what OpenRouter says about it. */
+@Composable
+internal fun ConnectionCard(key: String?, check: KeyCheck) {
+    val source by LocalContext.current.graph.apiKeyStore.source.collectAsStateWithLifecycle()
+    val bad = key == null || check == KeyCheck.Rejected
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -123,33 +159,33 @@ internal fun ConnectionCard() {
                 Spacer(Modifier.width(8.dp))
                 Text(
                     when {
-                        current == null -> "Not connected"
+                        key == null -> "Not connected"
                         check == KeyCheck.Rejected -> "OpenRouter rejected this key"
                         else -> "Connected to OpenRouter"
                     },
                     style = MaterialTheme.typography.titleMedium,
                 )
             }
-            if (current == null) {
+            if (key == null) {
                 Text("Connect your OpenRouter account so Umm can transcribe.", style = MaterialTheme.typography.bodyMedium)
                 return@Column
             }
             InfoRow("Added by", source?.label() ?: "—")
-            InfoRow("Key", ApiKeyStore.mask(current))
-            when (val c = check) {
+            InfoRow("Key", ApiKeyStore.mask(key))
+            when (check) {
                 KeyCheck.Checking -> InfoRow("Status", "Checking…")
                 KeyCheck.Rejected -> InfoRow("Status", "Sign in again or paste a new key")
                 KeyCheck.Unreachable -> InfoRow("Status", "Couldn't reach OpenRouter")
                 is KeyCheck.Ok -> {
                     InfoRow("Status", "Working")
-                    if (c.info.label.isNotBlank() && !c.info.label.startsWith("sk-")) InfoRow("Name", c.info.label)
-                    c.info.usageMonthlyUsd?.let { InfoRow("Spent this month", usd(it)) }
-                    InfoRow("Spent in total", usd(c.info.usageUsd))
+                    if (check.info.label.isNotBlank() && !check.info.label.startsWith("sk-")) InfoRow("Name", check.info.label)
+                    check.info.usageMonthlyUsd?.let { InfoRow("Spent this month", usd(it)) }
+                    InfoRow("Spent in total", usd(check.info.usageUsd))
                     InfoRow(
                         "Credit limit",
-                        c.info.limitUsd?.let { limit ->
-                            val left = c.info.limitRemainingUsd?.let { " · ${usd(it)} left" }.orEmpty()
-                            val reset = c.info.limitReset?.let { ", resets $it" }.orEmpty()
+                        check.info.limitUsd?.let { limit ->
+                            val left = check.info.limitRemainingUsd?.let { " · ${usd(it)} left" }.orEmpty()
+                            val reset = check.info.limitReset?.let { ", resets $it" }.orEmpty()
                             usd(limit) + left + reset
                         } ?: "None",
                     )
