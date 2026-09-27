@@ -1,6 +1,7 @@
 package io.github.agopalareddy.umm.core.pipeline
 
 import io.github.agopalareddy.umm.core.audio.AudioSource
+import io.github.agopalareddy.umm.core.openrouter.Completion
 import io.github.agopalareddy.umm.core.openrouter.ModelInfo
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterApi
 import io.github.agopalareddy.umm.core.openrouter.Transcription
@@ -40,6 +41,8 @@ class FakeAudioSource(
 
 /** Each call pops the next scripted result: a String result or a Throwable to throw. */
 class FakeApi : OpenRouterApi {
+    var transcribeCost: Double? = null
+    var completeCost: Double? = null
     val transcribeResults = ArrayDeque<Any>()
     val completeResults = ArrayDeque<Any>()
     val transcribeCalls = mutableListOf<Triple<String, String, String?>>() // model, format, language
@@ -49,15 +52,15 @@ class FakeApi : OpenRouterApi {
         transcribeCalls += Triple(model, format, language)
         return when (val r = transcribeResults.removeFirst()) {
             is Throwable -> throw r
-            else -> Transcription(r as String, null)
+            else -> Transcription(r as String, transcribeCost)
         }
     }
 
-    override suspend fun complete(model: String, system: String, user: String, temperature: Double): String {
+    override suspend fun complete(model: String, system: String, user: String, temperature: Double): Completion {
         completeCalls += Triple(model, system, user)
         return when (val r = completeResults.removeFirst()) {
             is Throwable -> throw r
-            else -> r as String
+            else -> Completion(r as String, completeCost)
         }
     }
 

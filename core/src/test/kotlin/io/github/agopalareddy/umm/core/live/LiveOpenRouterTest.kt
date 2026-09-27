@@ -42,8 +42,8 @@ class LiveOpenRouterTest {
     private fun clean(raw: String, level: CleanupLevel, script: ScriptPreference = ScriptPreference.LATIN): String = runBlocking {
         val system = PromptBuilder.systemPrompt(level, script, LanguageChoice.Auto)
         val (out, d) = measureTimedValue { client.complete(cleanupModel, system, PromptBuilder.userMessage(raw), 0.2) }
-        println("CLEAN $cleanupModel $level ${d.inWholeMilliseconds}ms: $out")
-        out
+        println("CLEAN $cleanupModel $level ${d.inWholeMilliseconds}ms cost=${out.costUsd}: ${out.text}")
+        out.text
     }
 
     private fun normalize(s: String) = s.lowercase().replace(Regex("[^\\p{L}\\p{N} ]"), " ")

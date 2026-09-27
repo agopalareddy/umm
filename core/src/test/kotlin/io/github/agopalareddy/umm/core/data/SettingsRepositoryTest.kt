@@ -27,6 +27,8 @@ class SettingsRepositoryTest {
         assertEquals("auto", s.defaultLanguage)
         assertEquals(listOf("auto", "en"), s.keyboardLanguages)
         assertEquals(ModelMode.RECOMMENDED, s.modelMode)
+        assertEquals(ThemeMode.SYSTEM, s.themeMode)
+        assertEquals(true, s.dynamicColor)
     }
 
     @Test fun roundTripsEveryField() = runTest {
@@ -40,6 +42,8 @@ class SettingsRepositoryTest {
             modelMode = ModelMode.MANUAL,
             manualSttModel = "a/stt",
             manualCleanupModel = "b/chat",
+            themeMode = ThemeMode.DARK,
+            dynamicColor = false,
         )
         repo.update { changed }
         assertEquals(changed, repo.settings.first())

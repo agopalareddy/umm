@@ -9,7 +9,7 @@ internal data class TranscriptionResponse(val text: String, val usage: Usage? = 
 internal data class Usage(val cost: Double? = null)
 
 @Serializable
-internal data class ChatResponse(val choices: List<Choice>)
+internal data class ChatResponse(val choices: List<Choice>, val usage: Usage? = null)
 
 @Serializable
 internal data class Choice(val message: ChatMessage)

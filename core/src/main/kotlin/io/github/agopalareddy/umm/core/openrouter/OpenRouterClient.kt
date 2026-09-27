@@ -38,7 +38,7 @@ class OpenRouterClient(
         return Transcription(response.text, response.usage?.cost)
     }
 
-    override suspend fun complete(model: String, system: String, user: String, temperature: Double): String {
+    override suspend fun complete(model: String, system: String, user: String, temperature: Double): Completion {
         val body = buildJsonObject {
             put("model", model)
             put("messages", buildJsonArray {
@@ -48,7 +48,7 @@ class OpenRouterClient(
             put("temperature", temperature)
         }
         val response = json.decodeFromString<ChatResponse>(post("chat/completions", body, authenticated = true))
-        return response.choices.firstOrNull()?.message?.content.orEmpty()
+        return Completion(response.choices.firstOrNull()?.message?.content.orEmpty(), response.usage?.cost)
     }
 
     override suspend fun listModels(outputModalities: String?): List<ModelInfo> {

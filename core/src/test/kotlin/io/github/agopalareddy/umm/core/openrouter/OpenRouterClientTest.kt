@@ -60,9 +60,9 @@ class OpenRouterClientTest {
     }
 
     @Test fun completeSendsSystemAndUserMessages() = runTest {
-        enqueue("""{"choices":[{"message":{"content":"Clean."}}]}""")
+        enqueue("""{"choices":[{"message":{"content":"Clean."}}],"usage":{"cost":0.00012}}""")
         val out = client().complete("m/chat", "sys", "usr", 0.2)
-        assertEquals("Clean.", out)
+        assertEquals(Completion("Clean.", 0.00012), out)
         val req = server.takeRequest()
         assertEquals("/chat/completions", req.url.encodedPath)
         val body = req.json()
