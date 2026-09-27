@@ -13,4 +13,6 @@ data class DictationRequest(
     val silenceTimeoutSec: Int?,
     /** Opaque tag chosen by the front-end (e.g. its input session), echoed on the result. */
     val origin: Long = 0,
+    /** Start without silence detection: record until stop() (or the duration cap). */
+    val continuous: Boolean = false,
 )

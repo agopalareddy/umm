@@ -17,4 +17,9 @@ class KeyboardHiddenTest {
         assertEquals(HideAction.NONE, KeyboardHidden.action(DictationState.Transcribing))
         assertEquals(HideAction.NONE, KeyboardHidden.action(DictationState.Idle))
     }
+
+    @Test fun hidingInContinuousModeKeepsTheRecording() {
+        // A whisper may never be detected as speech, but the user chose to keep recording.
+        assertEquals(HideAction.STOP, KeyboardHidden.action(DictationState.Listening(90, speechDetected = false, continuous = true)))
+    }
 }

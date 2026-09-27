@@ -48,7 +48,8 @@ class DictationPipelineTest {
         level: CleanupLevel = CleanupLevel.LIGHT,
         language: LanguageChoice = LanguageChoice.Auto,
         origin: Long = 0,
-    ) = DictationRequest("com.whatsapp", level, ScriptPreference.LATIN, language, silenceTimeoutSec = 3, origin = origin)
+        continuous: Boolean = false,
+    ) = DictationRequest("com.whatsapp", level, ScriptPreference.LATIN, language, silenceTimeoutSec = 3, origin = origin, continuous = continuous)
 
     private fun rep(amp: Int, n: Int) = List(n) { amp }
     private val speechThenSilence = rep(200, 5) + rep(8000, 10) + rep(200, 40)
@@ -374,5 +375,34 @@ class DictationPipelineTest {
         api.completeResults += "Back."
         p.retry(failed.historyId, origin = 9)
         assertEquals(9L, (p.awaitEnd() as DictationState.Done).origin)
+    }
+
+    @Test fun switchingToContinuousIgnoresSilenceUntilStopped() = runTest {
+        audio.amplitudes = rep(90, 5) + rep(8000, 5) + rep(90, 60)
+        audio.holdOpen = true
+        api.transcribeResults += "whispered words"
+        api.completeResults += "Whispered words."
+        val p = backgroundScope.pipeline()
+        p.start(request())
+        p.state.first { it is DictationState.Listening && it.speechDetected }
+        p.setContinuous()
+        delay(1_000) // virtual time; lets the remaining 6 s of silence play out
+        val listening = p.state.value as DictationState.Listening
+        assertTrue(listening.continuous)
+        p.stop()
+        assertEquals("Whispered words.", (p.awaitEnd() as DictationState.Done).text)
+    }
+
+    @Test fun continuousRequestNeverCancelsForNoSpeech() = runTest {
+        audio.amplitudes = rep(90, 100) // a whisper the detector cannot hear
+        audio.holdOpen = true
+        api.transcribeResults += "quiet"
+        api.completeResults += "Quiet."
+        val p = backgroundScope.pipeline()
+        p.start(request(continuous = true))
+        delay(1_000)
+        assertTrue(p.state.value is DictationState.Listening)
+        p.stop()
+        assertEquals("Quiet.", (p.awaitEnd() as DictationState.Done).text)
     }
 }

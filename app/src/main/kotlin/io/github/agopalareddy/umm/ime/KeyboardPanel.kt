@@ -2,7 +2,7 @@ package io.github.agopalareddy.umm.ime
 
 import android.net.Uri
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -94,7 +94,7 @@ private fun Dictation(service: UmmInputMethodService, ui: PanelContext) {
             Picker.LEVEL -> Options(CleanupLevel.entries.map { it.label() to { service.onLevelChosen(it); picker = null } })
             Picker.CATEGORY -> Options(Category.entries.map { it.label() to { service.onCategoryChosen(it); picker = null } })
             null -> {
-                MicButton(state, onClick = service::onMicTapped)
+                MicButton(state, onClick = service::onMicTapped, onDoubleClick = service::onMicDoubleTapped)
                 Spacer(Modifier.height(10.dp))
                 Text(statusText(state), style = MaterialTheme.typography.bodyMedium)
                 val failed = state as? DictationState.Failed
@@ -125,12 +125,13 @@ private fun categoryLabel(ui: PanelContext): String {
 }
 
 @Composable
-private fun MicButton(state: DictationState, onClick: () -> Unit) {
+private fun MicButton(state: DictationState, onClick: () -> Unit, onDoubleClick: () -> Unit) {
     val listening = state as? DictationState.Listening
     val busy = state == DictationState.Transcribing || state == DictationState.Cleaning
     // Grow with the voice so the user can see the mic hears them.
     val ring = listening?.let { (it.amplitude / 32767f).coerceIn(0f, 1f) } ?: 0f
     val label = when {
+        listening?.continuous == true -> "Finish"
         listening != null -> "Stop"
         busy -> "…"
         state is DictationState.Failed -> "Retry"
@@ -139,7 +140,7 @@ private fun MicButton(state: DictationState, onClick: () -> Unit) {
     Box(
         Modifier.size((88 + 24 * ring).dp).clip(CircleShape)
             .background(if (listening != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer)
-            .clickable(enabled = !busy, onClick = onClick),
+            .combinedClickable(enabled = !busy, onClick = onClick, onDoubleClick = onDoubleClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -151,7 +152,11 @@ private fun MicButton(state: DictationState, onClick: () -> Unit) {
 }
 
 private fun statusText(state: DictationState): String = when (state) {
-    is DictationState.Listening -> if (state.speechDetected) "Listening…" else "Speak now"
+    is DictationState.Listening -> when {
+        state.continuous -> "Recording until you tap Finish"
+        state.speechDetected -> "Listening…"
+        else -> "Speak now · double-tap to whisper"
+    }
     DictationState.Transcribing -> "Transcribing…"
     DictationState.Cleaning -> "Cleaning up…"
     is DictationState.Failed -> when (state.reason) {

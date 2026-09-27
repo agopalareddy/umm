@@ -45,6 +45,7 @@ class DictationPipeline(
     @Volatile private var cancelRequested = false
     @Volatile private var recording = false
     @Volatile private var levelOverride: CleanupLevel? = null
+    @Volatile private var continuous = false
 
     init {
         scope.launch { history.purgeExpiredAudio() }
@@ -53,6 +54,7 @@ class DictationPipeline(
     fun start(request: DictationRequest) {
         if (job?.isActive == true) return
         resetControls()
+        continuous = request.continuous
         recording = true
         job = scope.launch { record(request) }
     }
@@ -68,6 +70,11 @@ class DictationPipeline(
         if (!recording) return
         cancelRequested = true
         audio.stop()
+    }
+
+    /** Turns off silence detection for the current recording; it then runs until stop() or the duration cap. */
+    fun setContinuous() {
+        continuous = true
     }
 
     /** Changes the cleanup level of the current dictation, if cleanup has not started yet. */
@@ -111,6 +118,7 @@ class DictationPipeline(
         stopRequested = false
         cancelRequested = false
         levelOverride = null
+        continuous = false
     }
 
     private suspend fun record(request: DictationRequest) {
@@ -125,13 +133,14 @@ class DictationPipeline(
             _state.value = DictationState.Idle
             return
         }
-        _state.value = DictationState.Listening(0, false)
+        _state.value = DictationState.Listening(0, false, continuous)
         try {
             audio.record(file).collect { amplitude ->
                 if (stopRequested || cancelRequested) audio.stop()
+                detector.continuous = continuous
                 val event = detector.onSample(amplitude, elapsedMs)
                 elapsedMs += SAMPLE_MS
-                _state.value = DictationState.Listening(amplitude, detector.speechDetected)
+                _state.value = DictationState.Listening(amplitude, detector.speechDetected, continuous)
                 when (event) {
                     SilenceEvent.CANCEL_NO_SPEECH -> { noSpeech = true; audio.stop() }
                     SilenceEvent.STOP_FOR_SILENCE, SilenceEvent.STOP_FOR_MAX_DURATION -> audio.stop()

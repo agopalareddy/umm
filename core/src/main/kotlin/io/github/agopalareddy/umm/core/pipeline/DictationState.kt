@@ -20,7 +20,7 @@ enum class FailureReason { NETWORK, TIMEOUT, UNAUTHORIZED, NO_CREDITS, RATE_LIMI
 
 sealed interface DictationState {
     data object Idle : DictationState
-    data class Listening(val amplitude: Int, val speechDetected: Boolean) : DictationState
+    data class Listening(val amplitude: Int, val speechDetected: Boolean, val continuous: Boolean = false) : DictationState
     data object Transcribing : DictationState
     data object Cleaning : DictationState
     data class Done(val historyId: Long, val text: String, val cleanupFailed: Boolean, val origin: Long = 0) : DictationState

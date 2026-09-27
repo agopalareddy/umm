@@ -130,6 +130,17 @@ class UmmInputMethodService : InputMethodService(), LifecycleOwner, SavedStateRe
         }
     }
 
+    /** Double-tap: keep recording through silence until the user taps Finish. */
+    internal fun onMicDoubleTapped() {
+        val origin = target?.origin ?: return
+        when (val state = pipeline.state.value) {
+            is DictationState.Listening -> pipeline.setContinuous()
+            DictationState.Transcribing, DictationState.Cleaning -> Unit
+            is DictationState.Failed -> onMicTapped()
+            else -> { pipeline.reset(); startDictation(origin, continuous = true) }
+        }
+    }
+
     internal fun onLevelChosen(level: CleanupLevel) {
         ui = ui.copy(levelOverride = level, level = level)
         pipeline.setLevel(level)
@@ -175,7 +186,7 @@ class UmmInputMethodService : InputMethodService(), LifecycleOwner, SavedStateRe
 
     // --- Pipeline ---
 
-    private fun startDictation(origin: Long) {
+    private fun startDictation(origin: Long, continuous: Boolean = false) {
         val config = ui.category ?: return
         lifecycleScope.launch {
             val settings = graph.settings.settings.first()
@@ -183,7 +194,7 @@ class UmmInputMethodService : InputMethodService(), LifecycleOwner, SavedStateRe
             if (!delivery.isCurrent(origin)) return@launch
             ui = ui.copy(level = level)
             pipeline.start(
-                DictationRequest(ui.packageName, level, config.script, ui.language, settings.silenceTimeoutSec, origin),
+                DictationRequest(ui.packageName, level, config.script, ui.language, settings.silenceTimeoutSec, origin, continuous),
             )
         }
     }
