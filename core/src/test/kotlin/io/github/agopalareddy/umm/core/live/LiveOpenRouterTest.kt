@@ -67,6 +67,7 @@ class LiveOpenRouterTest {
         val out = clean(transcribe("hinglish"), CleanupLevel.LIGHT, ScriptPreference.LATIN)
         assertTrue(out, normalize(out).contains("friday"))
         assertTrue(out, normalize(out).contains("meeting"))
+        assertTrue(out, normalize(out).contains("kal"))
         assertFalse("translated: $out", normalize(out).contains("has been"))
         assertFalse(out, Regex("[\\u0900-\\u097F]").containsMatchIn(out))
     }
