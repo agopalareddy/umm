@@ -36,15 +36,14 @@ import io.github.agopalareddy.umm.graph
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun ModelsScreen() {
+internal fun ModelsScreen(onBack: () -> Unit) {
     val graph = LocalContext.current.graph
     val scope = rememberCoroutineScope()
     val settings by graph.settings.settings.collectAsStateWithLifecycle(UmmSettings())
     var plan by remember { mutableStateOf<ModelPlan?>(null) }
     LaunchedEffect(settings) { plan = runCatching { graph.modelPlan() }.getOrNull() }
 
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
-        Text("Models", style = MaterialTheme.typography.headlineMedium)
+    Page("Models", onBack) {
         val modes = listOf(
             ModelMode.RECOMMENDED to "Recommended (updated by Umm)",
             ModelMode.NEWEST_STT to "Always the newest speech-to-text model",

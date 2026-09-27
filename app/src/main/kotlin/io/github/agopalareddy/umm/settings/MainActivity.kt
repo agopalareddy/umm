@@ -12,13 +12,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,13 +29,19 @@ import androidx.navigation.compose.rememberNavController
 import io.github.agopalareddy.umm.auth.SignInLauncher
 import io.github.agopalareddy.umm.core.data.UmmSettings
 import io.github.agopalareddy.umm.graph
+import io.github.agopalareddy.umm.ui.UmmTheme
 import kotlinx.coroutines.launch
 
 internal object Routes {
     const val ONBOARDING = "onboarding"
+    const val HOME = "home"
     const val SETTINGS = "settings"
-    const val CATEGORIES = "categories"
-    const val MODELS = "models"
+    const val ACCOUNT = "settings/account"
+    const val DICTATION = "settings/dictation"
+    const val LANGUAGES = "settings/languages"
+    const val APPEARANCE = "settings/appearance"
+    const val CATEGORIES = "settings/categories"
+    const val MODELS = "settings/models"
     const val HISTORY = "history"
 }
 
@@ -52,8 +53,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
-                Surface(Modifier.fillMaxSize().safeDrawingPadding()) { App() }
+            UmmTheme {
+                Surface(Modifier.fillMaxSize()) { App() }
             }
         }
     }
@@ -83,33 +84,39 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        NavHost(nav, startDestination = if (status.complete) Routes.SETTINGS else Routes.ONBOARDING) {
+        val back: () -> Unit = { nav.popBackStack() }
+        val change: SettingsChange = { transform -> scope.launch { graph.settings.update(transform) } }
+        val connect = { SignInLauncher.start(this@MainActivity) }
+        val saveKey: (String) -> Unit = { graph.apiKeyStore.set(it) }
+
+        NavHost(nav, startDestination = if (status.complete) Routes.HOME else Routes.ONBOARDING) {
             composable(Routes.ONBOARDING) {
                 LaunchedEffect(status.complete) {
-                    if (status.complete) nav.navigate(Routes.SETTINGS) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
+                    if (status.complete) nav.navigate(Routes.HOME) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
                 }
                 OnboardingScreen(
                     status = status,
                     onEnableKeyboard = { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
                     onRequestMic = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) },
-                    onConnect = { SignInLauncher.start(this@MainActivity) },
-                    onPasteKey = { graph.apiKeyStore.set(it) },
+                    onConnect = connect,
+                    onPasteKey = saveKey,
                 )
             }
-            composable(Routes.SETTINGS) {
-                SettingsScreen(
-                    settings = settings,
-                    keyConnected = key != null,
-                    onConnect = { SignInLauncher.start(this@MainActivity) },
-                    onPasteKey = { graph.apiKeyStore.set(it) },
-                    onDisconnect = { graph.apiKeyStore.clear() },
-                    onChange = { transform -> scope.launch { graph.settings.update(transform) } },
+            composable(Routes.HOME) {
+                HomeScreen(
+                    setupComplete = status.complete,
+                    onSetup = { nav.navigate(Routes.ONBOARDING) },
                     onOpen = { nav.navigate(it) },
                 )
             }
-            composable(Routes.CATEGORIES) { CategoriesScreen() }
-            composable(Routes.MODELS) { ModelsScreen() }
-            composable(Routes.HISTORY) { HistoryScreen() }
+            composable(Routes.SETTINGS) { SettingsHome(settings, key != null, back) { nav.navigate(it) } }
+            composable(Routes.ACCOUNT) { AccountPage(key != null, back, connect, saveKey) { graph.apiKeyStore.clear() } }
+            composable(Routes.DICTATION) { DictationPage(settings, back, change) }
+            composable(Routes.LANGUAGES) { LanguagesPage(settings, back, change) }
+            composable(Routes.APPEARANCE) { AppearancePage(settings, back, change) }
+            composable(Routes.CATEGORIES) { CategoriesScreen(back) }
+            composable(Routes.MODELS) { ModelsScreen(back) }
+            composable(Routes.HISTORY) { HistoryScreen(back) }
         }
     }
 }

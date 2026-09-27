@@ -24,6 +24,7 @@ import io.github.agopalareddy.umm.core.policy.ModelCatalog
 import io.github.agopalareddy.umm.core.policy.ModelPlan
 import io.github.agopalareddy.umm.core.policy.ModelSelector
 import io.github.agopalareddy.umm.core.policy.RecommendationRepository
+import io.github.agopalareddy.umm.core.stats.StatsRepository
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +52,7 @@ class AppGraph(private val app: Application) {
     val categories by lazy { CategoryRepository(database) }
     val history by lazy { HistoryRepository(database, clock) }
     val settings by lazy { SettingsRepository(app.settingsStore) }
+    val stats by lazy { StatsRepository(database) }
 
     val recommendations by lazy {
         RecommendationRepository(
@@ -83,6 +85,7 @@ class AppGraph(private val app: Application) {
             plan = ::modelPlan,
             history = history,
             audioDir = File(app.filesDir, "audio"),
+            stats = stats,
         ).also(::deliverResults)
     }
 

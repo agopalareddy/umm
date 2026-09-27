@@ -37,16 +37,15 @@ import io.github.agopalareddy.umm.graph
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun HistoryScreen() {
+internal fun HistoryScreen(onBack: () -> Unit) {
     val graph = LocalContext.current.graph
     val items by graph.history.observeRecent().collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
     var confirmClear by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxWidth().padding(24.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("History", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
-            if (items.isNotEmpty()) TextButton(onClick = { confirmClear = true }) { Text("Clear all") }
+    Page("History", onBack, scrollable = false) {
+        if (items.isNotEmpty()) {
+            TextButton(onClick = { confirmClear = true }, modifier = Modifier.align(Alignment.End)) { Text("Clear all") }
         }
         if (items.isEmpty()) Text("Your recent dictations will appear here.")
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {

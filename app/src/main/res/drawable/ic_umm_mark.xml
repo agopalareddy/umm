@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The icon's mark alone, cropped for in-app use; tint it from the theme. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="54"
+    android:viewportHeight="54">
+    <group android:translateX="-27" android:translateY="-29">
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M42,32 H66 A12,12 0 0 1 78,44 V58 A12,12 0 0 1 66,70 H50 L38,79 L41,69.6 A12,12 0 0 1 30,58 V44 A12,12 0 0 1 42,32 Z M41.5,46 V56 H45.5 V46 Z M48.5,41 V61 H52.5 V41 Z M55.5,44 V58 H59.5 V44 Z M62.5,48 V54 H66.5 V48 Z" />
+    </group>
+</vector>

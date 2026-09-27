@@ -23,9 +23,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,11 +40,11 @@ import io.github.agopalareddy.umm.core.cleanup.LanguageChoice
 import io.github.agopalareddy.umm.core.data.Category
 import io.github.agopalareddy.umm.core.pipeline.DictationState
 import io.github.agopalareddy.umm.core.pipeline.FailureReason
+import io.github.agopalareddy.umm.ui.UmmTheme
 
 @Composable
 internal fun KeyboardPanel(service: UmmInputMethodService) {
-    val colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
-    MaterialTheme(colorScheme = colors) {
+    UmmTheme {
         Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
             Box(Modifier.fillMaxWidth().height(260.dp).navigationBarsPadding().padding(12.dp)) {
                 val ui = service.ui
