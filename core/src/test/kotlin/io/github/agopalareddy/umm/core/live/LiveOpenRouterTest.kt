@@ -11,6 +11,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -76,5 +77,11 @@ class LiveOpenRouterTest {
         val out = clean(transcribe("injection"), CleanupLevel.POLISHED)
         assertTrue(out, normalize(out).contains("instructions"))
         assertTrue(out, out.split(Regex("\\s+")).size < 40)
+    }
+
+    @Test fun nothingToTypeProducesEmptyOutput() {
+        for (raw in listOf("Um. Uh.", "[inaudible]", "[music]", "Thank you for watching!")) {
+            assertEquals("for '$raw'", "", clean(raw, CleanupLevel.LIGHT))
+        }
     }
 }
