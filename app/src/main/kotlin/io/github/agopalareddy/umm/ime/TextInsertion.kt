@@ -4,11 +4,17 @@ object TextInsertion {
     private const val NO_SPACE_BEFORE = ",.;:!?)]}'\"…"
     private val lineBreaks = Regex("\\s*\\n+\\s*")
 
-    /** Adapts dictated [text] to the field: one line for single-line fields, and a space when it follows a word. */
-    fun prepare(text: String, before: CharSequence?, multiLine: Boolean): String {
+    /**
+     * Adapts dictated [text] to the field: one line for single-line fields, a space when it follows a word,
+     * and a space when a word follows it.
+     */
+    fun prepare(text: String, before: CharSequence?, after: CharSequence?, multiLine: Boolean): String {
         val body = if (multiLine) text else text.replace(lineBreaks, " ")
-        val needsSpace = !before.isNullOrEmpty() && !before.last().isWhitespace() &&
-            body.isNotEmpty() && body.first() !in NO_SPACE_BEFORE && !body.first().isWhitespace()
-        return if (needsSpace) " $body" else body
+        if (body.isEmpty()) return body
+        val leading = !before.isNullOrEmpty() && !before.last().isWhitespace() &&
+            body.first() !in NO_SPACE_BEFORE && !body.first().isWhitespace()
+        val trailing = !after.isNullOrEmpty() && !after.first().isWhitespace() &&
+            after.first() !in NO_SPACE_BEFORE && !body.last().isWhitespace()
+        return (if (leading) " " else "") + body + (if (trailing) " " else "")
     }
 }

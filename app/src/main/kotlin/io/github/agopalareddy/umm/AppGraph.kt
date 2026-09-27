@@ -1,7 +1,11 @@
 package io.github.agopalareddy.umm
 
 import android.app.Application
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.util.Log
+import android.widget.Toast
 import androidx.datastore.preferences.preferencesDataStore
 import io.github.agopalareddy.umm.core.audio.MediaRecorderAudioSource
 import io.github.agopalareddy.umm.core.auth.ApiKeyStore
@@ -14,6 +18,8 @@ import io.github.agopalareddy.umm.core.data.UmmDatabase
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterApi
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterClient
 import io.github.agopalareddy.umm.core.pipeline.DictationPipeline
+import io.github.agopalareddy.umm.core.pipeline.DictationState
+import io.github.agopalareddy.umm.ime.DeliveryRouter
 import io.github.agopalareddy.umm.core.policy.ModelCatalog
 import io.github.agopalareddy.umm.core.policy.ModelPlan
 import io.github.agopalareddy.umm.core.policy.ModelSelector
@@ -23,6 +29,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val Context.settingsStore by preferencesDataStore("settings")
 
@@ -61,6 +69,12 @@ class AppGraph(private val app: Application) {
         return ModelSelector.plan(current, recommendations.current(), liveStt)
     }
 
+    /** Routes finished dictations to the field they came from, or to the clipboard. */
+    val delivery = DeliveryRouter { text ->
+        app.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Umm", text))
+        Toast.makeText(app, "Copied — field changed", Toast.LENGTH_SHORT).show()
+    }
+
     val pipeline by lazy {
         DictationPipeline(
             scope = appScope,
@@ -69,7 +83,24 @@ class AppGraph(private val app: Application) {
             plan = ::modelPlan,
             history = history,
             audioDir = File(app.filesDir, "audio"),
-        )
+        ).also(::deliverResults)
+    }
+
+    /** One process-wide collector, so a result still lands (on the clipboard) after the keyboard has closed. */
+    private fun deliverResults(pipeline: DictationPipeline) {
+        appScope.launch {
+            pipeline.state.collect { state ->
+                if (BuildConfig.DEBUG && state is DictationState.Listening) Log.d("Umm", "amplitude=${state.amplitude}")
+                if (state is DictationState.Done && pipeline.acknowledge(state)) {
+                    withContext(Dispatchers.Main) {
+                        delivery.deliver(state)
+                        if (state.cleanupFailed) {
+                            Toast.makeText(app, "Cleanup failed; inserted the raw transcript", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

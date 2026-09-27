@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,8 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -75,28 +75,53 @@ private fun Message(text: String, action: String?, onAction: () -> Unit) {
     }
 }
 
+private enum class Picker { LEVEL, CATEGORY }
+
 @Composable
 private fun Dictation(service: UmmInputMethodService, ui: PanelContext) {
     val state by service.state.collectAsState()
+    // Options render inside the keyboard window: a popup window would take focus from the app's text field and
+    // Android would then hide the keyboard.
+    var picker by remember { mutableStateOf<Picker?>(null) }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LevelChip(ui.level) { service.onLevelChosen(it) }
+            AssistChip(onClick = { picker = if (picker == Picker.LEVEL) null else Picker.LEVEL }, label = { Text(ui.level?.label() ?: "Level") })
             LanguageChip(ui) { service.onLanguageChosen(it) }
-            CategoryChip(ui) { service.onCategoryChosen(it) }
+            AssistChip(onClick = { picker = if (picker == Picker.CATEGORY) null else Picker.CATEGORY }, label = { Text(categoryLabel(ui)) })
         }
         Spacer(Modifier.height(16.dp))
-        MicButton(state, onClick = service::onMicTapped)
-        Spacer(Modifier.height(10.dp))
-        Text(statusText(state), style = MaterialTheme.typography.bodyMedium)
-        val failed = state as? DictationState.Failed
-        when (failed?.reason) {
-            FailureReason.UNAUTHORIZED, FailureReason.MISSING_KEY ->
-                TextButton(onClick = { service.openApp() }) { Text("Reconnect OpenRouter") }
-            FailureReason.NO_CREDITS ->
-                TextButton(onClick = { service.openApp(Uri.parse("https://openrouter.ai/settings/credits")) }) { Text("Add credits on OpenRouter") }
-            else -> Unit
+        when (picker) {
+            Picker.LEVEL -> Options(CleanupLevel.entries.map { it.label() to { service.onLevelChosen(it); picker = null } })
+            Picker.CATEGORY -> Options(Category.entries.map { it.label() to { service.onCategoryChosen(it); picker = null } })
+            null -> {
+                MicButton(state, onClick = service::onMicTapped)
+                Spacer(Modifier.height(10.dp))
+                Text(statusText(state), style = MaterialTheme.typography.bodyMedium)
+                val failed = state as? DictationState.Failed
+                when (failed?.reason) {
+                    FailureReason.UNAUTHORIZED, FailureReason.MISSING_KEY ->
+                        TextButton(onClick = { service.openApp() }) { Text("Reconnect OpenRouter") }
+                    FailureReason.NO_CREDITS ->
+                        TextButton(onClick = { service.openApp(Uri.parse("https://openrouter.ai/settings/credits")) }) { Text("Add credits on OpenRouter") }
+                    else -> Unit
+                }
+            }
         }
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun Options(options: List<Pair<String, () -> Unit>>) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { (label, onClick) -> Button(onClick = onClick) { Text(label) } }
+    }
+}
+
+private fun categoryLabel(ui: PanelContext): String {
+    val category = ui.category?.category ?: Category.OTHER
+    val suffix = if (category == Category.OTHER) "Other · Assign" else category.label()
+    return "${ui.appLabel.take(14)} · $suffix".removePrefix(" · ")
 }
 
 @Composable
@@ -139,19 +164,6 @@ private fun statusText(state: DictationState): String = when (state) {
 }
 
 @Composable
-private fun LevelChip(level: CleanupLevel?, onChosen: (CleanupLevel) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        AssistChip(onClick = { open = true }, label = { Text(level?.label() ?: "Level") })
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            CleanupLevel.entries.forEach {
-                DropdownMenuItem(text = { Text(it.label()) }, onClick = { open = false; onChosen(it) })
-            }
-        }
-    }
-}
-
-@Composable
 private fun LanguageChip(ui: PanelContext, onChosen: (String) -> Unit) {
     val current = ui.language.encode()
     AssistChip(
@@ -161,21 +173,6 @@ private fun LanguageChip(ui: PanelContext, onChosen: (String) -> Unit) {
         },
         label = { Text(if (current == LanguageChoice.AUTO) "Auto" else current.uppercase()) },
     )
-}
-
-@Composable
-private fun CategoryChip(ui: PanelContext, onChosen: (Category) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    val category = ui.category?.category ?: Category.OTHER
-    val suffix = if (category == Category.OTHER) "Other · Assign" else category.label()
-    Box {
-        AssistChip(onClick = { open = true }, label = { Text("${ui.appLabel.take(14)} · $suffix".removePrefix(" · ")) })
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            Category.entries.forEach {
-                DropdownMenuItem(text = { Text(it.label()) }, onClick = { open = false; onChosen(it) })
-            }
-        }
-    }
 }
 
 internal fun CleanupLevel.label() = name.lowercase().replaceFirstChar { it.uppercase() }

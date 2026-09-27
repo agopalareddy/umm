@@ -1,15 +1,12 @@
 package io.github.agopalareddy.umm.ime
 
 import android.Manifest
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.inputmethodservice.InputMethodService
 import android.net.Uri
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -30,15 +27,14 @@ import io.github.agopalareddy.umm.core.data.Category
 import io.github.agopalareddy.umm.core.data.CategoryConfig
 import io.github.agopalareddy.umm.core.pipeline.DictationRequest
 import io.github.agopalareddy.umm.core.pipeline.DictationState
+import io.github.agopalareddy.umm.core.pipeline.isFinished
 import io.github.agopalareddy.umm.core.policy.LevelResolver
 import io.github.agopalareddy.umm.graph
 import io.github.agopalareddy.umm.settings.MainActivity
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
-/** The voice-only keyboard: starts listening when shown and inserts the cleaned text into the focused field. */
+/** The voice-only keyboard: starts listening when shown; results are delivered by the app's DeliveryRouter. */
 class UmmInputMethodService : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner {
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val savedStateController = SavedStateRegistryController.create(this)
@@ -46,22 +42,19 @@ class UmmInputMethodService : InputMethodService(), LifecycleOwner, SavedStateRe
     override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
 
     private val pipeline by lazy { graph.pipeline }
-
-    private var session = 0
-    private var dictationSession = 0
-    private var inputActive = false
-    private var dictationLevel: CleanupLevel? = null
-    private var multiLine = false
+    private val delivery by lazy { graph.delivery }
+    private var target: FieldTarget? = null
 
     /** What the panel shows; read by [KeyboardPanel]. */
     internal var ui by mutableStateOf(PanelContext())
         private set
 
+    internal val state get() = pipeline.state
+
     override fun onCreate() {
         super.onCreate()
         savedStateController.performRestore(null)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
-        lifecycleScope.launch { pipeline.state.collect(::onState) }
+        lifecycleRegistry.moveIfAlive(Lifecycle.Event.ON_CREATE)
     }
 
     override fun onCreateInputView(): View {
@@ -80,10 +73,12 @@ class UmmInputMethodService : InputMethodService(), LifecycleOwner, SavedStateRe
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
-        session++
-        inputActive = true
-        multiLine = FieldPolicy.isMultiLine(info.inputType)
+        lifecycleRegistry.moveIfAlive(Lifecycle.Event.ON_RESUME)
+        val field = FieldTarget(delivery.newOrigin(), FieldPolicy.isMultiLine(info.inputType))
+        target?.let(delivery::detach)
+        target = field
+        delivery.attach(field)
+
         val packageName = info.packageName ?: ""
         val setupDone = hasMicPermission() && graph.apiKeyStore.get() != null
         val password = FieldPolicy.isPassword(info.inputType)
@@ -92,54 +87,64 @@ class UmmInputMethodService : InputMethodService(), LifecycleOwner, SavedStateRe
         lifecycleScope.launch {
             val settings = graph.settings.settings.first()
             val config = graph.categories.configFor(packageName)
-            val language = LanguageChoice.decode(settings.defaultLanguage)
-            ui = ui.copy(category = config, language = language, languages = settings.keyboardLanguages)
-            val state = pipeline.state.value
-            if (state is DictationState.Idle || state.isFinished()) {
+            if (!delivery.isCurrent(field.origin)) return@launch // the keyboard moved on while we were reading
+            ui = ui.copy(
+                category = config,
+                language = LanguageChoice.decode(settings.defaultLanguage),
+                languages = settings.keyboardLanguages,
+            )
+            val current = pipeline.state.value
+            if (current is DictationState.Idle || current.isFinished()) {
                 pipeline.reset()
-                startDictation()
+                startDictation(field.origin)
             }
         }
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
-        inputActive = false
-        if (pipeline.state.value is DictationState.Listening) pipeline.stop()
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        target?.let(delivery::detach)
+        when (KeyboardHidden.action(pipeline.state.value)) {
+            HideAction.CANCEL -> pipeline.cancel()
+            HideAction.STOP -> pipeline.stop()
+            HideAction.NONE -> Unit
+        }
+        lifecycleRegistry.moveIfAlive(Lifecycle.Event.ON_PAUSE)
         super.onFinishInputView(finishingInput)
     }
 
     override fun onDestroy() {
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
-        super.onDestroy()
+        target?.let(delivery::detach)
+        super.onDestroy() // calls onFinishInputView, so the lifecycle must still be alive
+        lifecycleRegistry.moveIfAlive(Lifecycle.Event.ON_DESTROY)
     }
 
     // --- Actions from the panel ---
 
     internal fun onMicTapped() {
+        val origin = target?.origin ?: return
         when (val state = pipeline.state.value) {
             is DictationState.Listening -> pipeline.stop()
-            is DictationState.Failed -> { pipeline.reset(); dictationSession = session; pipeline.retry(state.historyId) }
+            is DictationState.Failed -> { pipeline.reset(); pipeline.retry(state.historyId, origin) }
             DictationState.Transcribing, DictationState.Cleaning -> Unit
-            else -> { pipeline.reset(); startDictation() }
+            else -> { pipeline.reset(); startDictation(origin) }
         }
     }
 
     internal fun onLevelChosen(level: CleanupLevel) {
         ui = ui.copy(levelOverride = level, level = level)
-        dictationLevel = level
+        pipeline.setLevel(level)
     }
 
     internal fun onLanguageChosen(code: String) {
-        val language = LanguageChoice.decode(code)
-        ui = ui.copy(language = language)
+        ui = ui.copy(language = LanguageChoice.decode(code))
         // Language affects transcription, so restart if nothing has been said yet.
         val state = pipeline.state.value
+        val origin = target?.origin ?: return
         if (state is DictationState.Listening && !state.speechDetected) {
             pipeline.cancel()
             lifecycleScope.launch {
                 pipeline.state.first { it is DictationState.Idle }
-                startDictation()
+                startDictation(origin)
             }
         }
     }
@@ -151,9 +156,9 @@ class UmmInputMethodService : InputMethodService(), LifecycleOwner, SavedStateRe
             val config = graph.categories.configFor(packageName)
             ui = ui.copy(category = config)
             if (ui.levelOverride == null) {
-                val level = resolvedLevel(config)
-                dictationLevel = level
+                val level = resolve(null, config)
                 ui = ui.copy(level = level)
+                pipeline.setLevel(level)
             }
         }
     }
@@ -168,53 +173,36 @@ class UmmInputMethodService : InputMethodService(), LifecycleOwner, SavedStateRe
         startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
-    internal val state get() = pipeline.state
-
     // --- Pipeline ---
 
-    private fun startDictation() {
+    private fun startDictation(origin: Long) {
         val config = ui.category ?: return
         lifecycleScope.launch {
             val settings = graph.settings.settings.first()
-            val style = LevelResolver.resolve(ui.levelOverride, config, settings.defaultLevel)
-            dictationLevel = style.level
-            ui = ui.copy(level = style.level)
-            dictationSession = session
+            val level = resolve(ui.levelOverride, config)
+            if (!delivery.isCurrent(origin)) return@launch
+            ui = ui.copy(level = level)
             pipeline.start(
-                DictationRequest(ui.packageName, style.level, style.script, ui.language, settings.silenceTimeoutSec),
+                DictationRequest(ui.packageName, level, config.script, ui.language, settings.silenceTimeoutSec, origin),
             )
         }
     }
 
-    private suspend fun resolvedLevel(config: CategoryConfig): CleanupLevel =
-        LevelResolver.resolve(null, config, graph.settings.settings.first().defaultLevel).level
+    private suspend fun resolve(override: CleanupLevel?, config: CategoryConfig): CleanupLevel =
+        LevelResolver.resolve(override, config, graph.settings.settings.first().defaultLevel).level
 
-    private suspend fun onState(state: DictationState) {
-        if (state !is DictationState.Done) return
-        var text = state.text
-        // The level changed after recording started: re-run cleanup on the stored transcript.
-        val wanted = dictationLevel
-        val used = graph.history.get(state.historyId)?.level
-        if (!state.cleanupFailed && wanted != null && used != null && wanted != used) {
-            text = runCatching { pipeline.reclean(state.historyId, wanted, ui.category?.script ?: return@runCatching text) }
-                .getOrDefault(text)
+    private inner class FieldTarget(override val origin: Long, private val multiLine: Boolean) : InsertionTarget {
+        override fun commit(text: String): Boolean {
+            val connection = currentInputConnection ?: return false
+            val before = connection.getTextBeforeCursor(1, 0)
+            val after = connection.getTextAfterCursor(1, 0)
+            return connection.commitText(TextInsertion.prepare(text, before, after, multiLine), 1)
         }
-        deliver(text)
-        pipeline.reset()
-        if (state.cleanupFailed) Toast.makeText(this, "Cleanup failed; inserted the raw transcript", Toast.LENGTH_SHORT).show()
-        if (inputActive && graph.settings.settings.first().switchBackAfterInsert) switchToPreviousInputMethod()
-    }
 
-    private suspend fun deliver(text: String) = withContext(Dispatchers.Main) {
-        val connection = currentInputConnection
-        when (InsertionDecider.decide(dictationSession, session, inputActive && connection != null)) {
-            Insertion.Commit -> {
-                val before = connection.getTextBeforeCursor(1, 0)
-                connection.commitText(TextInsertion.prepare(text, before, multiLine), 1)
-            }
-            Insertion.Clipboard -> {
-                getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Umm", text))
-                Toast.makeText(this@UmmInputMethodService, "Copied — field changed", Toast.LENGTH_SHORT).show()
+        override fun onInserted() {
+            ui = ui.copy(levelOverride = null)
+            lifecycleScope.launch {
+                if (graph.settings.settings.first().switchBackAfterInsert) switchToPreviousInputMethod()
             }
         }
     }
@@ -233,12 +221,10 @@ internal data class PanelContext(
     val setupDone: Boolean = true,
     val password: Boolean = false,
     val category: CategoryConfig? = null,
+    /** A one-off level for this dictation only; cleared after it is inserted and for each new field. */
     val levelOverride: CleanupLevel? = null,
     /** The level this dictation will be cleaned at. */
     val level: CleanupLevel? = null,
     val language: LanguageChoice = LanguageChoice.Auto,
     val languages: List<String> = listOf("auto", "en"),
 )
-
-internal fun DictationState.isFinished() = this is DictationState.Done || this is DictationState.Failed ||
-    this == DictationState.NoSpeech || this == DictationState.EmptyTranscript
