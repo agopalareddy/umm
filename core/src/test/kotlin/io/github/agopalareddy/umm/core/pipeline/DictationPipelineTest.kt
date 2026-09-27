@@ -13,11 +13,15 @@ import io.github.agopalareddy.umm.core.openrouter.OpenRouterException
 import io.github.agopalareddy.umm.core.policy.ModelPlan
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -40,14 +44,19 @@ class DictationPipelineTest {
 
     @After fun tearDown() = db.close()
 
-    private fun request(level: CleanupLevel = CleanupLevel.LIGHT, language: LanguageChoice = LanguageChoice.Auto) =
-        DictationRequest("com.whatsapp", level, ScriptPreference.LATIN, language, silenceTimeoutSec = 3)
+    private fun request(
+        level: CleanupLevel = CleanupLevel.LIGHT,
+        language: LanguageChoice = LanguageChoice.Auto,
+        origin: Long = 0,
+    ) = DictationRequest("com.whatsapp", level, ScriptPreference.LATIN, language, silenceTimeoutSec = 3, origin = origin)
 
     private fun rep(amp: Int, n: Int) = List(n) { amp }
     private val speechThenSilence = rep(200, 5) + rep(8000, 10) + rep(200, 40)
 
+    private var planCalls = 0
+
     private fun CoroutineScope.pipeline() =
-        DictationPipeline(this, audio, api, { plan }, history, tmp.root, retryDelayMs = { 0 })
+        DictationPipeline(this, audio, api, { planCalls++; plan }, history, tmp.root, retryDelayMs = { 0 })
 
     private suspend fun DictationPipeline.awaitEnd(): DictationState =
         state.first { it !is DictationState.Idle && it !is DictationState.Listening && it != DictationState.Transcribing && it != DictationState.Cleaning }
@@ -287,5 +296,83 @@ class DictationPipelineTest {
         p.start(request())
         assertEquals(file, audio.recordedFile)
         p.cancel()
+    }
+
+    @Test fun planComputedOncePerDictation() = runTest {
+        audio.amplitudes = speechThenSilence
+        api.transcribeResults += "hi"
+        api.completeResults += "Hi."
+        val p = backgroundScope.pipeline()
+        p.start(request())
+        p.awaitEnd()
+        assertEquals(1, planCalls)
+    }
+
+    @Test fun stopBeforeRecordingStartsStillStops() = runTest {
+        audio.amplitudes = rep(200, 3) // a real recorder emits from its first 100 ms
+        audio.holdOpen = true
+        api.transcribeResults += "hi"
+        api.completeResults += "Hi."
+        val p = backgroundScope.pipeline()
+        p.start(request())
+        p.stop()
+        // Real-time timeout: Room runs on real threads, so a virtual one would fire early.
+        val end = withContext(Dispatchers.Default) { withTimeout(5_000) { p.awaitEnd() } }
+        assertEquals("Hi.", (end as DictationState.Done).text)
+    }
+
+    @Test fun cancelBeforeRecordingStartsDiscards() = runTest {
+        audio.holdOpen = true
+        val p = backgroundScope.pipeline()
+        p.start(request())
+        p.cancel()
+        delay(1_000) // virtual time; lets the background pipeline job run
+        assertEquals(DictationState.Idle, p.state.value)
+        assertTrue(api.transcribeCalls.isEmpty())
+        assertFalse(audio.recordedFile?.exists() ?: false)
+    }
+
+    @Test fun setLevelBeforeCleanupApplies() = runTest {
+        audio.amplitudes = rep(200, 5) + rep(8000, 5)
+        audio.holdOpen = true
+        api.transcribeResults += "raw"
+        api.completeResults += "Polished."
+        val p = backgroundScope.pipeline()
+        p.start(request(CleanupLevel.LIGHT))
+        p.state.first { it is DictationState.Listening && it.speechDetected }
+        p.setLevel(CleanupLevel.POLISHED)
+        p.stop()
+        val done = p.awaitEnd() as DictationState.Done
+        assertEquals(
+            PromptBuilder.systemPrompt(CleanupLevel.POLISHED, ScriptPreference.LATIN, LanguageChoice.Auto),
+            api.completeCalls.single().second,
+        )
+        assertEquals(CleanupLevel.POLISHED, history.get(done.historyId)!!.level)
+    }
+
+    @Test fun acknowledgeConsumesDoneOnce() = runTest {
+        audio.amplitudes = speechThenSilence
+        api.transcribeResults += "hi"
+        api.completeResults += "Hi."
+        val p = backgroundScope.pipeline()
+        p.start(request())
+        val done = p.awaitEnd()
+        assertTrue(p.acknowledge(done))
+        assertFalse(p.acknowledge(done))
+        assertEquals(DictationState.Idle, p.state.value)
+    }
+
+    @Test fun resultsCarryTheirOrigin() = runTest {
+        audio.amplitudes = speechThenSilence
+        api.transcribeResults += OpenRouterException.Network(IOException("offline"))
+        val p = backgroundScope.pipeline()
+        p.start(request(origin = 7))
+        val failed = p.awaitEnd() as DictationState.Failed
+        assertEquals(7L, failed.origin)
+        p.acknowledge(failed)
+        api.transcribeResults += "back"
+        api.completeResults += "Back."
+        p.retry(failed.historyId, origin = 9)
+        assertEquals(9L, (p.awaitEnd() as DictationState.Done).origin)
     }
 }

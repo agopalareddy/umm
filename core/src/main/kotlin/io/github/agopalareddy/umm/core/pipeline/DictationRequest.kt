@@ -11,4 +11,6 @@ data class DictationRequest(
     val language: LanguageChoice,
     /** null means Off. */
     val silenceTimeoutSec: Int?,
+    /** Opaque tag chosen by the front-end (e.g. its input session), echoed on the result. */
+    val origin: Long = 0,
 )

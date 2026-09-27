@@ -39,7 +39,12 @@ class DictationPipeline(
     val state: StateFlow<DictationState> = _state.asStateFlow()
 
     private var job: Job? = null
+
+    // Per-dictation controls. They are set before the recorder may have started, so the loop re-checks them.
+    @Volatile private var stopRequested = false
     @Volatile private var cancelRequested = false
+    @Volatile private var recording = false
+    @Volatile private var levelOverride: CleanupLevel? = null
 
     init {
         scope.launch { history.purgeExpiredAudio() }
@@ -47,30 +52,43 @@ class DictationPipeline(
 
     fun start(request: DictationRequest) {
         if (job?.isActive == true) return
-        cancelRequested = false
+        resetControls()
+        recording = true
         job = scope.launch { record(request) }
     }
 
-    /** Ends recording and processes what was captured. */
-    fun stop() = audio.stop()
+    /** Ends recording and processes what was captured, even if the recorder has not started yet. */
+    fun stop() {
+        stopRequested = true
+        audio.stop()
+    }
 
     /** Discards the current recording. Has no effect once processing has started. */
     fun cancel() {
-        if (_state.value !is DictationState.Listening) return
+        if (!recording) return
         cancelRequested = true
         audio.stop()
     }
 
-    fun retry(historyId: Long) {
+    /** Changes the cleanup level of the current dictation, if cleanup has not started yet. */
+    fun setLevel(level: CleanupLevel) {
+        levelOverride = level
+    }
+
+    /** Marks a finished state as handled; returns false if someone else already handled it. */
+    fun acknowledge(state: DictationState): Boolean = _state.compareAndSet(state, DictationState.Idle)
+
+    fun retry(historyId: Long, origin: Long = 0) {
         if (job?.isActive == true) return
+        resetControls()
         job = scope.launch {
             val item = history.get(historyId)
             val file = item?.audioPath?.let(::File)?.takeIf { it.exists() }
             if (item == null || file == null) {
-                _state.value = DictationState.Failed(historyId, FailureReason.UNKNOWN)
+                _state.value = DictationState.Failed(historyId, FailureReason.UNKNOWN, origin)
                 return@launch
             }
-            process(historyId, file, item.level, item.script, LanguageChoice.decode(item.language))
+            process(historyId, file, item.level, item.script, LanguageChoice.decode(item.language), origin)
         }
     }
 
@@ -78,14 +96,21 @@ class DictationPipeline(
     suspend fun reclean(historyId: Long, level: CleanupLevel, script: ScriptPreference): String {
         val item = requireNotNull(history.get(historyId)) { "no history item $historyId" }
         val raw = requireNotNull(item.rawText) { "history item $historyId has no transcript" }
-        val clean = if (level == CleanupLevel.RAW) raw else cleanup(raw, level, script, LanguageChoice.decode(item.language))
+        val clean = if (level == CleanupLevel.RAW) raw else cleanup(plan().cleanup, raw, level, script, LanguageChoice.decode(item.language))
         history.updateClean(historyId, level, clean)
         return clean
     }
 
-    /** Returns to Idle after the front-end has handled a finished state. */
+    /** Returns to Idle from any finished state. */
     fun reset() {
-        if (job?.isActive != true) _state.value = DictationState.Idle
+        val current = _state.value
+        if (current.isFinished()) _state.compareAndSet(current, DictationState.Idle)
+    }
+
+    private fun resetControls() {
+        stopRequested = false
+        cancelRequested = false
+        levelOverride = null
     }
 
     private suspend fun record(request: DictationRequest) {
@@ -95,9 +120,15 @@ class DictationPipeline(
         var elapsedMs = 0L
         var noSpeech = false
         var interrupted = false
+        if (cancelRequested) {
+            recording = false
+            _state.value = DictationState.Idle
+            return
+        }
         _state.value = DictationState.Listening(0, false)
         try {
             audio.record(file).collect { amplitude ->
+                if (stopRequested || cancelRequested) audio.stop()
                 val event = detector.onSample(amplitude, elapsedMs)
                 elapsedMs += SAMPLE_MS
                 _state.value = DictationState.Listening(amplitude, detector.speechDetected)
@@ -113,6 +144,7 @@ class DictationPipeline(
             interrupted = true
         }
 
+        recording = false
         when {
             cancelRequested -> discard(file, DictationState.Idle)
             noSpeech || (interrupted && !detector.speechDetected) -> discard(file, DictationState.NoSpeech)
@@ -120,23 +152,32 @@ class DictationPipeline(
                 val id = history.createPending(
                     request.packageName, request.level, request.script, request.language.encode(), file.path,
                 )
-                process(id, file, request.level, request.script, request.language)
+                process(id, file, request.level, request.script, request.language, request.origin)
             }
         }
     }
 
-    private suspend fun process(id: Long, file: File, level: CleanupLevel, script: ScriptPreference, language: LanguageChoice) {
+    private suspend fun process(
+        id: Long,
+        file: File,
+        requestedLevel: CleanupLevel,
+        script: ScriptPreference,
+        language: LanguageChoice,
+        origin: Long,
+    ) {
         _state.value = DictationState.Transcribing
+        val models: ModelPlan
         val raw = try {
+            models = plan()
             val bytes = withContext(Dispatchers.IO) { file.readBytes() }
             val code = (language as? LanguageChoice.Fixed)?.iso639_1
-            withFallback(plan().stt) { model -> api.transcribe(model, bytes, AUDIO_FORMAT, code) }.text.trim()
+            withFallback(models.stt) { model -> api.transcribe(model, bytes, AUDIO_FORMAT, code) }.text.trim()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             val reason = FailureReason.of(e)
             history.markFailed(id, reason.name)
-            _state.value = DictationState.Failed(id, reason)
+            _state.value = DictationState.Failed(id, reason, origin)
             return
         }
 
@@ -145,20 +186,21 @@ class DictationPipeline(
             _state.value = DictationState.EmptyTranscript
             return
         }
+        val level = levelOverride ?: requestedLevel
         if (level == CleanupLevel.RAW) {
-            history.markDone(id, raw, null)
-            _state.value = DictationState.Done(id, raw, cleanupFailed = false)
+            finish(id, raw, null, level, requestedLevel)
+            _state.value = DictationState.Done(id, raw, cleanupFailed = false, origin = origin)
             return
         }
 
         _state.value = DictationState.Cleaning
         val clean = try {
-            cleanup(raw, level, script, language)
+            cleanup(models.cleanup, raw, level, script, language)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             history.markCleanupFailed(id, raw, FailureReason.of(e).name)
-            _state.value = DictationState.Done(id, raw, cleanupFailed = true)
+            _state.value = DictationState.Done(id, raw, cleanupFailed = true, origin = origin)
             return
         }
         if (clean.isEmpty()) {
@@ -167,13 +209,24 @@ class DictationPipeline(
             _state.value = DictationState.EmptyTranscript
             return
         }
-        history.markDone(id, raw, clean)
-        _state.value = DictationState.Done(id, clean, cleanupFailed = false)
+        finish(id, raw, clean, level, requestedLevel)
+        _state.value = DictationState.Done(id, clean, cleanupFailed = false, origin = origin)
     }
 
-    private suspend fun cleanup(raw: String, level: CleanupLevel, script: ScriptPreference, language: LanguageChoice): String {
+    private suspend fun finish(id: Long, raw: String, clean: String?, level: CleanupLevel, requestedLevel: CleanupLevel) {
+        history.markDone(id, raw, clean)
+        if (level != requestedLevel) history.updateClean(id, level, clean ?: raw)
+    }
+
+    private suspend fun cleanup(
+        models: List<String>,
+        raw: String,
+        level: CleanupLevel,
+        script: ScriptPreference,
+        language: LanguageChoice,
+    ): String {
         val system = PromptBuilder.systemPrompt(level, script, language)
-        return withFallback(plan().cleanup) { model ->
+        return withFallback(models) { model ->
             api.complete(model, system, PromptBuilder.userMessage(raw), TEMPERATURE)
         }.trim()
     }

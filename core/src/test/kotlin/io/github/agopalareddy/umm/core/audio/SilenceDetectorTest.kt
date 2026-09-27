@@ -79,4 +79,17 @@ class SilenceDetectorTest {
         assertEquals(SPEECH_STARTED, events.first().second)
         assertEquals(STOP_FOR_SILENCE, events.last().second)
     }
+
+    @Test fun speechRightAfterCalibrationDetected() {
+        // Reviewer trace with a realistic 200 ms lead before the first word.
+        val events = feed(listOf(0, 300, 300, 6000, 7000, 5000) + rep(200, 60))
+        assertEquals(listOf(300L to SPEECH_STARTED, 3_500L to STOP_FOR_SILENCE), events)
+    }
+
+    @Test fun continuousSpeechWithShallowDipsIsNotSilence() {
+        // 6 s of speech whose dips never fall to the room's noise level.
+        val speech = List(60) { if (it % 2 == 0) 9000 else 5000 }
+        val events = feed(rep(200, 5) + speech + rep(200, 40))
+        assertEquals(listOf(500L to SPEECH_STARTED, 9_400L to STOP_FOR_SILENCE), events)
+    }
 }

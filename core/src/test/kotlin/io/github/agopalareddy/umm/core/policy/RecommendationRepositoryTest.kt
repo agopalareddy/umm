@@ -69,6 +69,18 @@ class RecommendationRepositoryTest {
         assertEquals(null, settings.readCache(RecommendationRepository.CACHE))
     }
 
+    @Test fun failedFetchNotRetriedWithin24h() = runTest {
+        val (repo, _) = fixture()
+        server.enqueue(MockResponse.Builder().code(404).build())
+        assertEquals("bundled/stt", repo.current().stt.primary)
+        now += DAY / 2
+        assertEquals("bundled/stt", repo.current().stt.primary)
+        assertEquals(1, server.requestCount)
+        now += DAY
+        server.enqueue(MockResponse.Builder().body(json("remote")).build())
+        assertEquals("remote/stt", repo.current().stt.primary)
+    }
+
     private companion object {
         const val DAY = 24L * 3600 * 1000
     }

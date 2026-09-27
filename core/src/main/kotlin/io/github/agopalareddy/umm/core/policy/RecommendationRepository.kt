@@ -21,13 +21,19 @@ class RecommendationRepository(
     suspend fun current(): Recommendation {
         val cached = settings.readCache(CACHE)?.let { (json, savedAt) -> parse(json)?.let { it to savedAt } }
         if (cached != null && clock() - cached.second < MAX_AGE_MS) return cached.first
+        val fallback = cached?.first ?: requireNotNull(parse(bundled())) { "bundled recommended.json is invalid" }
+
+        // After a failed fetch, wait a day before trying again instead of paying for it on every dictation.
+        val lastFailure = settings.readCache(FAILED)?.second
+        if (lastFailure != null && clock() - lastFailure < MAX_AGE_MS) return fallback
 
         val fetched = fetch()
         if (fetched != null) {
             settings.writeCache(CACHE, fetched.first, clock())
             return fetched.second
         }
-        return cached?.first ?: requireNotNull(parse(bundled())) { "bundled recommended.json is invalid" }
+        settings.writeCache(FAILED, "", clock())
+        return fallback
     }
 
     private suspend fun fetch(): Pair<String, Recommendation>? = withContext(Dispatchers.IO) {
@@ -47,6 +53,7 @@ class RecommendationRepository(
 
     companion object {
         const val CACHE = "recommended"
+        private const val FAILED = "recommended_failed"
         val DEFAULT_URL: HttpUrl = "https://raw.githubusercontent.com/agopalareddy/umm/main/models/recommended.json".toHttpUrl()
         private const val MAX_AGE_MS = 24L * 3600 * 1000
         private val lenient = Json { ignoreUnknownKeys = true }

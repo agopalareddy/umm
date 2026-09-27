@@ -23,8 +23,11 @@ sealed interface DictationState {
     data class Listening(val amplitude: Int, val speechDetected: Boolean) : DictationState
     data object Transcribing : DictationState
     data object Cleaning : DictationState
-    data class Done(val historyId: Long, val text: String, val cleanupFailed: Boolean) : DictationState
-    data class Failed(val historyId: Long, val reason: FailureReason) : DictationState
+    data class Done(val historyId: Long, val text: String, val cleanupFailed: Boolean, val origin: Long = 0) : DictationState
+    data class Failed(val historyId: Long, val reason: FailureReason, val origin: Long = 0) : DictationState
     data object NoSpeech : DictationState
     data object EmptyTranscript : DictationState
 }
+
+fun DictationState.isFinished(): Boolean = this is DictationState.Done || this is DictationState.Failed ||
+    this == DictationState.NoSpeech || this == DictationState.EmptyTranscript
