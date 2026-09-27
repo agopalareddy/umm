@@ -1,5 +1,7 @@
 package io.github.agopalareddy.umm.core.openrouter
 
+import kotlinx.serialization.Serializable
+
 /** The OpenRouter operations Umm needs. Implemented by [OpenRouterClient]; faked in tests. */
 interface OpenRouterApi {
     suspend fun transcribe(model: String, audio: ByteArray, format: String, language: String?): Transcription
@@ -12,6 +14,7 @@ interface OpenRouterApi {
 
 data class Transcription(val text: String, val costUsd: Double?)
 
+@Serializable
 data class ModelInfo(
     val id: String,
     val name: String,
