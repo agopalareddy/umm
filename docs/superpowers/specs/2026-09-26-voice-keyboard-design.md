@@ -1,9 +1,12 @@
-# Voice Keyboard — Design Spec
+# Umm — Voice Keyboard Design Spec
 
 Date: 2026-09-26
 Status: Draft, awaiting review
 
 ## 1. Goal
+
+**Umm** — named after the filler word it deletes. `applicationId`:
+`io.github.agopalareddy.umm`. Repository: `github.com/agopalareddy/umm`.
 
 An Android app, in the spirit of Wispr Flow and Gboard voice typing, that lets
 you speak on demand, turns the speech into clean text, and inserts it into
@@ -178,7 +181,8 @@ Global default level: Light.
 ## 9. Model selection
 
 **Recommendation list** — `models/recommended.json` in this repository, fetched
-from its raw GitHub URL at most once per 24 h, cached, with a copy bundled in
+from `https://raw.githubusercontent.com/agopalareddy/umm/main/models/recommended.json`
+at most once per 24 h, cached, with a copy bundled in
 the APK for first launch and offline use.
 
 ```json
@@ -303,6 +307,7 @@ work.
 
 ## 16. Open items
 
-- App name and `applicationId` (placeholder until decided; must be final
-  before the first Play Store upload).
-- GitHub repository for the code and `models/recommended.json`.
+- The repository is private for now. The raw URL in §9 only works publicly,
+  so before release either make the repository public or move
+  `recommended.json` to a public location. Until then the app uses the
+  bundled copy.
