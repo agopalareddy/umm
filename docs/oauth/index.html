@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Umm sign-in</title>
+  <style>
+    :root { color-scheme: light dark; --accent: #5b4fd6; }
+    body { font: 17px/1.5 system-ui, sans-serif; margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; box-sizing: border-box; }
+    main { max-width: 360px; text-align: center; }
+    a.button { display: inline-block; margin-top: 16px; padding: 12px 24px; border-radius: 999px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; }
+    p.small { font-size: 14px; opacity: .75; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Umm</h1>
+    <p id="message">Returning to Umm…</p>
+    <a id="open" class="button" href="#" hidden>Open Umm</a>
+    <p class="small" id="hint" hidden>If nothing happens, tap the button above.</p>
+  </main>
+  <script>
+    // OpenRouter only accepts web callbacks, so this page hands the one-time code to the app.
+    // The code is useless without the verifier that stays on the phone.
+    const params = new URLSearchParams(location.search);
+    const code = params.get("code");
+    const message = document.getElementById("message");
+    if (!code) {
+      message.textContent = params.get("error") ? "Sign-in was cancelled. Go back to Umm and try again." : "Nothing to do here.";
+    } else {
+      const app = "intent://oauth?code=" + encodeURIComponent(code) +
+        "#Intent;scheme=umm;package=io.github.agopalareddy.umm;end";
+      const open = document.getElementById("open");
+      open.href = app;
+      open.hidden = false;
+      document.getElementById("hint").hidden = false;
+      location.replace(app);
+    }
+  </script>
+</body>
+</html>
