@@ -96,6 +96,19 @@ class OpenRouterClientTest {
         assertNull(req.headers["Authorization"])
     }
 
+    @Test fun keyInfoParsesUsageAndLimit() = runTest {
+        enqueue("""{"data":{"label":"Umm","usage":1.25,"usage_monthly":0.5,"limit":10,"limit_remaining":8.75,"limit_reset":"monthly"}}""")
+        assertEquals(KeyInfo("Umm", 1.25, 0.5, 10.0, 8.75, "monthly"), client().keyInfo())
+        val req = server.takeRequest()
+        assertEquals("/key", req.url.encodedPath)
+        assertEquals("Bearer k", req.headers["Authorization"])
+    }
+
+    @Test fun keyInfoWithoutLimit() = runTest {
+        enqueue("""{"data":{"label":"sk-or-v1-abc","usage":0,"limit":null,"limit_remaining":null}}""")
+        assertEquals(KeyInfo("sk-or-v1-abc", 0.0, null, null, null, null), client().keyInfo())
+    }
+
     @Test fun sendsAuthAndAttributionHeaders() = runTest {
         enqueue("""{"text":"x"}""")
         client().transcribe("m", byteArrayOf(1), "m4a", null)

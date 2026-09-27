@@ -119,7 +119,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
             composable(Routes.SETTINGS) { SettingsHome(settings, key != null, back) { nav.navigate(it) } }
-            composable(Routes.ACCOUNT) { AccountPage(key != null, back, connect, saveKey) { graph.apiKeyStore.clear() } }
+            composable(Routes.ACCOUNT) { AccountPage(back, connect, saveKey) { graph.apiKeyStore.clear() } }
             composable(Routes.DICTATION) { DictationPage(settings, back, change) }
             composable(Routes.LANGUAGES) { LanguagesPage(settings, back, change) }
             composable(Routes.APPEARANCE) { AppearancePage(settings, back, change) }

@@ -70,6 +70,11 @@ class OpenRouterClient(
         return json.decodeFromString<AuthKeyResponse>(post("auth/keys", body, authenticated = false)).key
     }
 
+    override suspend fun keyInfo(): KeyInfo {
+        val data = json.decodeFromString<KeyResponse>(execute(Request.Builder().url(endpoint("key")).get(), authenticated = true)).data
+        return KeyInfo(data.label, data.usage, data.usageMonthly, data.limit, data.limitRemaining, data.limitReset)
+    }
+
     private fun endpoint(path: String): HttpUrl = baseUrl.newBuilder().addPathSegments(path).build()
 
     private suspend fun post(path: String, body: JsonObject, authenticated: Boolean): String =

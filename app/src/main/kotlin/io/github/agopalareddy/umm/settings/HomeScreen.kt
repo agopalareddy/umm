@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AssistChip
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -59,6 +62,19 @@ internal fun HomeScreen(setupComplete: Boolean, onSetup: () -> Unit, onOpen: (St
             IconButton(onClick = { onOpen(Routes.SETTINGS) }) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
         },
     ) {
+        val connected = graph.apiKeyStore.key.collectAsStateWithLifecycle().value != null
+        AssistChip(
+            onClick = { onOpen(Routes.ACCOUNT) },
+            label = { Text(if (connected) "OpenRouter connected" else "OpenRouter not connected") },
+            leadingIcon = {
+                Icon(
+                    if (connected) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                )
+            },
+        )
+        Spacer(Modifier.height(8.dp))
         if (!setupComplete) {
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                 Column(Modifier.padding(16.dp)) {

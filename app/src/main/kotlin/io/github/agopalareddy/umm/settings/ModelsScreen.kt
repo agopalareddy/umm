@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -50,17 +51,13 @@ internal fun ModelsScreen(onBack: () -> Unit) {
             ModelMode.MANUAL to "Choose my own",
         )
         modes.forEach { (mode, label) ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = settings.modelMode == mode, onClick = { scope.launch { graph.settings.update { it.copy(modelMode = mode) } } })
+            RadioRow(selected = settings.modelMode == mode, onClick = { scope.launch { graph.settings.update { it.copy(modelMode = mode) } } }) {
                 Text(label)
             }
         }
         Section("In use") {
             val p = plan
-            if (p == null) Text("Loading…") else {
-                Text("Speech-to-text: ${p.stt.first()}" + (p.stt.getOrNull(1)?.let { " (fallback $it)" } ?: ""))
-                Text("Cleanup: ${p.cleanup.first()}" + (p.cleanup.getOrNull(1)?.let { " (fallback $it)" } ?: ""))
-            }
+            if (p == null) Text("Loading…") else InUseTable(p)
         }
         if (settings.modelMode == ModelMode.MANUAL) {
             ModelPicker("Speech-to-text model", settings.manualSttModel, { graph.modelCatalog.sttModels() }) { id ->
@@ -99,6 +96,37 @@ private fun ModelPicker(title: String, selected: String?, load: suspend () -> Li
                         Column(Modifier.fillMaxWidth().clickable { onPick(m.id) }.padding(vertical = 8.dp)) {
                             Text(m.name, fontWeight = if (m.id == selected) FontWeight.Bold else FontWeight.Normal)
                             Text("${m.id} · input ${m.promptPrice ?: "?"} · output ${m.completionPrice ?: "?"}", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Which models each step uses, primary first. */
+@Composable
+private fun InUseTable(plan: ModelPlan) {
+    androidx.compose.material3.Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Column(Modifier.padding(vertical = 8.dp)) {
+            listOf("Speech-to-text" to plan.stt, "Cleanup" to plan.cleanup).forEachIndexed { index, (step, models) ->
+                if (index > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                Text(
+                    step,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                models.forEachIndexed { i, id ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (i == 0) "Primary" else "Fallback",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.width(72.dp),
+                        )
+                        Column {
+                            Text(id.substringAfter('/'), style = MaterialTheme.typography.bodyLarge, fontWeight = if (i == 0) FontWeight.Medium else FontWeight.Normal)
+                            Text(id.substringBefore('/'), style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }

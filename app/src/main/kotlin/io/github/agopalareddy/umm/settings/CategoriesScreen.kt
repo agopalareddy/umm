@@ -75,16 +75,14 @@ private fun CategoryDetail(config: CategoryConfig) {
             Text("Uses the default level from Settings.", style = MaterialTheme.typography.bodySmall)
         } else {
             CleanupLevel.entries.forEach { level ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = config.level == level, onClick = { scope.launch { repo.update(config.copy(level = level)) } })
+                RadioRow(selected = config.level == level, onClick = { scope.launch { repo.update(config.copy(level = level)) } }) {
                     Text(level.title())
                 }
             }
         }
         Text("Script for mixed languages", style = MaterialTheme.typography.labelLarge)
         ScriptPreference.entries.forEach { script ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = config.script == script, onClick = { scope.launch { repo.update(config.copy(script = script)) } })
+            RadioRow(selected = config.script == script, onClick = { scope.launch { repo.update(config.copy(script = script)) } }) {
                 Text(if (script == ScriptPreference.LATIN) "Latin letters (kal meeting hai)" else "Each language's own script (कल meeting है)")
             }
         }

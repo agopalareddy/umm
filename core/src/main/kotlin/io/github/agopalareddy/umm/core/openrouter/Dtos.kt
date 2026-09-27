@@ -33,3 +33,16 @@ internal data class Pricing(val prompt: String? = null, val completion: String? 
 
 @Serializable
 internal data class AuthKeyResponse(val key: String)
+
+@Serializable
+internal data class KeyResponse(val data: KeyData)
+
+@Serializable
+internal data class KeyData(
+    val label: String = "",
+    val usage: Double = 0.0,
+    @kotlinx.serialization.SerialName("usage_monthly") val usageMonthly: Double? = null,
+    val limit: Double? = null,
+    @kotlinx.serialization.SerialName("limit_remaining") val limitRemaining: Double? = null,
+    @kotlinx.serialization.SerialName("limit_reset") val limitReset: String? = null,
+)

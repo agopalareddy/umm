@@ -2,6 +2,7 @@ package io.github.agopalareddy.umm.core.pipeline
 
 import io.github.agopalareddy.umm.core.audio.AudioSource
 import io.github.agopalareddy.umm.core.openrouter.Completion
+import io.github.agopalareddy.umm.core.openrouter.KeyInfo
 import io.github.agopalareddy.umm.core.openrouter.ModelInfo
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterApi
 import io.github.agopalareddy.umm.core.openrouter.Transcription
@@ -66,4 +67,5 @@ class FakeApi : OpenRouterApi {
 
     override suspend fun listModels(outputModalities: String?): List<ModelInfo> = error("unused")
     override suspend fun exchangeAuthCode(code: String, codeVerifier: String): String = error("unused")
+    override suspend fun keyInfo(): KeyInfo = error("unused")
 }

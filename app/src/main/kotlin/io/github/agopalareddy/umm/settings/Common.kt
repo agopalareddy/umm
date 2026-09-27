@@ -3,6 +3,17 @@ package io.github.agopalareddy.umm.settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -20,7 +31,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.unit.dp
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 
@@ -89,11 +102,60 @@ internal fun Section(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-internal fun NavRow(icon: ImageVector, title: String, summary: String?, onClick: () -> Unit) {
+internal fun NavRow(icon: ImageVector, title: String, summary: String?, onClick: () -> Unit) =
+    NavRow(rememberVectorPainter(icon), title, summary, onClick)
+
+@Composable
+internal fun NavRow(icon: Painter, title: String, summary: String?, onClick: () -> Unit) {
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = summary?.let { { Text(it) } },
         leadingContent = { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
         modifier = Modifier.clickable(onClick = onClick),
     )
+}
+
+// Rows where the whole line, label included, toggles the control.
+
+@Composable
+internal fun RadioRow(selected: Boolean, onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().selectable(selected = selected, onClick = onClick, role = Role.RadioButton).padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Spacer(Modifier.width(12.dp))
+        content()
+    }
+}
+
+@Composable
+internal fun CheckRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit, content: @Composable RowScope.() -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().toggleable(value = checked, onValueChange = onCheckedChange, role = Role.Checkbox).padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null)
+        Spacer(Modifier.width(12.dp))
+        content()
+    }
+}
+
+/** [content] sits before the switch; give it Modifier.weight(1f). */
+@Composable
+internal fun SwitchRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .toggleable(value = checked, enabled = enabled, onValueChange = onCheckedChange, role = Role.Switch)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        content()
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+    }
 }

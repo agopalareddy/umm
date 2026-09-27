@@ -3,6 +3,7 @@ package io.github.agopalareddy.umm.core.policy
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import io.github.agopalareddy.umm.core.data.SettingsRepository
 import io.github.agopalareddy.umm.core.openrouter.Completion
+import io.github.agopalareddy.umm.core.openrouter.KeyInfo
 import io.github.agopalareddy.umm.core.openrouter.ModelInfo
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterApi
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterException
@@ -32,6 +33,7 @@ class ModelCatalogTest {
         override suspend fun transcribe(model: String, audio: ByteArray, format: String, language: String?): Transcription = error("unused")
         override suspend fun complete(model: String, system: String, user: String, temperature: Double): Completion = error("unused")
         override suspend fun exchangeAuthCode(code: String, codeVerifier: String): String = error("unused")
+        override suspend fun keyInfo(): KeyInfo = error("unused")
     }
 
     private fun TestScope.catalog() = ModelCatalog(

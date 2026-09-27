@@ -10,7 +10,20 @@ interface OpenRouterApi {
 
     /** Exchanges an OAuth PKCE authorization code for a user-controlled API key. */
     suspend fun exchangeAuthCode(code: String, codeVerifier: String): String
+
+    /** Details of the key in use, from OpenRouter's GET /key. */
+    suspend fun keyInfo(): KeyInfo
 }
+
+data class KeyInfo(
+    val label: String,
+    val usageUsd: Double,
+    val usageMonthlyUsd: Double?,
+    val limitUsd: Double?,
+    val limitRemainingUsd: Double?,
+    /** e.g. "monthly"; null when the limit never resets or there is none. */
+    val limitReset: String?,
+)
 
 data class Transcription(val text: String, val costUsd: Double?)
 

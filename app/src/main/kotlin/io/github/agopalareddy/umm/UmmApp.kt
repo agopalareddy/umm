@@ -1,6 +1,7 @@
 package io.github.agopalareddy.umm
 
 import android.app.Application
+import io.github.agopalareddy.umm.core.auth.KeySource
 
 class UmmApp : Application() {
     lateinit var graph: AppGraph
@@ -15,6 +16,6 @@ class UmmApp : Application() {
     /** Debug builds start signed in with the developer's key from .env. */
     private fun seedDebugKey() {
         val debugKey = BuildConfig.DEBUG_OPENROUTER_API_KEY
-        if (debugKey.isNotEmpty() && graph.apiKeyStore.get() == null) graph.apiKeyStore.set(debugKey)
+        if (debugKey.isNotEmpty() && graph.apiKeyStore.get() == null) graph.apiKeyStore.set(debugKey, KeySource.DEVELOPER)
     }
 }
