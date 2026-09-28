@@ -1,6 +1,7 @@
 package io.github.agopalareddy.umm.settings
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -62,7 +64,7 @@ internal fun ModelsScreen(onBack: () -> Unit) {
     val account = policy
     val p = account?.withAppChoice(settings.zdrOnly)
     var checking by remember { mutableStateOf(false) }
-    var zdrDialog by remember { mutableStateOf<String?>(null) }
+    var zdrDialog by remember { mutableStateOf<ZdrCheck?>(null) }
     /** Turning ZDR off re-checks the account, since OpenRouter may still require it. */
     fun turnZdrOff() {
         checking = true
@@ -71,9 +73,8 @@ internal fun ModelsScreen(onBack: () -> Unit) {
             graph.settings.update { it.copy(zdrOnly = false) }
             checking = false
             zdrDialog = when (stillRequired) {
-                true -> "Your OpenRouter account still requires zero data retention, so Umm has to keep using ZDR models. " +
-                    "Turn it off in OpenRouter's privacy settings first, then try again."
-                null -> "Couldn't reach OpenRouter to check your account. Try again in a moment."
+                true -> ZdrCheck.STILL_REQUIRED
+                null -> ZdrCheck.UNREACHABLE
                 false -> null
             }
         }
@@ -98,7 +99,7 @@ internal fun ModelsScreen(onBack: () -> Unit) {
                 Text("Zero data retention only")
                 val note = when {
                     checking -> "Checking your OpenRouter account…"
-                    accountRequires -> "Required by your OpenRouter account"
+                    accountRequires -> "Required by your OpenRouter account. Changes there take a few minutes to reach Umm."
                     else -> null
                 }
                 if (note != null) Text(note, style = MaterialTheme.typography.bodySmall)
@@ -140,7 +141,7 @@ internal fun ModelsScreen(onBack: () -> Unit) {
             }
         }
     }
-    zdrDialog?.let { message -> ZdrStillRequired(message) { zdrDialog = null } }
+    zdrDialog?.let { check -> ZdrStillRequired(check) { zdrDialog = null } }
     warning?.let { w ->
         AlertDialog(
             onDismissRequest = { warning = null },
@@ -159,13 +160,36 @@ internal fun ModelsScreen(onBack: () -> Unit) {
 
 private class ZdrWarning(val model: String, val proceed: () -> Unit)
 
+private enum class ZdrCheck { STILL_REQUIRED, UNREACHABLE }
+
 @Composable
-private fun ZdrStillRequired(message: String, onDismiss: () -> Unit) {
+private fun ZdrStillRequired(check: ZdrCheck, onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Zero data retention is still on") },
-        text = { Text(message) },
+        title = { Text(if (check == ZdrCheck.STILL_REQUIRED) "Zero data retention is still on" else "Couldn't check") },
+        text = {
+            if (check == ZdrCheck.UNREACHABLE) {
+                Text("Couldn't reach OpenRouter to check your account. Try again in a moment.")
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Your OpenRouter account still requires zero data retention, so Umm has to keep using ZDR " +
+                            "models. Turn it off in OpenRouter's privacy settings first, then try again.",
+                    )
+                    // OpenRouter takes a while to apply the change, which looks like this check being wrong.
+                    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium) {
+                        Text(
+                            "Just turned it off? OpenRouter can take a few minutes to apply the change. " +
+                                "Wait a bit, then try again.",
+                            modifier = Modifier.padding(12.dp),
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+        },
         confirmButton = {
             TextButton(onClick = {
                 onDismiss()
