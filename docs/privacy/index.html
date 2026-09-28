@@ -29,8 +29,9 @@ provider, such as OpenAI, Mistral, or Google, to do the work. Umm sends these re
 so they fall under your agreement with OpenRouter and its
 <a href="https://openrouter.ai/privacy">privacy policy</a>.</p>
 <p>If a recording contains no speech, Umm discards it on the phone and sends nothing.</p>
-<p>If you turn on zero data retention in your OpenRouter account's privacy settings, OpenRouter only uses providers
-that do not keep your data, and Umm switches to models that support this.</p>
+<p>If you turn on zero data retention in your OpenRouter account's privacy settings, or choose "Zero data retention
+only" in Umm, Umm only uses models from providers that do not keep your data. To detect the account setting, Umm
+sends OpenRouter a few bytes of invalid audio; it contains nothing from your microphone.</p>
 <p>Umm also asks OpenRouter for your key's name, spending, and credit limit to show them on the Account page, and
 for the list of available models.</p>
 
@@ -73,8 +74,12 @@ and delete in OpenRouter's key settings.</p>
 changes is public in the <a href="https://github.com/agopalareddy/umm/commits/main/docs/privacy/index.html">project
 repository</a>.</p>
 
+<h2>Reporting output</h2>
+<p>The History screen has a Report button for AI-written text that is offensive or wrong. It opens your email app
+with the transcript and the cleaned text addressed to the developer. Nothing is sent unless you send that email.</p>
+
 <h2>Contact</h2>
-<p>Questions about this policy: open an issue at
+<p>Email <a href="mailto:adurs2002@gmail.com">adurs2002@gmail.com</a>, or open an issue at
 <a href="https://github.com/agopalareddy/umm/issues">github.com/agopalareddy/umm/issues</a>.</p>
 </body>
 </html>

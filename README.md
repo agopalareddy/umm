@@ -116,8 +116,9 @@ A short dictation typically appears 1.2 to 1.8 seconds after you stop speaking.
 The full [privacy policy](https://agopalareddy.github.io/umm/privacy/) is short. In summary:
 
 - Umm has no server, account, analytics, or tracking.
-- Audio and text go only to OpenRouter, with your key. If your OpenRouter account enforces zero data retention,
-  Umm detects it, tells you, and switches to models that honor it.
+- Audio and text go only to OpenRouter, with your key. Turn on "Zero data retention only" in Settings → Models to
+  use only providers that don't keep your data. If your OpenRouter account already requires it, Umm detects that,
+  tells you, and switches automatically.
 - Your key is encrypted on the phone with an Android Keystore key and is never logged.
 - History, stats, and any audio kept for a retry stay on the phone. Retry audio is deleted once it succeeds, or
   after 7 days.
@@ -134,7 +135,7 @@ You need JDK 17 and the Android SDK.
 
 ## Maintainers
 
-[@agopalareddy](https://github.com/agopalareddy)
+[@agopalareddy](https://github.com/agopalareddy) · [adurs2002@gmail.com](mailto:adurs2002@gmail.com)
 
 ## Contributing
 
