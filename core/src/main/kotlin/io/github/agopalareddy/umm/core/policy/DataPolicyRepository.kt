@@ -32,10 +32,19 @@ class DataPolicyRepository(
     suspend fun refresh(rec: Recommendation, force: Boolean) {
         val last = settings.readCache(ENFORCED)
         if (!force && last != null && clock() - last.second < MAX_AGE_MS) return
+        recheck(rec)
+    }
+
+    /**
+     * Checks the account now. Returns whether it enforces ZDR, or null if the check failed (the last answer stays).
+     * When every recommended speech model has a ZDR endpoint, the setting cannot get in the way, so it counts as off.
+     */
+    suspend fun recheck(rec: Recommendation): Boolean? {
         val zdr = zdrModels()
-        val target = listOf(rec.stt.primary, rec.stt.fallback).firstOrNull { zdr.isEmpty() || it !in zdr } ?: return
-        val blocked = api.blockedByDataPolicy(target) ?: return
+        val target = listOf(rec.stt.primary, rec.stt.fallback).firstOrNull { zdr.isEmpty() || it !in zdr }
+        val blocked = if (target == null) false else api.blockedByDataPolicy(target) ?: return null
         setEnforced(blocked)
+        return blocked
     }
 
     /** A real dictation was refused because of the data policy. */

@@ -81,4 +81,34 @@ class DataPolicyRepositoryTest {
     private companion object {
         const val DAY = 24L * 3600 * 1000
     }
+
+    @Test fun recheckClearsEnforcementOnceTheAccountAllowsItAgain() = runTest {
+        val repo = repo()
+        repo.markEnforced()
+        api.probeResult = false
+        assertEquals(false, repo.recheck(rec))
+        assertFalse(repo.current().enforced)
+    }
+
+    @Test fun recheckReportsStillEnforced() = runTest {
+        val repo = repo()
+        api.probeResult = true
+        assertEquals(true, repo.recheck(rec))
+    }
+
+    @Test fun recheckIsInconclusiveWhenTheProbeFails() = runTest {
+        val repo = repo()
+        repo.markEnforced()
+        api.probeResult = null
+        assertEquals(null, repo.recheck(rec))
+        assertTrue(repo.current().enforced)
+    }
+
+    @Test fun nothingToProbeMeansNotRestricted() = runTest {
+        api.zdrList = setOf("stt/p", "stt/f")
+        val repo = repo()
+        repo.markEnforced()
+        assertEquals(false, repo.recheck(rec))
+        assertFalse(repo.current().enforced)
+    }
 }

@@ -83,4 +83,22 @@ class ModelSelectorTest {
         assertEquals(true, DataPolicy(enforced = false, zdrModels = zdrCapable).allows("stt/p"))
         assertEquals(true, DataPolicy(enforced = true, zdrModels = emptySet()).allows("anything")) // unknown: don't gray out
     }
+
+    @Test fun zdrChosenInTheAppRestrictsLikeTheAccountSetting() {
+        val notEnforced = DataPolicy(enforced = false, zdrModels = zdrCapable)
+        val plan = ModelSelector.plan(UmmSettings(zdrOnly = true), rec, live, notEnforced)
+        assertEquals(listOf("stt/f", "stt/zp"), plan.stt)
+    }
+
+    @Test fun zdrChosenInTheAppWithoutAnyPolicyInfoUsesTheCuratedSet() {
+        val plan = ModelSelector.plan(UmmSettings(zdrOnly = true), rec, live, null)
+        assertEquals(listOf("stt/zp", "stt/zf"), plan.stt)
+    }
+
+    @Test fun effectivePolicyCombinesAccountAndAppChoice() {
+        val account = DataPolicy(enforced = false, zdrModels = zdrCapable)
+        assertEquals(true, account.withAppChoice(zdrOnly = true).enforced)
+        assertEquals(false, account.withAppChoice(zdrOnly = false).enforced)
+        assertEquals(true, enforced.withAppChoice(zdrOnly = false).enforced)
+    }
 }

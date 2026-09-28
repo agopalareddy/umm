@@ -29,6 +29,8 @@ data class UmmSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     /** Material You colors from the wallpaper (Android 12+). */
     val dynamicColor: Boolean = true,
+    /** Use only zero data retention models, even if the OpenRouter account doesn't require it. */
+    val zdrOnly: Boolean = false,
 )
 
 class SettingsRepository(private val dataStore: DataStore<Preferences>) {
@@ -49,6 +51,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
             next.manualCleanupModel?.let { prefs[MANUAL_CLEANUP] = it } ?: prefs.remove(MANUAL_CLEANUP)
             prefs[THEME_MODE] = next.themeMode.name
             prefs[DYNAMIC_COLOR] = next.dynamicColor
+            prefs[ZDR_ONLY] = next.zdrOnly
         }
     }
 
@@ -87,6 +90,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
             manualCleanupModel = this[MANUAL_CLEANUP],
             themeMode = this[THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: defaults.themeMode,
             dynamicColor = this[DYNAMIC_COLOR] ?: defaults.dynamicColor,
+            zdrOnly = this[ZDR_ONLY] ?: defaults.zdrOnly,
         )
     }
 
@@ -104,6 +108,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         val MANUAL_CLEANUP = stringPreferencesKey("manual_cleanup_model")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        val ZDR_ONLY = booleanPreferencesKey("zdr_only")
         fun cacheKey(name: String) = stringPreferencesKey("cache_$name")
         fun cacheTimeKey(name: String) = longPreferencesKey("cache_${name}_at")
     }

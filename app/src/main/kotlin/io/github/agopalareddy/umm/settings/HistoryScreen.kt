@@ -69,6 +69,8 @@ private fun HistoryCard(item: HistoryItem) {
     val graph = context.graph
     val scope = rememberCoroutineScope()
     var levelMenu by remember { mutableStateOf(false) }
+    var reporting by remember { mutableStateOf(false) }
+    if (reporting) ReportDialog(item) { reporting = false }
     val text = item.cleanText ?: item.rawText
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
@@ -97,6 +99,7 @@ private fun HistoryCard(item: HistoryItem) {
                 if (item.status == HistoryStatus.FAILED && item.audioPath != null) {
                     TextButton(onClick = { graph.pipeline.reset(); graph.pipeline.retry(item.id) }) { Text("Retry") }
                 }
+                if (item.cleanText != null) TextButton(onClick = { reporting = true }) { Text("Report") }
                 TextButton(onClick = { scope.launch { graph.history.delete(item.id) } }) { Text("Delete") }
             }
         }
@@ -108,4 +111,61 @@ private fun HistoryStatus.label() = when (this) {
     HistoryStatus.DONE -> "Done"
     HistoryStatus.CLEANUP_FAILED -> "Cleanup failed"
     HistoryStatus.FAILED -> "Failed"
+}
+
+private val REPORT_REASONS = listOf("Offensive or harmful", "Made-up or wrong content", "Something else")
+
+/** Lets people flag AI-written output to the developer. There is no Umm server, so it goes by email. */
+@Composable
+private fun ReportDialog(item: HistoryItem, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val graph = context.graph
+    var reason by remember { mutableStateOf(REPORT_REASONS.first()) }
+    var comment by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Report this output") },
+        text = {
+            Column {
+                REPORT_REASONS.forEach { r -> RadioRow(selected = reason == r, onClick = { reason = r }) { Text(r) } }
+                androidx.compose.material3.OutlinedTextField(
+                    value = comment,
+                    onValueChange = { comment = it },
+                    label = { Text("Details (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Sends what you said and what Umm wrote to $SUPPORT_EMAIL from your email app.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                scope.launch {
+                    val stats = graph.stats.get(item.id)
+                    val body = buildString {
+                        appendLine("Reason: $reason")
+                        if (comment.isNotBlank()) appendLine("Details: $comment")
+                        appendLine()
+                        appendLine("What I said (transcript): ${item.rawText.orEmpty()}")
+                        appendLine("What Umm wrote: ${item.cleanText.orEmpty()}")
+                        appendLine()
+                        appendLine("Level: ${item.level.title()} · Speech model: ${stats?.sttModel ?: "?"} · Cleanup model: ${stats?.cleanupModel ?: "?"}")
+                        appendLine("Umm ${io.github.agopalareddy.umm.BuildConfig.VERSION_NAME} · Android ${android.os.Build.VERSION.RELEASE}")
+                    }
+                    val mail = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:"))
+                        .putExtra(android.content.Intent.EXTRA_EMAIL, arrayOf(SUPPORT_EMAIL))
+                        .putExtra(android.content.Intent.EXTRA_SUBJECT, "Umm: reported output ($reason)")
+                        .putExtra(android.content.Intent.EXTRA_TEXT, body)
+                    runCatching { context.startActivity(mail) }
+                        .onFailure { Toast.makeText(context, "No email app found. Write to $SUPPORT_EMAIL.", Toast.LENGTH_LONG).show() }
+                    onDismiss()
+                }
+            }) { Text("Send report") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

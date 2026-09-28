@@ -69,7 +69,7 @@ internal fun SettingsHome(settings: UmmSettings, keyConnected: Boolean, onBack: 
         val languages = settings.keyboardLanguages.joinToString { LANGUAGES[it] ?: it }
         NavRow(painterResource(R.drawable.ic_translate), "Languages", languages) { onOpen(Routes.LANGUAGES) }
         NavRow(Icons.Default.List, "App categories", "Cleanup level and script per app") { onOpen(Routes.CATEGORIES) }
-        NavRow(Icons.Default.Build, "Models", settings.modelMode.label()) { onOpen(Routes.MODELS) }
+        NavRow(Icons.Default.Build, "Models", settings.modelMode.label() + if (settings.zdrOnly) " · zero data retention" else "") { onOpen(Routes.MODELS) }
         NavRow(Icons.Default.Star, "Appearance", settings.themeMode.label() + if (settings.dynamicColor) " · dynamic theme" else "") { onOpen(Routes.APPEARANCE) }
         val context = LocalContext.current
         NavRow(Icons.Default.Info, "About", "Version ${BuildConfig.VERSION_NAME} · source on GitHub") {
@@ -124,7 +124,7 @@ internal fun AccountPage(onBack: () -> Unit, onConnect: () -> Unit, onPasteKey: 
     }
 }
 
-private const val OPENROUTER_KEYS_URL = "https://openrouter.ai/settings/keys"
+internal const val OPENROUTER_KEYS_URL = "https://openrouter.ai/settings/keys"
 internal const val PRIVACY_POLICY_URL = "https://agopalareddy.github.io/umm/privacy/"
 
 internal sealed interface KeyCheck {
@@ -190,7 +190,7 @@ internal fun ConnectionCard(key: String?, check: KeyCheck) {
                 is KeyCheck.Ok -> {
                     InfoRow("Status", "Working")
                     val zdr by LocalContext.current.graph.dataPolicy.observe().collectAsStateWithLifecycle(null)
-                    if (zdr?.enforced == true) InfoRow("Data policy", "Zero data retention only")
+                    if (zdr?.enforced == true) InfoRow("Data policy", "Zero data retention required")
                     if (check.info.label.isNotBlank() && !check.info.label.startsWith("sk-")) InfoRow("Name", check.info.label)
                     check.info.usageMonthlyUsd?.let { InfoRow("Spent this month", usd(it)) }
                     InfoRow("Spent in total", usd(check.info.usageUsd))

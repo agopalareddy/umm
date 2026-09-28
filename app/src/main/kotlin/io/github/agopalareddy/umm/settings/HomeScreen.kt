@@ -227,7 +227,7 @@ private fun ZdrNotice(plan: ModelPlan?) {
         dismissButton = {
             TextButton(onClick = {
                 acknowledge()
-                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://openrouter.ai/settings/privacy")))
+                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(OPENROUTER_PRIVACY_URL)))
             }) { Text("Privacy settings") }
         },
     )

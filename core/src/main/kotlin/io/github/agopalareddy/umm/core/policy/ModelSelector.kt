@@ -21,6 +21,9 @@ data class Recommendation(val schema: Int, val stt: ModelPair, val cleanup: Mode
 /** What the account's data policy allows. An empty [zdrModels] means the list is unknown. */
 data class DataPolicy(val enforced: Boolean, val zdrModels: Set<String>) {
     fun allows(modelId: String): Boolean = !enforced || zdrModels.isEmpty() || modelId in zdrModels
+
+    /** ZDR applies when the account requires it or the user chose it in Umm. */
+    fun withAppChoice(zdrOnly: Boolean): DataPolicy = if (zdrOnly) copy(enforced = true) else this
 }
 
 /** Models to try, in order, for each pipeline step. */
@@ -29,10 +32,11 @@ data class ModelPlan(val stt: List<String>, val cleanup: List<String>)
 object ModelSelector {
     fun plan(settings: UmmSettings, rec: Recommendation, liveStt: List<ModelInfo>?, policy: DataPolicy? = null): ModelPlan {
         val plan = unrestricted(settings, rec, liveStt)
-        if (policy == null || !policy.enforced) return ModelPlan(plan.stt.take(2), plan.cleanup.take(2))
+        val effective = (policy ?: DataPolicy(enforced = false, zdrModels = emptySet())).withAppChoice(settings.zdrOnly)
+        if (!effective.enforced) return ModelPlan(plan.stt.take(2), plan.cleanup.take(2))
         return ModelPlan(
-            stt = restrict(plan.stt, rec.zdr?.stt, policy),
-            cleanup = restrict(plan.cleanup, rec.zdr?.cleanup, policy),
+            stt = restrict(plan.stt, rec.zdr?.stt, effective),
+            cleanup = restrict(plan.cleanup, rec.zdr?.cleanup, effective),
         )
     }
 

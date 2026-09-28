@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -57,8 +59,26 @@ internal fun ModelsScreen(onBack: () -> Unit) {
         rec = runCatching { graph.recommendations.current() }.getOrNull()
         newestStt = graph.modelCatalog.sttModels()?.maxByOrNull { it.createdEpochSec }?.id
     }
-    val p = policy
-    /** The model that stops [mode] from working with this account's data policy, if any. */
+    val account = policy
+    val p = account?.withAppChoice(settings.zdrOnly)
+    var checking by remember { mutableStateOf(false) }
+    var zdrDialog by remember { mutableStateOf<String?>(null) }
+    /** Turning ZDR off re-checks the account, since OpenRouter may still require it. */
+    fun turnZdrOff() {
+        checking = true
+        scope.launch {
+            val stillRequired = rec?.let { graph.dataPolicy.recheck(it) }
+            graph.settings.update { it.copy(zdrOnly = false) }
+            checking = false
+            zdrDialog = when (stillRequired) {
+                true -> "Your OpenRouter account still requires zero data retention, so Umm has to keep using ZDR models. " +
+                    "Turn it off in OpenRouter's privacy settings first, then try again."
+                null -> "Couldn't reach OpenRouter to check your account. Try again in a moment."
+                false -> null
+            }
+        }
+    }
+    /** The model that stops [mode] from working with the data policy, if any. */
     fun blockedModel(mode: ModelMode): String? = if (p == null || !p.enforced) null else when (mode) {
         ModelMode.RECOMMENDED -> rec?.let { r -> listOf(r.stt.primary, r.cleanup.primary).firstOrNull { !p.allows(it) } }
         ModelMode.NEWEST_STT -> newestStt?.takeIf { !p.allows(it) }
@@ -66,16 +86,25 @@ internal fun ModelsScreen(onBack: () -> Unit) {
     }
 
     Page("Models", onBack) {
-        if (p?.enforced == true) {
-            androidx.compose.material3.Card(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                Text(
-                    "Your OpenRouter account only allows providers with zero data retention (ZDR), so Umm uses models " +
-                        "that support it.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(12.dp),
-                )
+        val accountRequires = account?.enforced == true
+        SwitchRow(
+            checked = settings.zdrOnly || accountRequires,
+            enabled = !checking,
+            onCheckedChange = { on ->
+                if (on) scope.launch { graph.settings.update { it.copy(zdrOnly = true) } } else turnZdrOff()
+            },
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Zero data retention only")
+                val note = when {
+                    checking -> "Checking your OpenRouter account…"
+                    accountRequires -> "Required by your OpenRouter account"
+                    else -> null
+                }
+                if (note != null) Text(note, style = MaterialTheme.typography.bodySmall)
             }
         }
+        Spacer(Modifier.height(8.dp))
         val modes = listOf(
             ModelMode.RECOMMENDED to "Recommended (updated by Umm)",
             ModelMode.NEWEST_STT to "Always the newest speech-to-text model",
@@ -111,14 +140,15 @@ internal fun ModelsScreen(onBack: () -> Unit) {
             }
         }
     }
+    zdrDialog?.let { message -> ZdrStillRequired(message) { zdrDialog = null } }
     warning?.let { w ->
         AlertDialog(
             onDismissRequest = { warning = null },
             title = { Text("Not available with zero data retention") },
             text = {
                 Text(
-                    "${w.model} has no provider that meets your OpenRouter account's zero data retention setting. " +
-                        "If you pick it anyway, Umm keeps using ZDR models instead.",
+                    "${w.model} has no provider with zero data retention. If you pick it anyway, Umm keeps using " +
+                        "ZDR models instead.",
                 )
             },
             confirmButton = { TextButton(onClick = { warning = null; w.proceed() }) { Text("Pick anyway") } },
@@ -128,6 +158,23 @@ internal fun ModelsScreen(onBack: () -> Unit) {
 }
 
 private class ZdrWarning(val model: String, val proceed: () -> Unit)
+
+@Composable
+private fun ZdrStillRequired(message: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Zero data retention is still on") },
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(OPENROUTER_PRIVACY_URL)))
+            }) { Text("Open OpenRouter settings") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+    )
+}
 
 @Composable
 private fun ModelPicker(
