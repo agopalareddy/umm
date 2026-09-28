@@ -1,20 +1,25 @@
 package io.github.agopalareddy.umm.core.data
 
 import android.content.Context
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
+import io.github.agopalareddy.umm.core.stats.StatsDao
+import io.github.agopalareddy.umm.core.stats.StatsEntry
 
 @Database(
-    entities = [CategoryEntity::class, AppAssignmentEntity::class, HistoryEntity::class],
-    version = 1,
+    entities = [CategoryEntity::class, AppAssignmentEntity::class, HistoryEntity::class, StatsEntry::class],
+    version = 2,
     exportSchema = true,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 abstract class UmmDatabase : RoomDatabase() {
     internal abstract fun categoryDao(): CategoryDao
     internal abstract fun historyDao(): HistoryDao
+    internal abstract fun statsDao(): StatsDao
 
     companion object {
         fun build(context: Context): UmmDatabase =

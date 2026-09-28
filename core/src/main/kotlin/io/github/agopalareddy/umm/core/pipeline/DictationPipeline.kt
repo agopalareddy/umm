@@ -9,9 +9,13 @@ import io.github.agopalareddy.umm.core.cleanup.LanguageChoice
 import io.github.agopalareddy.umm.core.cleanup.PromptBuilder
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
 import io.github.agopalareddy.umm.core.data.HistoryRepository
+import io.github.agopalareddy.umm.core.openrouter.Completion
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterApi
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterException
 import io.github.agopalareddy.umm.core.policy.ModelPlan
+import io.github.agopalareddy.umm.core.stats.StatsEntry
+import io.github.agopalareddy.umm.core.stats.StatsRepository
+import io.github.agopalareddy.umm.core.stats.TextStats
 import java.io.File
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
@@ -34,6 +38,9 @@ class DictationPipeline(
     private val history: HistoryRepository,
     private val audioDir: File,
     private val retryDelayMs: (retryAfterSec: Long?) -> Long = { (it ?: 2) * 1000 },
+    private val stats: StatsRepository? = null,
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val onDataPolicyBlocked: suspend () -> Unit = {},
 ) {
     private val _state = MutableStateFlow<DictationState>(DictationState.Idle)
     val state: StateFlow<DictationState> = _state.asStateFlow()
@@ -95,7 +102,8 @@ class DictationPipeline(
                 _state.value = DictationState.Failed(historyId, FailureReason.UNKNOWN, origin)
                 return@launch
             }
-            process(historyId, file, item.level, item.script, LanguageChoice.decode(item.language), origin)
+            val audioMs = stats?.get(historyId)?.audioMs ?: 0
+            process(historyId, file, item.level, item.script, LanguageChoice.decode(item.language), origin, item.packageName, audioMs)
         }
     }
 
@@ -103,7 +111,7 @@ class DictationPipeline(
     suspend fun reclean(historyId: Long, level: CleanupLevel, script: ScriptPreference): String {
         val item = requireNotNull(history.get(historyId)) { "no history item $historyId" }
         val raw = requireNotNull(item.rawText) { "history item $historyId has no transcript" }
-        val clean = if (level == CleanupLevel.RAW) raw else cleanup(plan().cleanup, raw, level, script, LanguageChoice.decode(item.language))
+        val clean = if (level == CleanupLevel.RAW) raw else cleanup(plan().cleanup, raw, level, script, LanguageChoice.decode(item.language)).second.text.trim()
         history.updateClean(historyId, level, clean)
         return clean
     }
@@ -161,7 +169,7 @@ class DictationPipeline(
                 val id = history.createPending(
                     request.packageName, request.level, request.script, request.language.encode(), file.path,
                 )
-                process(id, file, request.level, request.script, request.language, request.origin)
+                process(id, file, request.level, request.script, request.language, request.origin, request.packageName, elapsedMs)
             }
         }
     }
@@ -173,19 +181,28 @@ class DictationPipeline(
         script: ScriptPreference,
         language: LanguageChoice,
         origin: Long,
+        packageName: String,
+        audioMs: Long,
     ) {
         _state.value = DictationState.Transcribing
+        val startedAt = clock()
         val models: ModelPlan
+        val sttModel: String
+        var costUsd: Double? = null
         val raw = try {
             models = plan()
             val bytes = withContext(Dispatchers.IO) { file.readBytes() }
             val code = (language as? LanguageChoice.Fixed)?.iso639_1
-            withFallback(models.stt) { model -> api.transcribe(model, bytes, AUDIO_FORMAT, code) }.text.trim()
+            val (model, transcription) = withFallback(models.stt) { model -> api.transcribe(model, bytes, AUDIO_FORMAT, code) }
+            sttModel = model
+            costUsd = transcription.costUsd
+            transcription.text.trim()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             val reason = FailureReason.of(e)
             history.markFailed(id, reason.name)
+            recordStats(id, packageName, requestedLevel, raw = "", clean = "", audioMs, latencyMs = null, costUsd, null, null, succeeded = false)
             _state.value = DictationState.Failed(id, reason, origin)
             return
         }
@@ -198,20 +215,23 @@ class DictationPipeline(
         val level = levelOverride ?: requestedLevel
         if (level == CleanupLevel.RAW) {
             finish(id, raw, null, level, requestedLevel)
+            recordStats(id, packageName, level, raw, raw, audioMs, clock() - startedAt, costUsd, sttModel, null, succeeded = true)
             _state.value = DictationState.Done(id, raw, cleanupFailed = false, origin = origin)
             return
         }
 
         _state.value = DictationState.Cleaning
-        val clean = try {
+        val (cleanupModel, completion) = try {
             cleanup(models.cleanup, raw, level, script, language)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             history.markCleanupFailed(id, raw, FailureReason.of(e).name)
+            recordStats(id, packageName, level, raw, raw, audioMs, clock() - startedAt, costUsd, sttModel, null, succeeded = true)
             _state.value = DictationState.Done(id, raw, cleanupFailed = true, origin = origin)
             return
         }
+        val clean = completion.text.trim()
         if (clean.isEmpty()) {
             // The cleanup model found only filler.
             history.delete(id)
@@ -219,7 +239,41 @@ class DictationPipeline(
             return
         }
         finish(id, raw, clean, level, requestedLevel)
+        val totalCost = if (costUsd == null && completion.costUsd == null) null else (costUsd ?: 0.0) + (completion.costUsd ?: 0.0)
+        recordStats(id, packageName, level, raw, clean, audioMs, clock() - startedAt, totalCost, sttModel, cleanupModel, succeeded = true)
         _state.value = DictationState.Done(id, clean, cleanupFailed = false, origin = origin)
+    }
+
+    private suspend fun recordStats(
+        id: Long,
+        packageName: String,
+        level: CleanupLevel,
+        raw: String,
+        clean: String,
+        audioMs: Long,
+        latencyMs: Long?,
+        costUsd: Double?,
+        sttModel: String?,
+        cleanupModel: String?,
+        succeeded: Boolean,
+    ) {
+        stats?.record(
+            StatsEntry(
+                historyId = id,
+                createdAt = clock(),
+                packageName = packageName,
+                level = level,
+                rawWords = TextStats.words(raw),
+                cleanWords = TextStats.words(clean),
+                fillerWords = TextStats.fillers(raw),
+                audioMs = audioMs,
+                latencyMs = latencyMs,
+                costUsd = costUsd,
+                sttModel = sttModel,
+                cleanupModel = cleanupModel,
+                succeeded = succeeded,
+            ),
+        )
     }
 
     private suspend fun finish(id: Long, raw: String, clean: String?, level: CleanupLevel, requestedLevel: CleanupLevel) {
@@ -233,22 +287,22 @@ class DictationPipeline(
         level: CleanupLevel,
         script: ScriptPreference,
         language: LanguageChoice,
-    ): String {
+    ): Pair<String, Completion> {
         val system = PromptBuilder.systemPrompt(level, script, language)
         return withFallback(models) { model ->
             api.complete(model, system, PromptBuilder.userMessage(raw), TEMPERATURE)
-        }.trim()
+        }
     }
 
     /**
      * Tries each model in order. A rate limit retries the same model once; a model-level error moves to the next model;
      * anything else (auth, credits, network) fails immediately.
      */
-    private suspend fun <T> withFallback(models: List<String>, call: suspend (String) -> T): T {
+    private suspend fun <T> withFallback(models: List<String>, call: suspend (String) -> T): Pair<String, T> {
         var last: OpenRouterException? = null
         for (model in models) {
             try {
-                return try {
+                return model to try {
                     call(model)
                 } catch (e: OpenRouterException.RateLimited) {
                     delay(retryDelayMs(e.retryAfterSec))
@@ -256,7 +310,11 @@ class DictationPipeline(
                 }
             } catch (e: OpenRouterException) {
                 when (e) {
-                    is OpenRouterException.ModelUnavailable, is OpenRouterException.Unexpected -> last = e
+                    is OpenRouterException.ModelUnavailable -> {
+                        if (e.blockedByDataPolicy) onDataPolicyBlocked()
+                        last = e
+                    }
+                    is OpenRouterException.Unexpected -> last = e
                     else -> throw e
                 }
             }

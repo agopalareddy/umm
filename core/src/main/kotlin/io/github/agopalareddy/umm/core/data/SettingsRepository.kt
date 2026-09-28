@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.map
 
 enum class ModelMode { RECOMMENDED, NEWEST_STT, MANUAL }
 
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
 data class UmmSettings(
     val defaultLevel: CleanupLevel = CleanupLevel.LIGHT,
     /** Seconds of silence before auto-stop, 1..10; null means Off. */
@@ -24,6 +26,11 @@ data class UmmSettings(
     val modelMode: ModelMode = ModelMode.RECOMMENDED,
     val manualSttModel: String? = null,
     val manualCleanupModel: String? = null,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /** Material You colors from the wallpaper (Android 12+). */
+    val dynamicColor: Boolean = true,
+    /** Use only zero data retention models, even if the OpenRouter account doesn't require it. */
+    val zdrOnly: Boolean = false,
 )
 
 class SettingsRepository(private val dataStore: DataStore<Preferences>) {
@@ -42,6 +49,9 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
             prefs[MODEL_MODE] = next.modelMode.name
             next.manualSttModel?.let { prefs[MANUAL_STT] = it } ?: prefs.remove(MANUAL_STT)
             next.manualCleanupModel?.let { prefs[MANUAL_CLEANUP] = it } ?: prefs.remove(MANUAL_CLEANUP)
+            prefs[THEME_MODE] = next.themeMode.name
+            prefs[DYNAMIC_COLOR] = next.dynamicColor
+            prefs[ZDR_ONLY] = next.zdrOnly
         }
     }
 
@@ -49,6 +59,10 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         val prefs = dataStore.data.first()
         val json = prefs[cacheKey(name)] ?: return null
         return json to (prefs[cacheTimeKey(name)] ?: 0L)
+    }
+
+    fun observeCache(name: String): Flow<Pair<String, Long>?> = dataStore.data.map { prefs ->
+        prefs[cacheKey(name)]?.let { it to (prefs[cacheTimeKey(name)] ?: 0L) }
     }
 
     suspend fun writeCache(name: String, json: String, savedAt: Long) {
@@ -74,6 +88,9 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
             modelMode = this[MODEL_MODE]?.let { runCatching { ModelMode.valueOf(it) }.getOrNull() } ?: defaults.modelMode,
             manualSttModel = this[MANUAL_STT],
             manualCleanupModel = this[MANUAL_CLEANUP],
+            themeMode = this[THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: defaults.themeMode,
+            dynamicColor = this[DYNAMIC_COLOR] ?: defaults.dynamicColor,
+            zdrOnly = this[ZDR_ONLY] ?: defaults.zdrOnly,
         )
     }
 
@@ -89,6 +106,9 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         val MODEL_MODE = stringPreferencesKey("model_mode")
         val MANUAL_STT = stringPreferencesKey("manual_stt_model")
         val MANUAL_CLEANUP = stringPreferencesKey("manual_cleanup_model")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
+        val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        val ZDR_ONLY = booleanPreferencesKey("zdr_only")
         fun cacheKey(name: String) = stringPreferencesKey("cache_$name")
         fun cacheTimeKey(name: String) = longPreferencesKey("cache_${name}_at")
     }

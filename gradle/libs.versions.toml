@@ -17,6 +17,7 @@ junit = "4.13.2"
 robolectric = "4.17"
 androidxTestCore = "1.7.0"
 turbine = "1.2.1"
+materialIcons = "1.7.8"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -28,6 +29,7 @@ androidx-browser = { module = "androidx.browser:browser", version.ref = "browser
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
 compose-ui = { module = "androidx.compose.ui:ui" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
+compose-material-icons-core = { module = "androidx.compose.material:material-icons-core", version.ref = "materialIcons" }
 compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }

@@ -9,7 +9,7 @@ internal data class TranscriptionResponse(val text: String, val usage: Usage? = 
 internal data class Usage(val cost: Double? = null)
 
 @Serializable
-internal data class ChatResponse(val choices: List<Choice>)
+internal data class ChatResponse(val choices: List<Choice>, val usage: Usage? = null)
 
 @Serializable
 internal data class Choice(val message: ChatMessage)
@@ -33,3 +33,22 @@ internal data class Pricing(val prompt: String? = null, val completion: String? 
 
 @Serializable
 internal data class AuthKeyResponse(val key: String)
+
+@Serializable
+internal data class KeyResponse(val data: KeyData)
+
+@Serializable
+internal data class KeyData(
+    val label: String = "",
+    val usage: Double = 0.0,
+    @kotlinx.serialization.SerialName("usage_monthly") val usageMonthly: Double? = null,
+    val limit: Double? = null,
+    @kotlinx.serialization.SerialName("limit_remaining") val limitRemaining: Double? = null,
+    @kotlinx.serialization.SerialName("limit_reset") val limitReset: String? = null,
+)
+
+@Serializable
+internal data class ZdrResponse(val data: List<ZdrEndpoint>)
+
+@Serializable
+internal data class ZdrEndpoint(@kotlinx.serialization.SerialName("model_id") val modelId: String? = null)

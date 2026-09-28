@@ -1,0 +1,101 @@
+name: Release
+
+# Push a tag like v1.2.3 (or v1.2.3-beta.1 for a pre-release) to publish a signed APK as a GitHub Release.
+# Run it manually to build a signed APK as a workflow artifact without publishing anything.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # SHA-256 of the Umm release signing certificate. Updates only install over the same key.
+      EXPECTED_CERT_SHA256: 58d78f15f0a79a572ada2537c8b5ce2242df36b0a553170eaa3a46eadfdb8104
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+
+      - name: Work out the version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            name="${GITHUB_REF_NAME#v}"
+          else
+            name="0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          core="${name%%-*}"
+          IFS=. read -r major minor patch <<< "$core"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "code=$((major * 10000 + minor * 100 + patch))" >> "$GITHUB_OUTPUT"
+          [[ "$name" == *-* ]] && echo "prerelease=true" >> "$GITHUB_OUTPUT" || echo "prerelease=false" >> "$GITHUB_OUTPUT"
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --console=plain
+
+      - name: Build signed release APK
+        env:
+          UMM_KEYSTORE_BASE64: ${{ secrets.UMM_KEYSTORE_BASE64 }}
+          UMM_KEYSTORE_PASSWORD: ${{ secrets.UMM_KEYSTORE_PASSWORD }}
+          UMM_KEY_ALIAS: ${{ secrets.UMM_KEY_ALIAS }}
+          UMM_KEY_PASSWORD: ${{ secrets.UMM_KEY_PASSWORD }}
+        run: |
+          export UMM_KEYSTORE_FILE="$RUNNER_TEMP/umm-release.jks"
+          echo "$UMM_KEYSTORE_BASE64" | base64 -d > "$UMM_KEYSTORE_FILE"
+          ./gradlew assembleRelease bundleRelease --console=plain \
+            -PversionName=${{ steps.version.outputs.name }} -PversionCode=${{ steps.version.outputs.code }}
+          rm -f "$UMM_KEYSTORE_FILE"
+
+      - name: Check the signature
+        run: |
+          apksigner="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
+          apk=app/build/outputs/apk/release/app-release.apk
+          actual="$("$apksigner" verify --print-certs "$apk" | awk '/certificate SHA-256 digest/ {print $NF; exit}')"
+          if [[ "$actual" != "$EXPECTED_CERT_SHA256" ]]; then
+            echo "::error::APK is signed with $actual, expected $EXPECTED_CERT_SHA256"
+            exit 1
+          fi
+          mkdir -p dist
+          cp "$apk" "dist/umm-${{ steps.version.outputs.name }}.apk"
+          # The app bundle is for Google Play uploads; people install the APK.
+          cp app/build/outputs/bundle/release/app-release.aab "dist/umm-${{ steps.version.outputs.name }}.aab"
+          (cd dist && sha256sum *.apk *.aab > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: umm-${{ steps.version.outputs.name }}
+          path: dist/
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<NOTES
+          ### Install
+
+          1. Download \`umm-${{ steps.version.outputs.name }}.apk\` below on your Android phone (Android 10 or newer).
+          2. Open it and allow installs from your browser or files app when Android asks.
+          3. Open Umm and follow the three setup steps.
+
+          Updating: install the new APK over the old one. Your settings and history stay.
+
+          Certificate SHA-256: \`$EXPECTED_CERT_SHA256\`
+          NOTES
+          flags=()
+          [[ "${{ steps.version.outputs.prerelease }}" == "true" ]] && flags+=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "Umm ${{ steps.version.outputs.name }}" --notes-file notes.md --generate-notes "${flags[@]}"

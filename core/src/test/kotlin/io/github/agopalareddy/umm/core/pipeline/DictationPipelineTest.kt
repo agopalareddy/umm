@@ -11,6 +11,7 @@ import io.github.agopalareddy.umm.core.data.HistoryStatus
 import io.github.agopalareddy.umm.core.data.UmmDatabase
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterException
 import io.github.agopalareddy.umm.core.policy.ModelPlan
+import io.github.agopalareddy.umm.core.stats.StatsRepository
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,8 +57,16 @@ class DictationPipelineTest {
 
     private var planCalls = 0
 
+    private val stats = StatsRepository(db)
+    private var now = 1_000_000L
+
     private fun CoroutineScope.pipeline() =
-        DictationPipeline(this, audio, api, { planCalls++; plan }, history, tmp.root, retryDelayMs = { 0 })
+        DictationPipeline(
+            this, audio, api, { planCalls++; plan }, history, tmp.root, retryDelayMs = { 0 }, stats = stats, clock = { now },
+            onDataPolicyBlocked = { dataPolicyBlocks++ },
+        )
+
+    private var dataPolicyBlocks = 0
 
     private suspend fun DictationPipeline.awaitEnd(): DictationState =
         state.first { it !is DictationState.Idle && it !is DictationState.Listening && it != DictationState.Transcribing && it != DictationState.Cleaning }
@@ -404,5 +413,57 @@ class DictationPipelineTest {
         assertTrue(p.state.value is DictationState.Listening)
         p.stop()
         assertEquals("Quiet.", (p.awaitEnd() as DictationState.Done).text)
+    }
+
+    @Test fun statsRecordedForSuccessfulDictation() = runTest {
+        audio.amplitudes = speechThenSilence // stops for silence after 45 samples = 4.5 s
+        api.transcribeResults += "um so hi there"
+        api.transcribeCost = 0.0002
+        api.completeResults += "Hi there."
+        api.completeCost = 0.0001
+        val p = backgroundScope.pipeline()
+        p.start(request())
+        val done = p.awaitEnd() as DictationState.Done
+        val entry = stats.get(done.historyId)!!
+        assertTrue(entry.succeeded)
+        assertEquals("com.whatsapp", entry.packageName)
+        assertEquals(CleanupLevel.LIGHT, entry.level)
+        assertEquals(4, entry.rawWords)
+        assertEquals(2, entry.cleanWords)
+        assertEquals(1, entry.fillerWords)
+        assertEquals(4_500L, entry.audioMs)
+        assertEquals(0.0003, entry.costUsd!!, 1e-9)
+        assertEquals("stt/p", entry.sttModel)
+        assertEquals("chat/p", entry.cleanupModel)
+        assertEquals(0L, entry.latencyMs) // the fake clock does not move
+    }
+
+    @Test fun statsRecordFailuresAndRetryReplacesThem() = runTest {
+        audio.amplitudes = speechThenSilence
+        api.transcribeResults += OpenRouterException.Network(IOException("offline"))
+        val p = backgroundScope.pipeline()
+        p.start(request())
+        val failed = p.awaitEnd() as DictationState.Failed
+        assertEquals(false, stats.get(failed.historyId)!!.succeeded)
+        p.acknowledge(failed)
+        api.transcribeResults += "back online"
+        api.completeResults += "Back online."
+        p.retry(failed.historyId)
+        p.awaitEnd()
+        val entry = stats.get(failed.historyId)!!
+        assertTrue(entry.succeeded)
+        assertEquals(4_500L, entry.audioMs) // kept from the original recording
+        assertEquals(1, stats.all().size)
+    }
+
+    @Test fun aZdrBlockIsReportedAndFallsBack() = runTest {
+        audio.amplitudes = speechThenSilence
+        api.transcribeResults += OpenRouterException.ModelUnavailable(404, blockedByDataPolicy = true)
+        api.transcribeResults += "hi"
+        api.completeResults += "Hi."
+        val p = backgroundScope.pipeline()
+        p.start(request())
+        assertEquals("Hi.", (p.awaitEnd() as DictationState.Done).text)
+        assertEquals(1, dataPolicyBlocks)
     }
 }

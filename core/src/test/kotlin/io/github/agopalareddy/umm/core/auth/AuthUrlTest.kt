@@ -14,7 +14,7 @@ class AuthUrlTest {
         assertEquals("/auth", uri.path)
         assertEquals("chal", uri.getQueryParameter("code_challenge"))
         assertEquals("S256", uri.getQueryParameter("code_challenge_method"))
-        assertEquals("umm://oauth", uri.getQueryParameter("callback_url"))
+        assertEquals("https://agopalareddy.github.io/umm/oauth/", uri.getQueryParameter("callback_url"))
         assertEquals("Umm", uri.getQueryParameter("key_label"))
     }
 

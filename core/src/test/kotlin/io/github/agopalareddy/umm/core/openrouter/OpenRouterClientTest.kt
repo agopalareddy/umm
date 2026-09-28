@@ -60,9 +60,9 @@ class OpenRouterClientTest {
     }
 
     @Test fun completeSendsSystemAndUserMessages() = runTest {
-        enqueue("""{"choices":[{"message":{"content":"Clean."}}]}""")
+        enqueue("""{"choices":[{"message":{"content":"Clean."}}],"usage":{"cost":0.00012}}""")
         val out = client().complete("m/chat", "sys", "usr", 0.2)
-        assertEquals("Clean.", out)
+        assertEquals(Completion("Clean.", 0.00012), out)
         val req = server.takeRequest()
         assertEquals("/chat/completions", req.url.encodedPath)
         val body = req.json()
@@ -96,6 +96,19 @@ class OpenRouterClientTest {
         assertNull(req.headers["Authorization"])
     }
 
+    @Test fun keyInfoParsesUsageAndLimit() = runTest {
+        enqueue("""{"data":{"label":"Umm","usage":1.25,"usage_monthly":0.5,"limit":10,"limit_remaining":8.75,"limit_reset":"monthly"}}""")
+        assertEquals(KeyInfo("Umm", 1.25, 0.5, 10.0, 8.75, "monthly"), client().keyInfo())
+        val req = server.takeRequest()
+        assertEquals("/key", req.url.encodedPath)
+        assertEquals("Bearer k", req.headers["Authorization"])
+    }
+
+    @Test fun keyInfoWithoutLimit() = runTest {
+        enqueue("""{"data":{"label":"sk-or-v1-abc","usage":0,"limit":null,"limit_remaining":null}}""")
+        assertEquals(KeyInfo("sk-or-v1-abc", 0.0, null, null, null, null), client().keyInfo())
+    }
+
     @Test fun sendsAuthAndAttributionHeaders() = runTest {
         enqueue("""{"text":"x"}""")
         client().transcribe("m", byteArrayOf(1), "m4a", null)
@@ -126,6 +139,42 @@ class OpenRouterClientTest {
         assertEquals(OpenRouterException.ModelUnavailable(503), errorFor(503))
         val bad = errorFor(400)
         assertTrue(bad is OpenRouterException.Unexpected && bad.status == 400 && bad.body.contains("nope"))
+    }
+
+    private val zdrBlock =
+        """{"error":{"message":"0 endpoints out of 1 requested are available matching your guardrail restrictions and data policy. We removed them for the following reasons (an endpoint may have matched multiple reasons):\nZDR violation (account settings): 1 endpoint excluded","code":404}}"""
+
+    @Test fun zdrBlockIsFlaggedAsDataPolicy() = runTest {
+        enqueue(zdrBlock, 404)
+        try {
+            client().transcribe("m", byteArrayOf(1), "m4a", null)
+            fail("expected ModelUnavailable")
+        } catch (e: OpenRouterException.ModelUnavailable) {
+            assertEquals(OpenRouterException.ModelUnavailable(404, blockedByDataPolicy = true), e)
+        }
+    }
+
+    @Test fun probeReportsZdrBlock() = runTest {
+        enqueue(zdrBlock, 404)
+        assertEquals(true, client().blockedByDataPolicy("openai/gpt-4o-mini-transcribe"))
+        val body = server.takeRequest().json()
+        assertEquals("openai/gpt-4o-mini-transcribe", body["model"]!!.jsonPrimitive.content)
+    }
+
+    @Test fun probeReportsAllowedWhenTheProviderRejectsTheAudio() = runTest {
+        enqueue("""{"error":{"message":"Provider returned 400","code":400}}""", 400)
+        assertEquals(false, client().blockedByDataPolicy("m"))
+    }
+
+    @Test fun probeIsInconclusiveOnOtherErrors() = runTest {
+        enqueue("""{"error":{"message":"down"}}""", 503)
+        assertNull(client().blockedByDataPolicy("m"))
+    }
+
+    @Test fun zdrModelsListsModelIds() = runTest {
+        enqueue("""{"data":[{"model_id":"a/b","provider_name":"X"},{"model_id":"a/b","provider_name":"Y"},{"model_id":"c/d"}]}""")
+        assertEquals(setOf("a/b", "c/d"), client().zdrModels())
+        assertEquals("/endpoints/zdr", server.takeRequest().url.encodedPath)
     }
 
     @Test fun missingKeyThrowsWithoutCalling() = runTest {

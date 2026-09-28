@@ -17,7 +17,10 @@
     <application
         android:name=".UmmApp"
         android:allowBackup="false"
-        android:label="Umm"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="${appLabel}"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
@@ -46,7 +49,7 @@
         <service
             android:name=".ime.UmmInputMethodService"
             android:exported="true"
-            android:label="Umm"
+            android:label="${appLabel}"
             android:permission="android.permission.BIND_INPUT_METHOD">
             <intent-filter>
                 <action android:name="android.view.InputMethod" />

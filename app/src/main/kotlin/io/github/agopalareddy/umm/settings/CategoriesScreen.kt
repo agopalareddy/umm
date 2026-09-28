@@ -39,17 +39,16 @@ import io.github.agopalareddy.umm.graph
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun CategoriesScreen() {
+internal fun CategoriesScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val repo = context.graph.categories
     val configs by repo.observeAll().collectAsStateWithLifecycle(emptyList())
     var selected by remember { mutableStateOf<Category?>(null) }
 
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("App categories", style = MaterialTheme.typography.headlineMedium)
+    Page("App categories", onBack) {
         Text("Each category has its own cleanup level. Apps not listed anywhere use Other.", style = MaterialTheme.typography.bodySmall)
         configs.forEach { config ->
-            Card(Modifier.fillMaxWidth().clickable { selected = if (selected == config.category) null else config.category }) {
+            Card(Modifier.fillMaxWidth().padding(top = 12.dp).clickable { selected = if (selected == config.category) null else config.category }) {
                 Column(Modifier.padding(16.dp)) {
                     Text(config.category.title(), style = MaterialTheme.typography.titleMedium)
                     Text("${config.level?.title() ?: "Default level"} · ${config.script.title()} script", style = MaterialTheme.typography.bodySmall)
@@ -76,16 +75,14 @@ private fun CategoryDetail(config: CategoryConfig) {
             Text("Uses the default level from Settings.", style = MaterialTheme.typography.bodySmall)
         } else {
             CleanupLevel.entries.forEach { level ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = config.level == level, onClick = { scope.launch { repo.update(config.copy(level = level)) } })
+                RadioRow(selected = config.level == level, onClick = { scope.launch { repo.update(config.copy(level = level)) } }) {
                     Text(level.title())
                 }
             }
         }
         Text("Script for mixed languages", style = MaterialTheme.typography.labelLarge)
         ScriptPreference.entries.forEach { script ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = config.script == script, onClick = { scope.launch { repo.update(config.copy(script = script)) } })
+            RadioRow(selected = config.script == script, onClick = { scope.launch { repo.update(config.copy(script = script)) } }) {
                 Text(if (script == ScriptPreference.LATIN) "Latin letters (kal meeting hai)" else "Each language's own script (कल meeting है)")
             }
         }

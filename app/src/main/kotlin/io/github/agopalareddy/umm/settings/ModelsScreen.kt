@@ -1,11 +1,15 @@
 package io.github.agopalareddy.umm.settings
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -13,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,51 +36,178 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.agopalareddy.umm.core.data.ModelMode
 import io.github.agopalareddy.umm.core.data.UmmSettings
 import io.github.agopalareddy.umm.core.openrouter.ModelInfo
+import io.github.agopalareddy.umm.core.policy.DataPolicy
 import io.github.agopalareddy.umm.core.policy.ModelPlan
+import io.github.agopalareddy.umm.core.policy.Recommendation
+import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.draw.alpha
 import io.github.agopalareddy.umm.graph
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun ModelsScreen() {
+internal fun ModelsScreen(onBack: () -> Unit) {
     val graph = LocalContext.current.graph
     val scope = rememberCoroutineScope()
     val settings by graph.settings.settings.collectAsStateWithLifecycle(UmmSettings())
+    val zdr by remember { graph.dataPolicy.observe() }.collectAsStateWithLifecycle(null)
     var plan by remember { mutableStateOf<ModelPlan?>(null) }
-    LaunchedEffect(settings) { plan = runCatching { graph.modelPlan() }.getOrNull() }
+    var policy by remember { mutableStateOf<DataPolicy?>(null) }
+    var rec by remember { mutableStateOf<Recommendation?>(null) }
+    var newestStt by remember { mutableStateOf<String?>(null) }
+    var warning by remember { mutableStateOf<ZdrWarning?>(null) }
+    LaunchedEffect(settings, zdr) {
+        plan = runCatching { graph.modelPlan() }.getOrNull()
+        policy = runCatching { graph.dataPolicy.current() }.getOrNull()
+        rec = runCatching { graph.recommendations.current() }.getOrNull()
+        newestStt = graph.modelCatalog.sttModels()?.maxByOrNull { it.createdEpochSec }?.id
+    }
+    val account = policy
+    val p = account?.withAppChoice(settings.zdrOnly)
+    var checking by remember { mutableStateOf(false) }
+    var zdrDialog by remember { mutableStateOf<ZdrCheck?>(null) }
+    /** Turning ZDR off re-checks the account, since OpenRouter may still require it. */
+    fun turnZdrOff() {
+        checking = true
+        scope.launch {
+            val stillRequired = rec?.let { graph.dataPolicy.recheck(it) }
+            graph.settings.update { it.copy(zdrOnly = false) }
+            checking = false
+            zdrDialog = when (stillRequired) {
+                true -> ZdrCheck.STILL_REQUIRED
+                null -> ZdrCheck.UNREACHABLE
+                false -> null
+            }
+        }
+    }
+    /** The model that stops [mode] from working with the data policy, if any. */
+    fun blockedModel(mode: ModelMode): String? = if (p == null || !p.enforced) null else when (mode) {
+        ModelMode.RECOMMENDED -> rec?.let { r -> listOf(r.stt.primary, r.cleanup.primary).firstOrNull { !p.allows(it) } }
+        ModelMode.NEWEST_STT -> newestStt?.takeIf { !p.allows(it) }
+        ModelMode.MANUAL -> null
+    }
 
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
-        Text("Models", style = MaterialTheme.typography.headlineMedium)
+    Page("Models", onBack) {
+        val accountRequires = account?.enforced == true
+        SwitchRow(
+            checked = settings.zdrOnly || accountRequires,
+            enabled = !checking,
+            onCheckedChange = { on ->
+                if (on) scope.launch { graph.settings.update { it.copy(zdrOnly = true) } } else turnZdrOff()
+            },
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Zero data retention only")
+                val note = when {
+                    checking -> "Checking your OpenRouter account…"
+                    accountRequires -> "Required by your OpenRouter account. Changes there take a few minutes to reach Umm."
+                    else -> null
+                }
+                if (note != null) Text(note, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         val modes = listOf(
             ModelMode.RECOMMENDED to "Recommended (updated by Umm)",
             ModelMode.NEWEST_STT to "Always the newest speech-to-text model",
             ModelMode.MANUAL to "Choose my own",
         )
         modes.forEach { (mode, label) ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = settings.modelMode == mode, onClick = { scope.launch { graph.settings.update { it.copy(modelMode = mode) } } })
-                Text(label)
+            val blocked = blockedModel(mode)
+            val choose = { scope.launch { graph.settings.update { it.copy(modelMode = mode) } }; Unit }
+            RadioRow(
+                selected = settings.modelMode == mode,
+                dimmed = blocked != null,
+                onClick = { if (blocked != null) warning = ZdrWarning(blocked, choose) else choose() },
+            ) {
+                Column {
+                    Text(label)
+                    if (blocked != null) Text("Not available with zero data retention", style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
         Section("In use") {
-            val p = plan
-            if (p == null) Text("Loading…") else {
-                Text("Speech-to-text: ${p.stt.first()}" + (p.stt.getOrNull(1)?.let { " (fallback $it)" } ?: ""))
-                Text("Cleanup: ${p.cleanup.first()}" + (p.cleanup.getOrNull(1)?.let { " (fallback $it)" } ?: ""))
-            }
+            val current = plan
+            if (current == null) Text("Loading…") else InUseTable(current)
         }
         if (settings.modelMode == ModelMode.MANUAL) {
-            ModelPicker("Speech-to-text model", settings.manualSttModel, { graph.modelCatalog.sttModels() }) { id ->
-                scope.launch { graph.settings.update { it.copy(manualSttModel = id) } }
+            val allows: (String) -> Boolean = { id -> p?.allows(id) ?: true }
+            ModelPicker("Speech-to-text model", settings.manualSttModel, allows, { graph.modelCatalog.sttModels() }) { id ->
+                val pick = { scope.launch { graph.settings.update { it.copy(manualSttModel = id) } }; Unit }
+                if (allows(id)) pick() else warning = ZdrWarning(id, pick)
             }
-            ModelPicker("Cleanup model", settings.manualCleanupModel, { graph.modelCatalog.chatModels() }) { id ->
-                scope.launch { graph.settings.update { it.copy(manualCleanupModel = id) } }
+            ModelPicker("Cleanup model", settings.manualCleanupModel, allows, { graph.modelCatalog.chatModels() }) { id ->
+                val pick = { scope.launch { graph.settings.update { it.copy(manualCleanupModel = id) } }; Unit }
+                if (allows(id)) pick() else warning = ZdrWarning(id, pick)
             }
         }
     }
+    zdrDialog?.let { check -> ZdrStillRequired(check) { zdrDialog = null } }
+    warning?.let { w ->
+        AlertDialog(
+            onDismissRequest = { warning = null },
+            title = { Text("Not available with zero data retention") },
+            text = {
+                Text(
+                    "${w.model} has no provider with zero data retention. If you pick it anyway, Umm keeps using " +
+                        "ZDR models instead.",
+                )
+            },
+            confirmButton = { TextButton(onClick = { warning = null; w.proceed() }) { Text("Pick anyway") } },
+            dismissButton = { TextButton(onClick = { warning = null }) { Text("Cancel") } },
+        )
+    }
+}
+
+private class ZdrWarning(val model: String, val proceed: () -> Unit)
+
+private enum class ZdrCheck { STILL_REQUIRED, UNREACHABLE }
+
+@Composable
+private fun ZdrStillRequired(check: ZdrCheck, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (check == ZdrCheck.STILL_REQUIRED) "Zero data retention is still on" else "Couldn't check") },
+        text = {
+            if (check == ZdrCheck.UNREACHABLE) {
+                Text("Couldn't reach OpenRouter to check your account. Try again in a moment.")
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Your OpenRouter account still requires zero data retention, so Umm has to keep using ZDR " +
+                            "models. Turn it off in OpenRouter's privacy settings first, then try again.",
+                    )
+                    // OpenRouter takes a while to apply the change, which looks like this check being wrong.
+                    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium) {
+                        Text(
+                            "Just turned it off? OpenRouter can take a few minutes to apply the change. " +
+                                "Wait a bit, then try again.",
+                            modifier = Modifier.padding(12.dp),
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(OPENROUTER_PRIVACY_URL)))
+            }) { Text("Open OpenRouter settings") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+    )
 }
 
 @Composable
-private fun ModelPicker(title: String, selected: String?, load: suspend () -> List<ModelInfo>?, onPick: (String) -> Unit) {
+private fun ModelPicker(
+    title: String,
+    selected: String?,
+    allows: (String) -> Boolean,
+    load: suspend () -> List<ModelInfo>?,
+    onPick: (String) -> Unit,
+) {
     var models by remember { mutableStateOf<List<ModelInfo>?>(null) }
     var failed by remember { mutableStateOf(false) }
     var attempt by remember { mutableStateOf(0) }
@@ -97,9 +229,42 @@ private fun ModelPicker(title: String, selected: String?, load: suspend () -> Li
                 OutlinedTextField(query, { query = it }, label = { Text("Search") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 LazyColumn(Modifier.heightIn(max = 320.dp)) {
                     items(models!!.filter { it.id.contains(query, true) || it.name.contains(query, true) }, key = { it.id }) { m ->
-                        Column(Modifier.fillMaxWidth().clickable { onPick(m.id) }.padding(vertical = 8.dp)) {
+                        val ok = allows(m.id)
+                        Column(Modifier.fillMaxWidth().clickable { onPick(m.id) }.alpha(if (ok) 1f else 0.45f).padding(vertical = 8.dp)) {
                             Text(m.name, fontWeight = if (m.id == selected) FontWeight.Bold else FontWeight.Normal)
-                            Text("${m.id} · input ${m.promptPrice ?: "?"} · output ${m.completionPrice ?: "?"}", style = MaterialTheme.typography.bodySmall)
+                            val note = if (ok) "" else " · no ZDR"
+                            Text("${m.id} · input ${m.promptPrice ?: "?"} · output ${m.completionPrice ?: "?"}$note", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Which models each step uses, primary first. */
+@Composable
+private fun InUseTable(plan: ModelPlan) {
+    androidx.compose.material3.Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Column(Modifier.padding(vertical = 8.dp)) {
+            listOf("Speech-to-text" to plan.stt, "Cleanup" to plan.cleanup).forEachIndexed { index, (step, models) ->
+                if (index > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                Text(
+                    step,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                models.forEachIndexed { i, id ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (i == 0) "Primary" else "Fallback",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.width(72.dp),
+                        )
+                        Column {
+                            Text(id.substringAfter('/'), style = MaterialTheme.typography.bodyLarge, fontWeight = if (i == 0) FontWeight.Medium else FontWeight.Normal)
+                            Text(id.substringBefore('/'), style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }

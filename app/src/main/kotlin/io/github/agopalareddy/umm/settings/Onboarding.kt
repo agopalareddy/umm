@@ -29,11 +29,16 @@ internal fun OnboardingScreen(
     onConnect: () -> Unit,
     onPasteKey: (String) -> Unit,
 ) {
-    Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+    Page(
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                io.github.agopalareddy.umm.ui.UmmLogo(32.dp)
+                androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 12.dp))
+                Text("Set up Umm")
+            }
+        },
+        onBack = null,
     ) {
-        Text("Set up Umm", style = MaterialTheme.typography.headlineMedium)
         Text("Three steps, then switch to the Umm keyboard in any text field and start talking.")
         Step(1, "Enable the Umm keyboard", status.keyboardEnabled, "Open keyboard settings", onEnableKeyboard) {
             Text(
@@ -46,6 +51,15 @@ internal fun OnboardingScreen(
         Step(3, "Connect OpenRouter", status.keyConnected, "Connect with OpenRouter", onConnect) {
             PasteKeyField(onPasteKey)
         }
+        val context = androidx.compose.ui.platform.LocalContext.current
+        Text(
+            "Your recordings go to OpenRouter with your own key, and nowhere else. Umm has no server and no tracking.",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        androidx.compose.material3.TextButton(onClick = {
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(PRIVACY_POLICY_URL)))
+        }) { Text("Privacy policy") }
     }
 }
 
@@ -58,7 +72,7 @@ private fun Step(
     onAction: () -> Unit,
     extra: @Composable () -> Unit = {},
 ) {
-    Card(Modifier.fillMaxWidth()) {
+    Card(Modifier.fillMaxWidth().padding(top = 16.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${if (done) "✓" else "$number."}  $title", style = MaterialTheme.typography.titleMedium)

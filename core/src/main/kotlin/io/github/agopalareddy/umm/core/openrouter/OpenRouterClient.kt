@@ -38,7 +38,7 @@ class OpenRouterClient(
         return Transcription(response.text, response.usage?.cost)
     }
 
-    override suspend fun complete(model: String, system: String, user: String, temperature: Double): String {
+    override suspend fun complete(model: String, system: String, user: String, temperature: Double): Completion {
         val body = buildJsonObject {
             put("model", model)
             put("messages", buildJsonArray {
@@ -48,7 +48,7 @@ class OpenRouterClient(
             put("temperature", temperature)
         }
         val response = json.decodeFromString<ChatResponse>(post("chat/completions", body, authenticated = true))
-        return response.choices.firstOrNull()?.message?.content.orEmpty()
+        return Completion(response.choices.firstOrNull()?.message?.content.orEmpty(), response.usage?.cost)
     }
 
     override suspend fun listModels(outputModalities: String?): List<ModelInfo> {
@@ -68,6 +68,27 @@ class OpenRouterClient(
             put("code_challenge_method", "S256")
         }
         return json.decodeFromString<AuthKeyResponse>(post("auth/keys", body, authenticated = false)).key
+    }
+
+    override suspend fun keyInfo(): KeyInfo {
+        val data = json.decodeFromString<KeyResponse>(execute(Request.Builder().url(endpoint("key")).get(), authenticated = true)).data
+        return KeyInfo(data.label, data.usage, data.usageMonthly, data.limit, data.limitRemaining, data.limitReset)
+    }
+
+    override suspend fun zdrModels(): Set<String> {
+        val body = execute(Request.Builder().url(endpoint("endpoints/zdr")).get(), authenticated = false)
+        return json.decodeFromString<ZdrResponse>(body).data.mapNotNull { it.modelId }.toSet()
+    }
+
+    override suspend fun blockedByDataPolicy(sttModel: String): Boolean? = try {
+        transcribe(sttModel, PROBE_AUDIO, "m4a", null)
+        false
+    } catch (e: OpenRouterException.ModelUnavailable) {
+        if (e.blockedByDataPolicy) true else null
+    } catch (e: OpenRouterException.Unexpected) {
+        if (e.status == 400) false else null
+    } catch (e: OpenRouterException) {
+        null
     }
 
     private fun endpoint(path: String): HttpUrl = baseUrl.newBuilder().addPathSegments(path).build()
@@ -106,6 +127,7 @@ class OpenRouterClient(
         val DEFAULT_BASE_URL: HttpUrl = "https://openrouter.ai/api/v1".toHttpUrl()
         private const val REFERER = "https://github.com/agopalareddy/umm"
         private const val TITLE = "Umm"
+        private val PROBE_AUDIO = ByteArray(16)
         private val JSON_MEDIA_TYPE = "application/json".toMediaType()
         private val json = Json { ignoreUnknownKeys = true }
 
