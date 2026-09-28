@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Umm privacy policy</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 17px/1.6 system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; }
+    h1 { margin-bottom: 0; }
+    h2 { margin-top: 2em; }
+    .meta { opacity: .7; margin-top: 4px; }
+    code { font-size: .95em; }
+  </style>
+</head>
+<body>
+<h1>Umm privacy policy</h1>
+<p class="meta">Effective September 27, 2026</p>
+
+<p>Umm is a voice keyboard for Android made by Aadarsha Gopala Reddy. This policy explains what Umm does with your
+data. The short version: Umm has no server and no account. Your recordings go from your phone to OpenRouter, using
+your own OpenRouter key, and nowhere else.</p>
+
+<h2>What Umm records and sends</h2>
+<p>Umm records from the microphone only while its keyboard is open and listening. When you stop talking, Umm sends
+the recording to <a href="https://openrouter.ai">OpenRouter</a> to be transcribed, then sends the transcript to
+OpenRouter again to be cleaned up (unless you choose the Raw level). OpenRouter passes each request to an AI model
+provider, such as OpenAI, Mistral, or Google, to do the work. Umm sends these requests with your OpenRouter key,
+so they fall under your agreement with OpenRouter and its
+<a href="https://openrouter.ai/privacy">privacy policy</a>.</p>
+<p>If a recording contains no speech, Umm discards it on the phone and sends nothing.</p>
+<p>If you turn on zero data retention in your OpenRouter account's privacy settings, OpenRouter only uses providers
+that do not keep your data, and Umm switches to models that support this.</p>
+<p>Umm also asks OpenRouter for your key's name, spending, and credit limit to show them on the Account page, and
+for the list of available models.</p>
+
+<h2>What stays on your phone</h2>
+<ul>
+  <li>Your OpenRouter key, encrypted with a key held in the Android Keystore.</li>
+  <li>Your settings, app categories, and the names of apps you assigned to them.</li>
+  <li>The text of your last 50 dictations (History), and usage statistics such as word counts, durations, and
+      cost.</li>
+  <li>A recording that failed to process, so you can retry it. It is deleted when the retry succeeds, or after
+      7 days.</li>
+</ul>
+<p>None of this is sent to the developer. It is excluded from Android backups and device-to-device transfers, and
+it is deleted when you uninstall Umm. You can delete your history at any time in the app.</p>
+
+<h2>What the keyboard can see</h2>
+<p>Like any keyboard, Umm is told which app a text field belongs to and what kind of field it is. Umm uses this to
+apply the cleanup level for that app and to turn itself off in password fields. Umm has no letter keys and does not
+read what you type with other keyboards. It only reads the character next to the cursor, to decide whether to add
+a space before or after the text it inserts.</p>
+
+<h2>What Umm does not do</h2>
+<ul>
+  <li>No analytics, advertising, or tracking.</li>
+  <li>No Umm account, and no data sent to the developer.</li>
+  <li>No selling or sharing of your data.</li>
+</ul>
+
+<h2>Signing in with OpenRouter</h2>
+<p>"Connect with OpenRouter" opens OpenRouter's sign-in page in your browser. After you approve, OpenRouter returns a
+one-time code through a page on this website, which hands it back to the app. The code is useless without a secret
+that never leaves your phone. The app exchanges it for a new API key in your OpenRouter account, which you can see
+and delete in OpenRouter's key settings.</p>
+
+<h2>Children</h2>
+<p>Umm is not directed at children under 13.</p>
+
+<h2>Changes</h2>
+<p>If this policy changes, the new version will be posted at this address with a new effective date. The history of
+changes is public in the <a href="https://github.com/agopalareddy/umm/commits/main/docs/privacy/index.html">project
+repository</a>.</p>
+
+<h2>Contact</h2>
+<p>Questions about this policy: open an issue at
+<a href="https://github.com/agopalareddy/umm/issues">github.com/agopalareddy/umm/issues</a>.</p>
+</body>
+</html>

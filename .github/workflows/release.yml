@@ -53,7 +53,7 @@ jobs:
         run: |
           export UMM_KEYSTORE_FILE="$RUNNER_TEMP/umm-release.jks"
           echo "$UMM_KEYSTORE_BASE64" | base64 -d > "$UMM_KEYSTORE_FILE"
-          ./gradlew assembleRelease --console=plain \
+          ./gradlew assembleRelease bundleRelease --console=plain \
             -PversionName=${{ steps.version.outputs.name }} -PversionCode=${{ steps.version.outputs.code }}
           rm -f "$UMM_KEYSTORE_FILE"
 
@@ -68,7 +68,9 @@ jobs:
           fi
           mkdir -p dist
           cp "$apk" "dist/umm-${{ steps.version.outputs.name }}.apk"
-          (cd dist && sha256sum *.apk > SHA256SUMS.txt)
+          # The app bundle is for Google Play uploads; people install the APK.
+          cp app/build/outputs/bundle/release/app-release.aab "dist/umm-${{ steps.version.outputs.name }}.aab"
+          (cd dist && sha256sum *.apk *.aab > SHA256SUMS.txt)
           cat dist/SHA256SUMS.txt
 
       - name: Upload build artifact
