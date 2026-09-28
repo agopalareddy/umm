@@ -135,7 +135,7 @@ You need JDK 17 and the Android SDK.
 
 ## Maintainers
 
-[@agopalareddy](https://github.com/agopalareddy) · [adurs2002@gmail.com](mailto:adurs2002@gmail.com)
+[@agopalareddy](https://github.com/agopalareddy) · [agr@agreddy.com](mailto:agr@agreddy.com)
 
 ## Contributing
 

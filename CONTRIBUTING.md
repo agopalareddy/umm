@@ -13,7 +13,7 @@ Open an issue with:
 - the app you were typing into, if it matters
 
 Please don't paste your OpenRouter key, even a revoked one. For privacy or security problems, email
-[adurs2002@gmail.com](mailto:adurs2002@gmail.com) instead of opening a public issue.
+[agr@agreddy.com](mailto:agr@agreddy.com) instead of opening a public issue.
 
 ## Development setup
 

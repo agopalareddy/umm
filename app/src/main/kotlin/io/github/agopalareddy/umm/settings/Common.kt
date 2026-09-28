@@ -38,7 +38,7 @@ import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.unit.dp
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 
-internal const val SUPPORT_EMAIL = "adurs2002@gmail.com"
+internal const val SUPPORT_EMAIL = "agr@agreddy.com"
 internal const val OPENROUTER_PRIVACY_URL = "https://openrouter.ai/settings/privacy"
 
 /** Languages offered for the default and the keyboard's language chip. */

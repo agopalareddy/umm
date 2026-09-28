@@ -49,7 +49,7 @@ Umm is source-available: github.com/agopalareddy/umm
 
 **Category:** Productivity
 
-**Contact email:** adurs2002@gmail.com
+**Contact email:** agr@agreddy.com
 
 **Website:** https://github.com/agopalareddy/umm
 
