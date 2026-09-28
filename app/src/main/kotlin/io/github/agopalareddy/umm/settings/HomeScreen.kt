@@ -42,6 +42,7 @@ import io.github.agopalareddy.umm.core.stats.UsageSummary
 import io.github.agopalareddy.umm.graph
 import io.github.agopalareddy.umm.ui.UmmLogo
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun HomeScreen(setupComplete: Boolean, onSetup: () -> Unit, onOpen: (String) -> Unit) {
@@ -49,7 +50,9 @@ internal fun HomeScreen(setupComplete: Boolean, onSetup: () -> Unit, onOpen: (St
     val graph = context.graph
     val summary by remember { graph.stats.observeSummary() }.collectAsStateWithLifecycle(null)
     var plan by remember { mutableStateOf<ModelPlan?>(null) }
-    LaunchedEffect(Unit) { plan = runCatching { graph.modelPlan() }.getOrNull() }
+    val zdr by remember { graph.dataPolicy.observe() }.collectAsStateWithLifecycle(null)
+    LaunchedEffect(zdr) { plan = runCatching { graph.modelPlan() }.getOrNull() }
+    if (zdr?.noticePending == true) ZdrNotice(plan)
 
     Page(
         title = {
@@ -196,3 +199,36 @@ private fun duration(ms: Long): String {
 
 private fun money(usd: Double): String =
     if (usd < 0.01) "$%.4f".format(Locale.US, usd) else "$%.2f".format(Locale.US, usd)
+
+/** Shown once when Umm learns the account only allows zero data retention providers. */
+@Composable
+private fun ZdrNotice(plan: ModelPlan?) {
+    val context = LocalContext.current
+    val graph = context.graph
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val acknowledge: () -> Unit = { scope.launch { graph.dataPolicy.acknowledgeNotice() } }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = acknowledge,
+        title = { Text("Zero data retention is on") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Your OpenRouter account only allows providers that don't keep your data. Umm switched to models " +
+                        "that support this. Some models, including the usual recommended speech model, aren't available " +
+                        "to you, and results may be a little less accurate.",
+                )
+                plan?.let {
+                    Text("Speech-to-text: ${it.stt.first()}", style = MaterialTheme.typography.bodySmall)
+                    Text("Cleanup: ${it.cleanup.first()}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = acknowledge) { Text("OK") } },
+        dismissButton = {
+            TextButton(onClick = {
+                acknowledge()
+                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://openrouter.ai/settings/privacy")))
+            }) { Text("Privacy settings") }
+        },
+    )
+}

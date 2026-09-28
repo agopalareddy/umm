@@ -61,7 +61,12 @@ class DictationPipelineTest {
     private var now = 1_000_000L
 
     private fun CoroutineScope.pipeline() =
-        DictationPipeline(this, audio, api, { planCalls++; plan }, history, tmp.root, retryDelayMs = { 0 }, stats = stats, clock = { now })
+        DictationPipeline(
+            this, audio, api, { planCalls++; plan }, history, tmp.root, retryDelayMs = { 0 }, stats = stats, clock = { now },
+            onDataPolicyBlocked = { dataPolicyBlocks++ },
+        )
+
+    private var dataPolicyBlocks = 0
 
     private suspend fun DictationPipeline.awaitEnd(): DictationState =
         state.first { it !is DictationState.Idle && it !is DictationState.Listening && it != DictationState.Transcribing && it != DictationState.Cleaning }
@@ -449,5 +454,16 @@ class DictationPipelineTest {
         assertTrue(entry.succeeded)
         assertEquals(4_500L, entry.audioMs) // kept from the original recording
         assertEquals(1, stats.all().size)
+    }
+
+    @Test fun aZdrBlockIsReportedAndFallsBack() = runTest {
+        audio.amplitudes = speechThenSilence
+        api.transcribeResults += OpenRouterException.ModelUnavailable(404, blockedByDataPolicy = true)
+        api.transcribeResults += "hi"
+        api.completeResults += "Hi."
+        val p = backgroundScope.pipeline()
+        p.start(request())
+        assertEquals("Hi.", (p.awaitEnd() as DictationState.Done).text)
+        assertEquals(1, dataPolicyBlocks)
     }
 }

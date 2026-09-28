@@ -68,4 +68,12 @@ class FakeApi : OpenRouterApi {
     override suspend fun listModels(outputModalities: String?): List<ModelInfo> = error("unused")
     override suspend fun exchangeAuthCode(code: String, codeVerifier: String): String = error("unused")
     override suspend fun keyInfo(): KeyInfo = error("unused")
+    var zdrList: Set<String> = emptySet()
+    var probeResult: Boolean? = null
+    val probedModels = mutableListOf<String>()
+    override suspend fun zdrModels(): Set<String> = zdrList
+    override suspend fun blockedByDataPolicy(sttModel: String): Boolean? {
+        probedModels += sttModel
+        return probeResult
+    }
 }

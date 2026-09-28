@@ -34,6 +34,8 @@ class ModelCatalogTest {
         override suspend fun complete(model: String, system: String, user: String, temperature: Double): Completion = error("unused")
         override suspend fun exchangeAuthCode(code: String, codeVerifier: String): String = error("unused")
         override suspend fun keyInfo(): KeyInfo = error("unused")
+        override suspend fun zdrModels(): Set<String> = error("unused")
+        override suspend fun blockedByDataPolicy(sttModel: String): Boolean? = error("unused")
     }
 
     private fun TestScope.catalog() = ModelCatalog(

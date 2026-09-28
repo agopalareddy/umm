@@ -32,7 +32,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.agopalareddy.umm.core.data.ModelMode
 import io.github.agopalareddy.umm.core.data.UmmSettings
 import io.github.agopalareddy.umm.core.openrouter.ModelInfo
+import io.github.agopalareddy.umm.core.policy.DataPolicy
 import io.github.agopalareddy.umm.core.policy.ModelPlan
+import io.github.agopalareddy.umm.core.policy.Recommendation
+import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.draw.alpha
 import io.github.agopalareddy.umm.graph
 import kotlinx.coroutines.launch
 
@@ -41,37 +45,98 @@ internal fun ModelsScreen(onBack: () -> Unit) {
     val graph = LocalContext.current.graph
     val scope = rememberCoroutineScope()
     val settings by graph.settings.settings.collectAsStateWithLifecycle(UmmSettings())
+    val zdr by remember { graph.dataPolicy.observe() }.collectAsStateWithLifecycle(null)
     var plan by remember { mutableStateOf<ModelPlan?>(null) }
-    LaunchedEffect(settings) { plan = runCatching { graph.modelPlan() }.getOrNull() }
+    var policy by remember { mutableStateOf<DataPolicy?>(null) }
+    var rec by remember { mutableStateOf<Recommendation?>(null) }
+    var newestStt by remember { mutableStateOf<String?>(null) }
+    var warning by remember { mutableStateOf<ZdrWarning?>(null) }
+    LaunchedEffect(settings, zdr) {
+        plan = runCatching { graph.modelPlan() }.getOrNull()
+        policy = runCatching { graph.dataPolicy.current() }.getOrNull()
+        rec = runCatching { graph.recommendations.current() }.getOrNull()
+        newestStt = graph.modelCatalog.sttModels()?.maxByOrNull { it.createdEpochSec }?.id
+    }
+    val p = policy
+    /** The model that stops [mode] from working with this account's data policy, if any. */
+    fun blockedModel(mode: ModelMode): String? = if (p == null || !p.enforced) null else when (mode) {
+        ModelMode.RECOMMENDED -> rec?.let { r -> listOf(r.stt.primary, r.cleanup.primary).firstOrNull { !p.allows(it) } }
+        ModelMode.NEWEST_STT -> newestStt?.takeIf { !p.allows(it) }
+        ModelMode.MANUAL -> null
+    }
 
     Page("Models", onBack) {
+        if (p?.enforced == true) {
+            androidx.compose.material3.Card(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                Text(
+                    "Your OpenRouter account only allows providers with zero data retention (ZDR), so Umm uses models " +
+                        "that support it.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(12.dp),
+                )
+            }
+        }
         val modes = listOf(
             ModelMode.RECOMMENDED to "Recommended (updated by Umm)",
             ModelMode.NEWEST_STT to "Always the newest speech-to-text model",
             ModelMode.MANUAL to "Choose my own",
         )
         modes.forEach { (mode, label) ->
-            RadioRow(selected = settings.modelMode == mode, onClick = { scope.launch { graph.settings.update { it.copy(modelMode = mode) } } }) {
-                Text(label)
+            val blocked = blockedModel(mode)
+            val choose = { scope.launch { graph.settings.update { it.copy(modelMode = mode) } }; Unit }
+            RadioRow(
+                selected = settings.modelMode == mode,
+                dimmed = blocked != null,
+                onClick = { if (blocked != null) warning = ZdrWarning(blocked, choose) else choose() },
+            ) {
+                Column {
+                    Text(label)
+                    if (blocked != null) Text("Not available with zero data retention", style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
         Section("In use") {
-            val p = plan
-            if (p == null) Text("Loading…") else InUseTable(p)
+            val current = plan
+            if (current == null) Text("Loading…") else InUseTable(current)
         }
         if (settings.modelMode == ModelMode.MANUAL) {
-            ModelPicker("Speech-to-text model", settings.manualSttModel, { graph.modelCatalog.sttModels() }) { id ->
-                scope.launch { graph.settings.update { it.copy(manualSttModel = id) } }
+            val allows: (String) -> Boolean = { id -> p?.allows(id) ?: true }
+            ModelPicker("Speech-to-text model", settings.manualSttModel, allows, { graph.modelCatalog.sttModels() }) { id ->
+                val pick = { scope.launch { graph.settings.update { it.copy(manualSttModel = id) } }; Unit }
+                if (allows(id)) pick() else warning = ZdrWarning(id, pick)
             }
-            ModelPicker("Cleanup model", settings.manualCleanupModel, { graph.modelCatalog.chatModels() }) { id ->
-                scope.launch { graph.settings.update { it.copy(manualCleanupModel = id) } }
+            ModelPicker("Cleanup model", settings.manualCleanupModel, allows, { graph.modelCatalog.chatModels() }) { id ->
+                val pick = { scope.launch { graph.settings.update { it.copy(manualCleanupModel = id) } }; Unit }
+                if (allows(id)) pick() else warning = ZdrWarning(id, pick)
             }
         }
     }
+    warning?.let { w ->
+        AlertDialog(
+            onDismissRequest = { warning = null },
+            title = { Text("Not available with zero data retention") },
+            text = {
+                Text(
+                    "${w.model} has no provider that meets your OpenRouter account's zero data retention setting. " +
+                        "If you pick it anyway, Umm keeps using ZDR models instead.",
+                )
+            },
+            confirmButton = { TextButton(onClick = { warning = null; w.proceed() }) { Text("Pick anyway") } },
+            dismissButton = { TextButton(onClick = { warning = null }) { Text("Cancel") } },
+        )
+    }
 }
 
+private class ZdrWarning(val model: String, val proceed: () -> Unit)
+
 @Composable
-private fun ModelPicker(title: String, selected: String?, load: suspend () -> List<ModelInfo>?, onPick: (String) -> Unit) {
+private fun ModelPicker(
+    title: String,
+    selected: String?,
+    allows: (String) -> Boolean,
+    load: suspend () -> List<ModelInfo>?,
+    onPick: (String) -> Unit,
+) {
     var models by remember { mutableStateOf<List<ModelInfo>?>(null) }
     var failed by remember { mutableStateOf(false) }
     var attempt by remember { mutableStateOf(0) }
@@ -93,9 +158,11 @@ private fun ModelPicker(title: String, selected: String?, load: suspend () -> Li
                 OutlinedTextField(query, { query = it }, label = { Text("Search") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 LazyColumn(Modifier.heightIn(max = 320.dp)) {
                     items(models!!.filter { it.id.contains(query, true) || it.name.contains(query, true) }, key = { it.id }) { m ->
-                        Column(Modifier.fillMaxWidth().clickable { onPick(m.id) }.padding(vertical = 8.dp)) {
+                        val ok = allows(m.id)
+                        Column(Modifier.fillMaxWidth().clickable { onPick(m.id) }.alpha(if (ok) 1f else 0.45f).padding(vertical = 8.dp)) {
                             Text(m.name, fontWeight = if (m.id == selected) FontWeight.Bold else FontWeight.Normal)
-                            Text("${m.id} · input ${m.promptPrice ?: "?"} · output ${m.completionPrice ?: "?"}", style = MaterialTheme.typography.bodySmall)
+                            val note = if (ok) "" else " · no ZDR"
+                            Text("${m.id} · input ${m.promptPrice ?: "?"} · output ${m.completionPrice ?: "?"}$note", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }

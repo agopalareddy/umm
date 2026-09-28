@@ -46,3 +46,9 @@ internal data class KeyData(
     @kotlinx.serialization.SerialName("limit_remaining") val limitRemaining: Double? = null,
     @kotlinx.serialization.SerialName("limit_reset") val limitReset: String? = null,
 )
+
+@Serializable
+internal data class ZdrResponse(val data: List<ZdrEndpoint>)
+
+@Serializable
+internal data class ZdrEndpoint(@kotlinx.serialization.SerialName("model_id") val modelId: String? = null)

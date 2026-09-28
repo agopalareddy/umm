@@ -40,6 +40,7 @@ class DictationPipeline(
     private val retryDelayMs: (retryAfterSec: Long?) -> Long = { (it ?: 2) * 1000 },
     private val stats: StatsRepository? = null,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val onDataPolicyBlocked: suspend () -> Unit = {},
 ) {
     private val _state = MutableStateFlow<DictationState>(DictationState.Idle)
     val state: StateFlow<DictationState> = _state.asStateFlow()
@@ -309,7 +310,11 @@ class DictationPipeline(
                 }
             } catch (e: OpenRouterException) {
                 when (e) {
-                    is OpenRouterException.ModelUnavailable, is OpenRouterException.Unexpected -> last = e
+                    is OpenRouterException.ModelUnavailable -> {
+                        if (e.blockedByDataPolicy) onDataPolicyBlocked()
+                        last = e
+                    }
+                    is OpenRouterException.Unexpected -> last = e
                     else -> throw e
                 }
             }

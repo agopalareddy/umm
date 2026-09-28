@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
@@ -74,6 +75,9 @@ internal fun SettingsHome(settings: UmmSettings, keyConnected: Boolean, onBack: 
         NavRow(Icons.Default.Info, "About", "Version ${BuildConfig.VERSION_NAME} · source on GitHub") {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/agopalareddy/umm")))
         }
+        NavRow(Icons.Default.Lock, "Privacy policy", null) {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
+        }
     }
 }
 
@@ -121,6 +125,7 @@ internal fun AccountPage(onBack: () -> Unit, onConnect: () -> Unit, onPasteKey: 
 }
 
 private const val OPENROUTER_KEYS_URL = "https://openrouter.ai/settings/keys"
+internal const val PRIVACY_POLICY_URL = "https://agopalareddy.github.io/umm/privacy/"
 
 internal sealed interface KeyCheck {
     data object Checking : KeyCheck
@@ -184,6 +189,8 @@ internal fun ConnectionCard(key: String?, check: KeyCheck) {
                 KeyCheck.Unreachable -> InfoRow("Status", "Couldn't reach OpenRouter")
                 is KeyCheck.Ok -> {
                     InfoRow("Status", "Working")
+                    val zdr by LocalContext.current.graph.dataPolicy.observe().collectAsStateWithLifecycle(null)
+                    if (zdr?.enforced == true) InfoRow("Data policy", "Zero data retention only")
                     if (check.info.label.isNotBlank() && !check.info.label.startsWith("sk-")) InfoRow("Name", check.info.label)
                     check.info.usageMonthlyUsd?.let { InfoRow("Spent this month", usd(it)) }
                     InfoRow("Spent in total", usd(check.info.usageUsd))

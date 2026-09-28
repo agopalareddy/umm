@@ -51,6 +51,15 @@ internal fun OnboardingScreen(
         Step(3, "Connect OpenRouter", status.keyConnected, "Connect with OpenRouter", onConnect) {
             PasteKeyField(onPasteKey)
         }
+        val context = androidx.compose.ui.platform.LocalContext.current
+        Text(
+            "Your recordings go to OpenRouter with your own key, and nowhere else. Umm has no server and no tracking.",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        androidx.compose.material3.TextButton(onClick = {
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(PRIVACY_POLICY_URL)))
+        }) { Text("Privacy policy") }
     }
 }
 

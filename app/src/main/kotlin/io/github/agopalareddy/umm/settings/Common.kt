@@ -13,6 +13,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -117,10 +118,12 @@ internal fun NavRow(icon: Painter, title: String, summary: String?, onClick: () 
 
 // Rows where the whole line, label included, toggles the control.
 
+/** [dimmed] grays the row out but keeps it tappable, so the caller can explain why the option won't work. */
 @Composable
-internal fun RadioRow(selected: Boolean, onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
+internal fun RadioRow(selected: Boolean, onClick: () -> Unit, dimmed: Boolean = false, content: @Composable RowScope.() -> Unit) {
     Row(
-        Modifier.fillMaxWidth().selectable(selected = selected, onClick = onClick, role = Role.RadioButton).padding(vertical = 4.dp),
+        Modifier.fillMaxWidth().selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
+            .alpha(if (dimmed) 0.45f else 1f).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(selected = selected, onClick = null)

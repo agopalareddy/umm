@@ -141,6 +141,42 @@ class OpenRouterClientTest {
         assertTrue(bad is OpenRouterException.Unexpected && bad.status == 400 && bad.body.contains("nope"))
     }
 
+    private val zdrBlock =
+        """{"error":{"message":"0 endpoints out of 1 requested are available matching your guardrail restrictions and data policy. We removed them for the following reasons (an endpoint may have matched multiple reasons):\nZDR violation (account settings): 1 endpoint excluded","code":404}}"""
+
+    @Test fun zdrBlockIsFlaggedAsDataPolicy() = runTest {
+        enqueue(zdrBlock, 404)
+        try {
+            client().transcribe("m", byteArrayOf(1), "m4a", null)
+            fail("expected ModelUnavailable")
+        } catch (e: OpenRouterException.ModelUnavailable) {
+            assertEquals(OpenRouterException.ModelUnavailable(404, blockedByDataPolicy = true), e)
+        }
+    }
+
+    @Test fun probeReportsZdrBlock() = runTest {
+        enqueue(zdrBlock, 404)
+        assertEquals(true, client().blockedByDataPolicy("openai/gpt-4o-mini-transcribe"))
+        val body = server.takeRequest().json()
+        assertEquals("openai/gpt-4o-mini-transcribe", body["model"]!!.jsonPrimitive.content)
+    }
+
+    @Test fun probeReportsAllowedWhenTheProviderRejectsTheAudio() = runTest {
+        enqueue("""{"error":{"message":"Provider returned 400","code":400}}""", 400)
+        assertEquals(false, client().blockedByDataPolicy("m"))
+    }
+
+    @Test fun probeIsInconclusiveOnOtherErrors() = runTest {
+        enqueue("""{"error":{"message":"down"}}""", 503)
+        assertNull(client().blockedByDataPolicy("m"))
+    }
+
+    @Test fun zdrModelsListsModelIds() = runTest {
+        enqueue("""{"data":[{"model_id":"a/b","provider_name":"X"},{"model_id":"a/b","provider_name":"Y"},{"model_id":"c/d"}]}""")
+        assertEquals(setOf("a/b", "c/d"), client().zdrModels())
+        assertEquals("/endpoints/zdr", server.takeRequest().url.encodedPath)
+    }
+
     @Test fun missingKeyThrowsWithoutCalling() = runTest {
         key = null
         try {

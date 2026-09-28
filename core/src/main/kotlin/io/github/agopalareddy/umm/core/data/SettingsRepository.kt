@@ -58,6 +58,10 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         return json to (prefs[cacheTimeKey(name)] ?: 0L)
     }
 
+    fun observeCache(name: String): Flow<Pair<String, Long>?> = dataStore.data.map { prefs ->
+        prefs[cacheKey(name)]?.let { it to (prefs[cacheTimeKey(name)] ?: 0L) }
+    }
+
     suspend fun writeCache(name: String, json: String, savedAt: Long) {
         dataStore.edit {
             it[cacheKey(name)] = json

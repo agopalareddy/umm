@@ -13,6 +13,15 @@ interface OpenRouterApi {
 
     /** Details of the key in use, from OpenRouter's GET /key. */
     suspend fun keyInfo(): KeyInfo
+
+    /** Models with at least one zero data retention endpoint (GET /endpoints/zdr). Public; needs no key. */
+    suspend fun zdrModels(): Set<String>
+
+    /**
+     * Whether this account's data policy blocks [sttModel]. Sends a few bytes of invalid audio: a blocked model is
+     * refused before routing, an allowed one is rejected by the provider, and neither is billed. Null when unsure.
+     */
+    suspend fun blockedByDataPolicy(sttModel: String): Boolean?
 }
 
 data class KeyInfo(

@@ -20,6 +20,7 @@ import io.github.agopalareddy.umm.core.openrouter.OpenRouterClient
 import io.github.agopalareddy.umm.core.pipeline.DictationPipeline
 import io.github.agopalareddy.umm.core.pipeline.DictationState
 import io.github.agopalareddy.umm.ime.DeliveryRouter
+import io.github.agopalareddy.umm.core.policy.DataPolicyRepository
 import io.github.agopalareddy.umm.core.policy.ModelCatalog
 import io.github.agopalareddy.umm.core.policy.ModelPlan
 import io.github.agopalareddy.umm.core.policy.ModelSelector
@@ -64,11 +65,25 @@ class AppGraph(private val app: Application) {
         )
     }
     val modelCatalog by lazy { ModelCatalog(openRouter, settings, clock) }
+    val dataPolicy by lazy { DataPolicyRepository(openRouter, settings, clock) }
 
     suspend fun modelPlan(): ModelPlan {
         val current = settings.settings.first()
         val liveStt = if (current.modelMode == ModelMode.NEWEST_STT) modelCatalog.sttModels() else null
-        return ModelSelector.plan(current, recommendations.current(), liveStt)
+        return ModelSelector.plan(current, recommendations.current(), liveStt, dataPolicy.current())
+    }
+
+    init {
+        // Re-check the account's zero data retention setting daily, and right away when the key changes.
+        appScope.launch {
+            var previous: String? = null
+            apiKeyStore.key.collect { key ->
+                if (key != null) {
+                    runCatching { dataPolicy.refresh(recommendations.current(), force = previous != null && previous != key) }
+                }
+                previous = key
+            }
+        }
     }
 
     /** Routes finished dictations to the field they came from, or to the clipboard. */
@@ -86,6 +101,7 @@ class AppGraph(private val app: Application) {
             history = history,
             audioDir = File(app.filesDir, "audio"),
             stats = stats,
+            onDataPolicyBlocked = { dataPolicy.markEnforced() },
         ).also(::deliverResults)
     }
 
