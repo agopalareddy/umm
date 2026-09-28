@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
@@ -50,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import io.github.agopalareddy.umm.BuildConfig
 import io.github.agopalareddy.umm.R
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.data.ThemeMode
@@ -68,6 +70,10 @@ internal fun SettingsHome(settings: UmmSettings, keyConnected: Boolean, onBack: 
         NavRow(Icons.Default.List, "App categories", "Cleanup level and script per app") { onOpen(Routes.CATEGORIES) }
         NavRow(Icons.Default.Build, "Models", settings.modelMode.label()) { onOpen(Routes.MODELS) }
         NavRow(Icons.Default.Star, "Appearance", settings.themeMode.label() + if (settings.dynamicColor) " · dynamic theme" else "") { onOpen(Routes.APPEARANCE) }
+        val context = LocalContext.current
+        NavRow(Icons.Default.Info, "About", "Version ${BuildConfig.VERSION_NAME} · source on GitHub") {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/agopalareddy/umm")))
+        }
     }
 }
 
