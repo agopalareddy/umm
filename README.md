@@ -1,109 +1,112 @@
-# Umm
+<p align="center">
+  <img src="docs/screenshots/icon.png" width="96" alt="Umm icon">
+</p>
 
-A voice keyboard for Android. Switch to it in any text field, talk, and it types a cleaned-up version of what you said.
-Named after the filler word it deletes.
+<h1 align="center">Umm</h1>
 
-Umm uses [OpenRouter](https://openrouter.ai) for speech-to-text and cleanup, with each user's own OpenRouter account.
-There is no Umm server and no Umm bill: audio goes from the phone to OpenRouter and nowhere else.
+<p align="center">
+  A voice keyboard for Android. Switch to it in any text field, talk, and it types a cleaned-up version of what you said.<br>
+  Named after the filler word it deletes.
+</p>
 
-## What it does
+<p align="center">
+  <a href="https://github.com/agopalareddy/umm/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/agopalareddy/umm?include_prereleases&label=download"></a>
+  <a href="https://github.com/agopalareddy/umm/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/agopalareddy/umm/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE.md"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue"></a>
+  <img alt="Android 10+" src="https://img.shields.io/badge/Android-10%2B-3ddc84">
+</p>
 
-- **Voice-only keyboard.** Pick Umm from the keyboard switcher; it starts listening right away and stops after a
-  few seconds of silence. The cleaned text goes into the field, and Umm switches back to your normal keyboard.
-- **Continuous mode.** Double-tap the mic to keep recording through pauses (for whispering or thinking out loud)
-  until you tap **Finish**.
-- **Cleanup levels.** Raw, Light (removes filler and self-corrections), Formatted (adds lists and paragraphs), and
-  Polished (rewrites into clear prose).
-- **Per-app categories.** Email, Messaging, Social, and Notes each have their own level, seeded with popular apps.
-  Unknown apps can be assigned from the keyboard.
-- **Mixed-language speech.** Hinglish and similar speech is kept as spoken, never translated, in Latin or native
-  script per category.
-- **Models that update themselves.** The recommended models live in [`models/recommended.json`](models/recommended.json)
-  and are fetched daily, so the default can change without an app update. Users can also follow the newest
-  speech-to-text model or pick their own.
-- **Nothing lost.** Failed dictations keep their audio for retry (deleted after 7 days). If the field is gone by
-  the time text is ready, it goes to the clipboard. The last 50 dictations are in History.
+<p align="center">
+  <img src="docs/screenshots/keyboard.png" width="200" alt="The Umm keyboard listening in a text field">
+  <img src="docs/screenshots/home.png" width="200" alt="Home screen with usage stats">
+  <img src="docs/screenshots/settings.png" width="200" alt="Settings">
+  <img src="docs/screenshots/account.png" width="200" alt="Account page showing the OpenRouter connection and spend">
+</p>
 
-## How a dictation works
+You say "um, so, can we meet at five, no, six tomorrow?" and Umm types "Can we meet at 6 tomorrow?". Filler
+words, false starts, and self-corrections come out. Lists become bullets in email. Hinglish stays Hinglish.
 
-1. The keyboard records mono AAC (16 kHz, 32 kbps) and watches the mic level to detect speech and silence on the
-   phone. Silent recordings are never uploaded.
-2. The audio goes to OpenRouter's `/audio/transcriptions` endpoint (currently `openai/gpt-4o-mini-transcribe`,
-   falling back to `mistralai/voxtral-mini-transcribe`).
-3. Unless the level is Raw, the transcript goes to `/chat/completions` with the level's instructions (currently
-   `google/gemini-3.5-flash-lite`, falling back to `deepseek/deepseek-v4.1-flash`). The transcript is treated as
+## Why Umm
+
+**You pay for what you use, and you can cap it.** Umm runs on your own [OpenRouter](https://openrouter.ai)
+account, so there is no subscription. In testing, a short dictation cost about $0.0004
+(`gpt-4o-mini-transcribe` plus `gemini-3.5-flash-lite`). At 100 dictations a day, that is roughly $1.20 a month,
+compared with $15 a month for [Wispr Flow Pro](https://wisprflow.ai/pricing). You can set a hard monthly credit
+limit on your OpenRouter key, and Umm shows what you have spent this month on its Account page.
+
+**It runs on phones the alternatives don't.** Umm needs Android 10 or newer. Gboard's Rambler is currently
+[limited to the Pixel 11 series](https://support.google.com/gboard/answer/17468539), and Wispr Flow for Android
+[needs Android 13](https://www.eesel.ai/blog/wispr-flow-pricing).
+
+**Nothing goes through an Umm server.** There isn't one. Audio goes from your phone to OpenRouter and the model
+provider it routes to, using your key. If you turn on OpenRouter's zero data retention setting, Umm still works:
+it falls back to models that honor it.
+
+**You choose how much it rewrites.** Four cleanup levels (Raw, Light, Formatted, Polished), set per app category.
+Messaging defaults to Light, email and notes to Formatted, and you can move any app between categories from the
+keyboard itself.
+
+**It handles quiet speech and mixed languages.** Double-tap the mic to keep recording through pauses or a
+whisper. Mixed speech such as Hinglish is kept as spoken, never translated, in Latin or native script per category.
+
+**You can read and change the code.** The source is here, and the models Umm uses are listed in
+[`models/recommended.json`](models/recommended.json).
+
+## Download
+
+1. On your phone, open the [latest release](https://github.com/agopalareddy/umm/releases/latest) and download the
+   `.apk` file.
+2. Open it and allow installs from your browser or files app when Android asks.
+3. Open Umm and follow the three setup steps: enable the keyboard, allow the microphone, and connect OpenRouter.
+
+You need an OpenRouter account with a few dollars of credit. "Connect with OpenRouter" signs you in and creates a
+key for Umm; you can also paste a key you already have.
+
+New versions install over the old one, and your settings and history stay.
+
+## Using it
+
+- In any text field, switch to Umm from the keyboard switcher. It starts listening right away.
+- Talk. It stops after 3 seconds of silence (adjustable), cleans up the text, types it, and switches back to your
+  usual keyboard.
+- Double-tap the mic to record until you tap **Finish**.
+- The chips above the mic change the cleanup level for this dictation, cycle languages, or move the current app to
+  another category.
+- Nothing is lost: if the network fails, the audio is kept for a retry, and if you have left the text field by the
+  time the text is ready, it goes to the clipboard. History keeps your last 50 dictations.
+
+## How it works
+
+1. The keyboard records mono AAC audio and detects speech and silence on the phone. Silent recordings are never
+   uploaded.
+2. The audio goes to OpenRouter's `/audio/transcriptions` endpoint (`openai/gpt-4o-mini-transcribe`, falling back
+   to `mistralai/voxtral-mini-transcribe`).
+3. Unless the level is Raw, the transcript goes to `/chat/completions` with the level's instructions
+   (`google/gemini-3.5-flash-lite`, falling back to `deepseek/deepseek-v4.1-flash`). The transcript is treated as
    data, so dictating "ignore previous instructions" gets cleaned, not obeyed.
-4. The text is inserted into the field the dictation started in.
+4. The text goes into the field the dictation started in.
 
-A short dictation typically takes 1.2–1.8 s from the end of speech to text on screen.
+A short dictation typically appears 1.2 to 1.8 seconds after you stop speaking. The recommended models are
+updated daily from this repository, so better models reach every install without a new release.
 
-## Building
+<p align="center">
+  <img src="docs/screenshots/models.png" width="200" alt="Models page">
+  <img src="docs/screenshots/dark.png" width="200" alt="Dark theme">
+</p>
 
-Requirements: JDK 17 and the Android SDK (compile SDK 37; the Gradle plugin downloads it if the licenses are
-accepted).
+## Building from source
+
+You need JDK 17 and the Android SDK.
 
 ```bash
 ./gradlew assembleDebug
 ```
 
-For development, put your OpenRouter key in a `.env` file at the repo root. It is git-ignored, and only debug
-builds read it, so the debug app starts already connected:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, tests, and how releases are made.
 
-```
-OPENROUTER_API_KEY="sk-or-..."
-```
+## License
 
-Debug APKs therefore contain your key. Don't share them. Release builds never read `.env`.
-
-Install on a phone over wireless debugging:
-
-```bash
-adb pair <ip:pairing-port> <code>
-adb connect <ip:port>
-./gradlew installDebug
-```
-
-## Tests
-
-```bash
-./gradlew testDebugUnitTest
-```
-
-JVM and Robolectric tests cover the pipeline, silence detection (including real mic traces from a Pixel 9 Pro),
-model selection, storage, and the keyboard's insertion rules.
-
-Live tests call the real OpenRouter API with the spoken fixtures in `core/src/test/resources/audio` and cost a
-fraction of a cent per run. They only run when asked:
-
-```bash
-./gradlew :core:testDebugUnitTest -Plive --tests '*LiveOpenRouterTest*'
-```
-
-Override the models under test with `-PsttModel=...` and `-PcleanupModel=...`. `scripts/make-fixtures.sh`
-regenerates the fixture clips.
-
-CI (`.github/workflows/ci.yml`) runs the unit tests and builds a debug APK on every push to `main` and every pull
-request. Run it manually with **live** checked to include the live tests; that needs an `OPENROUTER_API_KEY`
-repository secret.
-
-## Project layout
-
-- `core/`: the Android library with the whole dictation pipeline and no UI: recording and silence detection,
-  the OpenRouter client, cleanup prompts, model and level policy, and storage. A future floating-bubble front end
-  can reuse it unchanged.
-- `app/`: the keyboard service (`ime/`) and the onboarding, settings, categories, models, and history screens
-  (`settings/`).
-- `models/recommended.json`: the default models, also bundled into the APK.
-- `docs/superpowers/specs/` and `docs/superpowers/plans/`: the v1 design and implementation plan.
-- `docs/testing/device-checklist.md`: the manual on-device checks.
-
-## Status
-
-v1 works end to end on a Pixel 9 Pro (Android 17). Still open:
-
-- Several items in the [device checklist](docs/testing/device-checklist.md) have not been walked through yet,
-  including the "Connect with OpenRouter" sign-in callback (`umm://oauth`). Pasting a key works either way.
-- `models/recommended.json` is fetched from this repository's raw URL, which only works once the repository is
-  public. Until then the app uses its bundled copy.
-- Before a Play Store release: a privacy policy, the Data safety form, and a release signing setup.
-- Planned later: a floating-bubble front end, custom categories.
+Umm is © 2026 Aadarsha Gopala Reddy and licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE.md). You may use, copy, modify, and share it for any noncommercial
+purpose, as long as every copy keeps the license and the `Required Notice` line crediting the original. Commercial
+use needs separate permission. Contributions are covered in [CONTRIBUTING.md](CONTRIBUTING.md#license-of-contributions).
