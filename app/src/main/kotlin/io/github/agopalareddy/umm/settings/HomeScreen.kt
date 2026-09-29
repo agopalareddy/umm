@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AssistChip
 import androidx.compose.material.icons.filled.Settings
@@ -64,7 +64,7 @@ internal fun HomeScreen(setupComplete: Boolean, onSetup: () -> Unit, onOpen: (St
         },
         onBack = null,
         actions = {
-            IconButton(onClick = { onOpen(Routes.HISTORY) }) { Icon(Icons.Default.DateRange, contentDescription = "History") }
+            IconButton(onClick = { onOpen(Routes.HISTORY) }) { Icon(Icons.Default.History, contentDescription = "History") }
             IconButton(onClick = { onOpen(Routes.SETTINGS) }) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
         },
     ) {

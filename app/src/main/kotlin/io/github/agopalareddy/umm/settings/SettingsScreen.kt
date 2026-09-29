@@ -13,12 +13,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -50,10 +51,8 @@ import io.github.agopalareddy.umm.core.openrouter.OpenRouterException
 import io.github.agopalareddy.umm.graph
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import io.github.agopalareddy.umm.BuildConfig
-import io.github.agopalareddy.umm.R
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.data.ThemeMode
 import io.github.agopalareddy.umm.core.data.UmmSettings
@@ -63,14 +62,14 @@ internal typealias SettingsChange = ((UmmSettings) -> UmmSettings) -> Unit
 @Composable
 internal fun SettingsHome(settings: UmmSettings, keyConnected: Boolean, onBack: () -> Unit, onOpen: (String) -> Unit) {
     Page("Settings", onBack) {
-        NavRow(Icons.Default.AccountCircle, "Account", if (keyConnected) "Connected to OpenRouter ✓" else "Not connected") { onOpen(Routes.ACCOUNT) }
+        NavRow(Icons.Default.AccountCircle, "Account", if (keyConnected) "Connected to OpenRouter" else "Not connected") { onOpen(Routes.ACCOUNT) }
         val silence = settings.silenceTimeoutSec?.let { "stop after $it s of silence" } ?: "tap to stop"
-        NavRow(Icons.Default.Edit, "Dictation", "${settings.defaultLevel.title()} by default · $silence") { onOpen(Routes.DICTATION) }
+        NavRow(Icons.Default.Mic, "Dictation", "${settings.defaultLevel.title()} by default · $silence") { onOpen(Routes.DICTATION) }
         val languages = settings.keyboardLanguages.joinToString { LANGUAGES[it] ?: it }
-        NavRow(painterResource(R.drawable.ic_translate), "Languages", languages) { onOpen(Routes.LANGUAGES) }
-        NavRow(Icons.Default.List, "App categories", "Cleanup level and script per app") { onOpen(Routes.CATEGORIES) }
-        NavRow(Icons.Default.Build, "Models", settings.modelMode.label() + if (settings.zdrOnly) " · zero data retention" else "") { onOpen(Routes.MODELS) }
-        NavRow(Icons.Default.Star, "Appearance", settings.themeMode.label() + if (settings.dynamicColor) " · dynamic theme" else "") { onOpen(Routes.APPEARANCE) }
+        NavRow(Icons.Default.Translate, "Languages", languages) { onOpen(Routes.LANGUAGES) }
+        NavRow(Icons.Default.Category, "App categories", "Cleanup level and script per app") { onOpen(Routes.CATEGORIES) }
+        NavRow(Icons.Default.AutoAwesome, "Models", settings.modelMode.label() + if (settings.zdrOnly) " · zero data retention" else "") { onOpen(Routes.MODELS) }
+        NavRow(Icons.Default.Palette, "Appearance", settings.themeMode.label() + if (settings.dynamicColor) " · dynamic theme" else "") { onOpen(Routes.APPEARANCE) }
         val context = LocalContext.current
         NavRow(Icons.Default.Info, "About", "Version ${BuildConfig.VERSION_NAME} · source on GitHub") {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/agopalareddy/umm")))

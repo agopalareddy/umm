@@ -32,9 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.unit.dp
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 
@@ -106,11 +104,7 @@ internal fun Section(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-internal fun NavRow(icon: ImageVector, title: String, summary: String?, onClick: () -> Unit) =
-    NavRow(rememberVectorPainter(icon), title, summary, onClick)
-
-@Composable
-internal fun NavRow(icon: Painter, title: String, summary: String?, onClick: () -> Unit) {
+internal fun NavRow(icon: ImageVector, title: String, summary: String?, onClick: () -> Unit) {
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = summary?.let { { Text(it) } },

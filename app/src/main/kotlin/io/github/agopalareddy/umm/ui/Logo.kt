@@ -23,7 +23,7 @@ fun UmmLogo(size: Dp = 40.dp, modifier: Modifier = Modifier) {
     ) {
         Icon(
             painterResource(R.drawable.ic_umm_mark),
-            contentDescription = "Umm",
+            contentDescription = null, // always shown beside the app name, so TalkBack would say "Umm Umm"
             tint = MaterialTheme.colorScheme.onPrimary,
             modifier = Modifier.size(size * 0.62f),
         )
