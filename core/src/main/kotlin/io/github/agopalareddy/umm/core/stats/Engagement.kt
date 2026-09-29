@@ -4,7 +4,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
-/** One heatmap cell: `step` is 0 for no dictations, else 1..4 by rank among the days that have any. */
+/** One heatmap cell: `step` is 0 for no dictations, else 1..4 by rank among the days in the calendar that have any. */
 data class CalendarDay(val date: LocalDate, val dictations: Int, val step: Int)
 
 data class Badge(val id: String, val label: String, val earned: Boolean)
@@ -40,10 +40,10 @@ data class Engagement(
             val counts = ok.groupingBy { day(it.createdAt) }.eachCount()
             val words = ok.sumOf { it.cleanWords }
 
-            val nonZero = counts.values.sorted()
-            val calendar = (CALENDAR_DAYS - 1 downTo 0).map { back ->
-                val date = today.minusDays(back)
-                val count = counts[date] ?: 0
+            val window = (CALENDAR_DAYS - 1 downTo 0).map { today.minusDays(it) to (counts[today.minusDays(it)] ?: 0) }
+            // Quartiles cover only the days shown, so old heavy days don't flatten the heatmap.
+            val nonZero = window.map { it.second }.filter { it > 0 }
+            val calendar = window.map { (date, count) ->
                 val step = if (count == 0) 0 else {
                     val rank = nonZero.count { it <= count }
                     (4 * rank + nonZero.size - 1) / nonZero.size

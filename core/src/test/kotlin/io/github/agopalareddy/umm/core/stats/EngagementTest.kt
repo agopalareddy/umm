@@ -47,6 +47,22 @@ class EngagementTest {
         assertEquals(0, e.calendar[e.calendar.size - 5].step)
     }
 
+    @Test fun stepsIgnoreDaysOutsideTheCalendar() {
+        // Heavy days older than the 84-day window must not flatten the visible quartiles.
+        val rows = rowsOn(100, 50, 1_000) + rowsOn(101, 60, 2_000) +
+            rowsOn(3, 1, 1) + rowsOn(2, 2, 10) + rowsOn(1, 3, 20) + rowsOn(0, 4, 30)
+        assertEquals(listOf(1, 2, 3, 4), from(rows).calendar.takeLast(4).map { it.step })
+    }
+
+    @Test fun calendarBucketsByLocalDay() {
+        // 23:30 UTC on Sep 26 is already Sep 27 in Tokyo.
+        val tokyo = java.time.ZoneId.of("Asia/Tokyo")
+        val row = entry(1, "2026-09-26").copy(createdAt = at("2026-09-26", 23) + 30 * 60_000)
+        val e = Engagement.from(listOf(row), at("2026-09-27"), tokyo)
+        assertEquals(LocalDate.parse("2026-09-27"), e.calendar.last().date)
+        assertEquals(1, e.calendar.last().dictations)
+    }
+
     @Test fun equalCountsAllGetTopStep() {
         val rows = rowsOn(2, 5, 1) + rowsOn(1, 5, 10) + rowsOn(0, 5, 20)
         assertEquals(listOf(4, 4, 4), from(rows).calendar.takeLast(3).map { it.step })
