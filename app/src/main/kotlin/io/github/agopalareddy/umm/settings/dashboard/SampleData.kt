@@ -6,6 +6,8 @@ import io.github.agopalareddy.umm.core.stats.StatsEntry
 import io.github.agopalareddy.umm.core.stats.StatsRepository
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
 /** Debug-only: fills the stats table with about 600 made-up dictations over the last 90 days, so the dashboard has something to draw. */
@@ -71,6 +73,13 @@ object SampleData {
                     succeeded = !failed,
                 ),
             )
+        }
+    }
+
+    /** Deletes only the seeded rows, leaving real dictations alone. Runs in a Room transaction so the stats flows refresh. */
+    suspend fun remove(db: UmmDatabase) = withContext(Dispatchers.IO) {
+        db.runInTransaction {
+            db.openHelper.writableDatabase.execSQL("DELETE FROM dictation_stats WHERE historyId >= $FIRST_ID")
         }
     }
 

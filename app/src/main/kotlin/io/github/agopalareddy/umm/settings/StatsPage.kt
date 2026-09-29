@@ -33,7 +33,6 @@ internal fun UmmSettings.statsSummary() =
 internal fun StatsPage(settings: UmmSettings, onBack: () -> Unit, onChange: SettingsChange) {
     val graph = LocalContext.current.graph
     val scope = rememberCoroutineScope()
-    val count by graph.stats.observeAll().collectAsStateWithLifecycle(emptyList())
     var confirmDelete by remember { mutableStateOf(false) }
     Page("Stats", onBack) {
         Section("Home") {
@@ -49,14 +48,18 @@ internal fun StatsPage(settings: UmmSettings, onBack: () -> Unit, onChange: Sett
             Text("Off stops new rows being saved. Existing stats stay. History is not affected.", style = MaterialTheme.typography.bodySmall)
         }
         Section("Data") {
-            Text("${count.size} dictations recorded", style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { confirmDelete = true }) { Text("Delete stats data") }
-                if (BuildConfig.DEBUG) {
+            if (BuildConfig.DEBUG) {
+                val count by graph.stats.observeAll().collectAsStateWithLifecycle(emptyList())
+                Text("${count.size} dictations recorded", style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(8.dp))
+            }
+            OutlinedButton(onClick = { confirmDelete = true }) { Text("Delete stats data") }
+            if (BuildConfig.DEBUG) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { scope.launch { SampleData.seed(graph.database, System.currentTimeMillis()) } }) {
                         Text("Load sample data")
                     }
+                    OutlinedButton(onClick = { scope.launch { SampleData.remove(graph.database) } }) { Text("Remove sample data") }
                 }
             }
         }

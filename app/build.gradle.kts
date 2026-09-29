@@ -116,6 +116,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.browser)
+    // UmmDatabase extends RoomDatabase; SampleData.remove runs a transaction on it.
+    implementation(libs.room.runtime)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
