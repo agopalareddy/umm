@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
@@ -70,6 +71,7 @@ internal fun SettingsHome(settings: UmmSettings, keyConnected: Boolean, onBack: 
         NavRow(Icons.Default.Category, "App categories", "Cleanup level and script per app") { onOpen(Routes.CATEGORIES) }
         NavRow(Icons.Default.AutoAwesome, "Models", settings.modelMode.label() + if (settings.zdrOnly) " · zero data retention" else "") { onOpen(Routes.MODELS) }
         NavRow(Icons.Default.Palette, "Appearance", settings.themeMode.label() + if (settings.dynamicColor) " · dynamic theme" else "") { onOpen(Routes.APPEARANCE) }
+        NavRow(Icons.Default.BarChart, "Stats", settings.statsSummary()) { onOpen(Routes.STATS) }
         val context = LocalContext.current
         NavRow(Icons.Default.Info, "About", "Version ${BuildConfig.VERSION_NAME} · source on GitHub") {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/agopalareddy/umm")))

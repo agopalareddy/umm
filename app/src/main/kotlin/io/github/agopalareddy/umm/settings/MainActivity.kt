@@ -45,6 +45,7 @@ internal object Routes {
     const val APPEARANCE = "settings/appearance"
     const val CATEGORIES = "settings/categories"
     const val MODELS = "settings/models"
+    const val STATS = "settings/stats"
     const val HISTORY = "history"
 }
 
@@ -123,6 +124,7 @@ class MainActivity : ComponentActivity() {
             composable(Routes.DICTATION) { DictationPage(settings, back, change) }
             composable(Routes.LANGUAGES) { LanguagesPage(settings, back, change) }
             composable(Routes.APPEARANCE) { AppearancePage(settings, back, change) }
+            composable(Routes.STATS) { StatsPage(settings, back, change) }
             composable(Routes.CATEGORIES) { CategoriesScreen(back) }
             composable(Routes.MODELS) { ModelsScreen(back) }
             composable(Routes.HISTORY) { HistoryScreen(back) }
