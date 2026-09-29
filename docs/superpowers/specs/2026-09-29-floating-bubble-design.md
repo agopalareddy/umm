@@ -136,6 +136,9 @@ the existing `DeliveryRouter` under a fresh origin. On delivery it:
 
 ### Errors
 
+In *Always* mode, pressing while no editable, non-password field is focused
+does not record: the bubble shakes and a toast says "Tap a text field first".
+
 Missing microphone permission or key: tapping opens Umm's setup screen, like the
 keyboard's "Finish setup". Network and credit failures show the orb's retry icon;
 the failure reasons match the keyboard's.
