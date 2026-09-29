@@ -2,7 +2,9 @@ package io.github.agopalareddy.umm.core.stats
 
 import io.github.agopalareddy.umm.core.data.UmmDatabase
 import java.time.ZoneId
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 
 class StatsRepository(db: UmmDatabase, private val enabled: suspend () -> Boolean = { true }) {
@@ -23,4 +25,12 @@ class StatsRepository(db: UmmDatabase, private val enabled: suspend () -> Boolea
 
     fun observeSummary(clock: () -> Long = System::currentTimeMillis, zone: ZoneId = ZoneId.systemDefault()): Flow<UsageSummary> =
         dao.observeAll().map { UsageSummary.from(it, clock(), zone) }
+
+    /** Recomputed on every table change, off the main thread. */
+    fun observeDashboard(
+        range: DashboardRange,
+        clock: () -> Long = System::currentTimeMillis,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): Flow<DashboardStats> =
+        dao.observeAll().map { DashboardStats.from(it, range, clock(), zone) }.flowOn(Dispatchers.Default)
 }
