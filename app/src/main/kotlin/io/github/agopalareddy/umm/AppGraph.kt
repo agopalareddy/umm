@@ -53,7 +53,7 @@ class AppGraph(private val app: Application) {
     val categories by lazy { CategoryRepository(database) }
     val history by lazy { HistoryRepository(database, clock) }
     val settings by lazy { SettingsRepository(app.settingsStore) }
-    val stats by lazy { StatsRepository(database) }
+    val stats by lazy { StatsRepository(database) { settings.settings.first().statsRecording } }
 
     val recommendations by lazy {
         RecommendationRepository(

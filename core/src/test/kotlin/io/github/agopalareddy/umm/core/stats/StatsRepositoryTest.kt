@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.data.UmmDatabase
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -29,5 +30,32 @@ class StatsRepositoryTest {
         assertEquals(2, all.size)
         assertEquals(true, all.first { it.historyId == 1L }.succeeded)
         assertEquals(3_000L, repo.get(1)!!.audioMs)
+    }
+
+    @Test fun recordDoesNothingWhenDisabled() = runTest {
+        val disabled = StatsRepository(db, enabled = { false })
+        disabled.record(entry(1, ok = true))
+        assertEquals(emptyList<StatsEntry>(), disabled.all())
+    }
+
+    @Test fun deleteAllEmptiesTheTable() = runTest {
+        repo.record(entry(1, ok = true))
+        repo.record(entry(2, ok = true))
+        repo.deleteAll()
+        assertEquals(emptyList<StatsEntry>(), repo.all())
+    }
+
+    @Test fun deleteAllWorksWhileDisabled() = runTest {
+        repo.record(entry(1, ok = true))
+        val disabled = StatsRepository(db, enabled = { false })
+        disabled.deleteAll()
+        assertEquals(emptyList<StatsEntry>(), repo.all())
+    }
+
+    @Test fun observeAllEmitsEmptyAfterDelete() = runTest {
+        repo.record(entry(1, ok = true))
+        assertEquals(1, repo.observeAll().first().size)
+        repo.deleteAll()
+        assertEquals(0, repo.observeAll().first().size)
     }
 }

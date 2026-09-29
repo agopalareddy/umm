@@ -18,4 +18,7 @@ internal interface StatsDao {
 
     @Query("SELECT * FROM dictation_stats ORDER BY createdAt")
     fun observeAll(): Flow<List<StatsEntry>>
+
+    @Query("DELETE FROM dictation_stats")
+    suspend fun deleteAll()
 }
