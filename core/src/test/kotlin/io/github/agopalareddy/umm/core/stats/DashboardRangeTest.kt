@@ -28,6 +28,12 @@ class DashboardRangeTest {
         assertNull(DashboardRange.ALL.previousWindow(today))
     }
 
+    @Test fun allWithFutureFirstRowStillEndsToday() {
+        val w = DashboardRange.ALL.window(today, LocalDate.parse("2026-10-05"))
+        assertEquals(today, w.start)
+        assertEquals(today, w.endInclusive)
+    }
+
     @Test fun allWithNoRowsIsJustToday() {
         val w = DashboardRange.ALL.window(today, null)
         assertEquals(today, w.start)
