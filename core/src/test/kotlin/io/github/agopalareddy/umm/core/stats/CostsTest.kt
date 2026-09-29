@@ -104,6 +104,34 @@ class CostsTest {
         assertEquals(0.03 / 7 * 30, projected!!, 1e-9)
     }
 
+    @Test fun failedRowsAddSpendButNotDictationsToAModel() {
+        val rows = listOf(
+            entry(1, "2026-09-26", cost = 0.010, stt = "stt-a", cleanup = "chat-a"),
+            entry(2, "2026-09-27", cost = 0.020, stt = "stt-a", cleanup = "chat-a", ok = false),
+            entry(3, "2026-09-27", cost = 0.005, stt = "stt-b", cleanup = "chat-b", ok = false),
+        )
+        val costs = Costs.from(rows, DashboardRange.D7, nowMs, zone)
+        assertEquals("stt-a", costs.bySttModel[0].model)
+        assertEquals(0.030, costs.bySttModel[0].usd, 1e-9)
+        assertEquals(1, costs.bySttModel[0].dictations)
+        assertEquals(1, costs.byCleanupModel[0].dictations)
+        // A model used only by failed attempts still lists its spend, with zero dictations.
+        assertEquals("stt-b", costs.bySttModel[1].model)
+        assertEquals(0.005, costs.bySttModel[1].usd, 1e-9)
+        assertEquals(0, costs.bySttModel[1].dictations)
+    }
+
+    @Test fun projectionScalesToShortMonths() {
+        val february = at("2026-02-15", 18)
+        val rows = listOf(
+            entry(1, "2026-02-10", cost = 0.010),
+            entry(2, "2026-02-12", cost = 0.010),
+            entry(3, "2026-02-15", cost = 0.010),
+        )
+        val projected = Costs.from(rows, DashboardRange.D7, february, zone).projectedMonthUsd
+        assertEquals(0.03 / 7 * 28, projected!!, 1e-9)
+    }
+
     @Test fun projectionIgnoresRowsOlderThanSevenDays() {
         val rows = listOf(
             entry(1, "2026-09-20", cost = 1.0),

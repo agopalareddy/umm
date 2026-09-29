@@ -5,7 +5,10 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 
-/** Spend under one model; [dictations] counts every attempt that used it, failed or not. */
+/**
+ * Spend under one model. [usd] includes failed attempts; [dictations] counts only successful
+ * ones, so a model used only by failed attempts lists its spend with zero dictations.
+ */
 data class ModelSpend(val model: String, val usd: Double, val dictations: Int)
 
 /**
@@ -46,7 +49,7 @@ data class Costs(
 
         private fun spendBy(rows: List<StatsEntry>, model: (StatsEntry) -> String?): List<ModelSpend> =
             rows.groupBy { model(it) ?: UNKNOWN_MODEL }
-                .map { (name, group) -> ModelSpend(name, group.sumOf { it.costUsd ?: 0.0 }, group.size) }
+                .map { (name, group) -> ModelSpend(name, group.sumOf { it.costUsd ?: 0.0 }, group.count { it.succeeded }) }
                 .sortedWith(compareByDescending<ModelSpend> { it.usd }.thenBy { it.model })
 
         private fun projectedMonth(byDay: Map<LocalDate, List<StatsEntry>>, today: LocalDate): Double? {
