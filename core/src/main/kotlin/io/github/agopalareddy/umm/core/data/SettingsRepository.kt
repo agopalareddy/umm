@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
+import io.github.agopalareddy.umm.core.stats.DashboardRange
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -31,6 +32,14 @@ data class UmmSettings(
     val dynamicColor: Boolean = true,
     /** Use only zero data retention models, even if the OpenRouter account doesn't require it. */
     val zdrOnly: Boolean = false,
+    /** Show the Stats screen entry point. */
+    val statsVisible: Boolean = true,
+    /** Record a stats row for each dictation. */
+    val statsRecording: Boolean = true,
+    val dashboardRange: DashboardRange = DashboardRange.D30,
+    /** Dashboard card IDs in display order; empty means the default order. */
+    val dashboardOrder: List<String> = emptyList(),
+    val dashboardHidden: Set<String> = emptySet(),
 )
 
 class SettingsRepository(private val dataStore: DataStore<Preferences>) {
@@ -52,6 +61,11 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
             prefs[THEME_MODE] = next.themeMode.name
             prefs[DYNAMIC_COLOR] = next.dynamicColor
             prefs[ZDR_ONLY] = next.zdrOnly
+            prefs[STATS_VISIBLE] = next.statsVisible
+            prefs[STATS_RECORDING] = next.statsRecording
+            prefs[DASHBOARD_RANGE] = next.dashboardRange.name
+            prefs[DASHBOARD_ORDER] = next.dashboardOrder.joinToString(",")
+            prefs[DASHBOARD_HIDDEN] = next.dashboardHidden.joinToString(",")
         }
     }
 
@@ -91,6 +105,14 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
             themeMode = this[THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: defaults.themeMode,
             dynamicColor = this[DYNAMIC_COLOR] ?: defaults.dynamicColor,
             zdrOnly = this[ZDR_ONLY] ?: defaults.zdrOnly,
+            statsVisible = this[STATS_VISIBLE] ?: defaults.statsVisible,
+            statsRecording = this[STATS_RECORDING] ?: defaults.statsRecording,
+            dashboardRange = this[DASHBOARD_RANGE]?.let { runCatching { DashboardRange.valueOf(it) }.getOrNull() }
+                ?: defaults.dashboardRange,
+            dashboardOrder = this[DASHBOARD_ORDER]?.split(",")?.filter { it.isNotBlank() }
+                ?: defaults.dashboardOrder,
+            dashboardHidden = this[DASHBOARD_HIDDEN]?.split(",")?.filter { it.isNotBlank() }?.toSet()
+                ?: defaults.dashboardHidden,
         )
     }
 
@@ -109,6 +131,11 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val ZDR_ONLY = booleanPreferencesKey("zdr_only")
+        val STATS_VISIBLE = booleanPreferencesKey("stats_visible")
+        val STATS_RECORDING = booleanPreferencesKey("stats_recording")
+        val DASHBOARD_RANGE = stringPreferencesKey("dashboard_range")
+        val DASHBOARD_ORDER = stringPreferencesKey("dashboard_order")
+        val DASHBOARD_HIDDEN = stringPreferencesKey("dashboard_hidden")
         fun cacheKey(name: String) = stringPreferencesKey("cache_$name")
         fun cacheTimeKey(name: String) = longPreferencesKey("cache_${name}_at")
     }
