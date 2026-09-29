@@ -31,17 +31,24 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.agopalareddy.umm.core.policy.ModelPlan
 import io.github.agopalareddy.umm.core.stats.UsageSummary
 import io.github.agopalareddy.umm.graph
+import io.github.agopalareddy.umm.settings.dashboard.Dashboard
 import io.github.agopalareddy.umm.ui.UmmLogo
+import java.time.LocalDate
 import java.util.Locale
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 
 @Composable
@@ -49,6 +56,22 @@ internal fun HomeScreen(setupComplete: Boolean, onSetup: () -> Unit, onOpen: (St
     val context = LocalContext.current
     val graph = context.graph
     val summary by remember { graph.stats.observeSummary() }.collectAsStateWithLifecycle(null)
+    val scope = rememberCoroutineScope()
+    val settings by remember { graph.settings.settings }.collectAsStateWithLifecycle(null)
+    val change: SettingsChange = { transform -> scope.launch { graph.settings.update(transform) } }
+    // The dashboard flow only re-emits when the table changes, so re-key it on the date to roll "today" over.
+    var today by remember { mutableStateOf(LocalDate.now()) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { today = LocalDate.now() }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000)
+            today = LocalDate.now()
+        }
+    }
+    // No range while settings load or the dashboard is hidden, so nothing is computed.
+    val range = settings?.takeIf { it.statsVisible }?.dashboardRange
+    val stats by remember(range, today) { range?.let { graph.stats.observeDashboard(it) } ?: emptyFlow() }
+        .collectAsStateWithLifecycle(null)
     var plan by remember { mutableStateOf<ModelPlan?>(null) }
     val zdr by remember { graph.dataPolicy.observe() }.collectAsStateWithLifecycle(null)
     LaunchedEffect(zdr) { plan = runCatching { graph.modelPlan() }.getOrNull() }
@@ -116,12 +139,11 @@ internal fun HomeScreen(setupComplete: Boolean, onSetup: () -> Unit, onOpen: (St
             }
         }
 
-        val s = summary
-        if (s == null || s.dictations == 0) {
-            Spacer(Modifier.height(24.dp))
-            Text("Your stats show up here after your first dictation.", style = MaterialTheme.typography.bodyLarge)
-        } else {
-            Stats(s, plan)
+        settings?.let { current ->
+            if (current.statsVisible) {
+                Spacer(Modifier.height(24.dp))
+                Dashboard(stats, current, change)
+            }
         }
 
         Spacer(Modifier.height(16.dp))
