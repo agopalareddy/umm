@@ -31,6 +31,60 @@ class ChartTextTest {
         assertEquals("▲ 13%", ChartText.delta(112.6, 100.0))
     }
 
+    @Test fun scaleMaxIgnoresNonFinite() {
+        assertEquals(1f, ChartText.scaleMax(listOf(Float.NaN)), 0f)
+        assertEquals(1f, ChartText.scaleMax(listOf(Float.POSITIVE_INFINITY)), 0f)
+        assertEquals(1f, ChartText.scaleMax(listOf(Float.NEGATIVE_INFINITY)), 0f)
+        assertEquals(5f, ChartText.scaleMax(listOf(2f, Float.NaN, 5f, Float.POSITIVE_INFINITY)), 0f)
+        assertEquals(5f, ChartText.scaleMax(listOf(5f)), 0f)
+    }
+
+    @Test fun deltaNonFiniteIsNull() {
+        val bad = listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)
+        for (b in bad) {
+            assertNull(ChartText.delta(b, 100.0))
+            assertNull(ChartText.delta(100.0, b))
+            assertNull(ChartText.delta(b, b))
+            assertNull(ChartText.delta(b, 0.0))
+        }
+    }
+
+    @Test fun deltaNegativeCurrentFromZeroIsNull() {
+        assertNull(ChartText.delta(-5.0, 0.0))
+    }
+
+    @Test fun deltaCapsHugeRatios() {
+        assertEquals("▲ 999%+", ChartText.delta(1e300, 1e-300))
+        assertEquals("▲ 999%+", ChartText.delta(1100.0, 100.0))
+        assertEquals("▲ 999%", ChartText.delta(1099.0, 100.0))
+        assertEquals("▼ 999%+", ChartText.delta(-1e300, 1e-300))
+        assertEquals("▼ 999%+", ChartText.delta(-1000.0, 100.0))
+    }
+
+    @Test fun deltaRoundsHalfUpSymmetrically() {
+        assertEquals("▲ 13%", ChartText.delta(112.5, 100.0))
+        assertEquals("▼ 13%", ChartText.delta(87.5, 100.0))
+    }
+
+    @Test fun peakSinglePoint() {
+        assertEquals(
+            "Words per day, last 7 days. Most on Sun: 9.",
+            ChartText.peak("Words per day", "last 7 days", listOf("Sun" to 9.0)) { it.toInt().toString() },
+        )
+    }
+
+    @Test fun peakSkipsNonFinitePoints() {
+        val points = listOf("Mon" to Double.POSITIVE_INFINITY, "Tue" to 4.0, "Wed" to Double.NaN)
+        assertEquals(
+            "Words per day, last 7 days. Most on Tue: 4.",
+            ChartText.peak("Words per day", "last 7 days", points) { it.toInt().toString() },
+        )
+        assertEquals(
+            "Words per day: no data yet.",
+            ChartText.peak("Words per day", "last 7 days", listOf("Mon" to Double.POSITIVE_INFINITY)) { it.toString() },
+        )
+    }
+
     @Test fun peakNamesTheLargestPoint() {
         val points = listOf("Mon" to 100.0, "Tue" to 420.0, "Wed" to 0.0)
         assertEquals(
