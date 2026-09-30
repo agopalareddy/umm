@@ -62,7 +62,10 @@ internal fun WhereYouDictateCard(ctx: CardContext) {
             sublabel = categoryOf[app.packageName]?.title(),
         )
     }
-    val description = Series.appsDescription(labels.zip(apps.map { it.dictations }), ctx.range)
+    val description = Series.appsDescription(
+        apps.mapIndexed { i, app -> AppUse(labels[i], categoryOf[app.packageName]?.title(), app.dictations) },
+        ctx.range,
+    )
     // The rows and bars are announced once, as the sentence, instead of piece by piece.
     Column(Modifier.clearAndSetSemantics { contentDescription = description }) {
         HorizontalBars(items, description)

@@ -20,6 +20,7 @@ import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import io.github.agopalareddy.umm.core.data.UmmSettings
 import io.github.agopalareddy.umm.core.stats.DashboardLayout
 import io.github.agopalareddy.umm.core.stats.Layout as CardLayout
 import io.github.agopalareddy.umm.settings.SwitchRow
@@ -42,36 +43,49 @@ internal object LayoutEdit {
         val at = layout.order.indexOf(id)
         return at >= 0 && at + by in layout.order.indices
     }
+
+    /** What *Reset layout* does: whatever the layout was, both empty. */
+    @Suppress("UNUSED_PARAMETER")
+    fun reset(layout: CardLayout): CardLayout = CardLayout(RESET_ORDER, RESET_HIDDEN)
+
+    /**
+     * A settings update that applies [edit] to the layout read from the settings it is handed, not to one seen
+     * earlier, so two quick edits both land.
+     */
+    fun editOf(edit: (CardLayout) -> CardLayout): (UmmSettings) -> UmmSettings = { s ->
+        val next = edit(DashboardLayout.merge(s.dashboardOrder, s.dashboardHidden))
+        s.copy(dashboardOrder = next.order, dashboardHidden = next.hidden)
+    }
 }
 
 /**
  * One row per card, hidden or not: a switch for whether it shows, and buttons to move it up or down. Every change
- * goes out through [onChange] as the full order and hidden set; *Reset layout* sends both empty.
+ * goes out through [onEdit] as a function of the layout, to be applied to the latest saved one; *Reset layout*
+ * sends both empty.
  */
 @Composable
-internal fun EditLayout(layout: CardLayout, onChange: (order: List<String>, hidden: Set<String>) -> Unit, onDone: () -> Unit) {
-    fun change(next: CardLayout) = onChange(next.order, next.hidden)
+internal fun EditLayout(layout: CardLayout, onEdit: ((CardLayout) -> CardLayout) -> Unit, onDone: () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
         layout.order.forEach { id ->
             val title = Cards.byId[id]?.title ?: id
             key(id) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) {
-                        SwitchRow(checked = id !in layout.hidden, onCheckedChange = { change(LayoutEdit.setVisible(layout, id, it)) }) {
+                        SwitchRow(checked = id !in layout.hidden, onCheckedChange = { on -> onEdit { LayoutEdit.setVisible(it, id, on) } }) {
                             Text(title, Modifier.weight(1f).padding(vertical = 8.dp), style = MaterialTheme.typography.bodyLarge)
                         }
                     }
-                    IconButton(onClick = { change(LayoutEdit.move(layout, id, -1)) }, enabled = LayoutEdit.canMove(layout, id, -1)) {
+                    IconButton(onClick = { onEdit { LayoutEdit.move(it, id, -1) } }, enabled = LayoutEdit.canMove(layout, id, -1)) {
                         Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Move $title up")
                     }
-                    IconButton(onClick = { change(LayoutEdit.move(layout, id, 1)) }, enabled = LayoutEdit.canMove(layout, id, 1)) {
+                    IconButton(onClick = { onEdit { LayoutEdit.move(it, id, 1) } }, enabled = LayoutEdit.canMove(layout, id, 1)) {
                         Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Move $title down")
                     }
                 }
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { onChange(LayoutEdit.RESET_ORDER, LayoutEdit.RESET_HIDDEN) }) { Text("Reset layout") }
+            TextButton(onClick = { onEdit(LayoutEdit::reset) }) { Text("Reset layout") }
             Button(onClick = onDone) { Text("Done") }
         }
     }

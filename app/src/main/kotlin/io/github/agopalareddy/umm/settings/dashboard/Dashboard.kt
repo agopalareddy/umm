@@ -2,6 +2,7 @@ package io.github.agopalareddy.umm.settings.dashboard
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -43,7 +44,8 @@ internal fun Dashboard(stats: DashboardStats?, settings: UmmSettings, onChange: 
     var editing by rememberSaveable { mutableStateOf(false) }
     if (stats == null) return
     if (!stats.hasData) {
-        Text("Your stats show up here after your first dictation.", style = MaterialTheme.typography.bodyLarge)
+        val message = if (settings.statsRecording) "Your stats show up here after your first dictation." else "Recording is paused"
+        Text(message, style = MaterialTheme.typography.bodyLarge)
         return
     }
     val apiKey = LocalContext.current.graph.apiKeyStore.key.collectAsStateWithLifecycle().value
@@ -66,7 +68,8 @@ internal fun Dashboard(stats: DashboardStats?, settings: UmmSettings, onChange: 
         when {
             editing -> EditLayout(
                 layout,
-                onChange = { order, hidden -> onChange { it.copy(dashboardOrder = order, dashboardHidden = hidden) } },
+                // Applied to the saved layout at write time, so two quick taps do not overwrite each other.
+                onEdit = { edit -> onChange(LayoutEdit.editOf(edit)) },
                 onDone = { editing = false },
             )
             allHidden -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -91,7 +94,12 @@ internal fun Dashboard(stats: DashboardStats?, settings: UmmSettings, onChange: 
 
 @Composable
 private fun RangeChips(selected: DashboardRange, onSelect: (DashboardRange) -> Unit) {
-    Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // Wraps at a large font size or a narrow screen instead of running off the edge.
+    FlowRow(
+        Modifier.selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         DashboardRange.entries.forEach { range ->
             FilterChip(
                 selected = range == selected,

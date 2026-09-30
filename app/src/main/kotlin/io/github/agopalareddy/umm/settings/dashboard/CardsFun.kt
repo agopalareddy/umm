@@ -26,12 +26,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
-import io.github.agopalareddy.umm.core.stats.CalendarDay
 import io.github.agopalareddy.umm.ui.charts.CalendarHeatmap
 import io.github.agopalareddy.umm.ui.charts.ChartText
 import io.github.agopalareddy.umm.ui.charts.ProgressBar
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /** Words, time saved and dictations for the range, each against the period before it (none for all time). */
 @Composable
@@ -70,16 +67,8 @@ internal fun StreakCard(ctx: CardContext) {
         Figure("Best streak", DashboardText.days(e.bestStreak), modifier = Modifier.weight(1f))
     }
     Spacer(Modifier.height(12.dp))
-    if (e.calendar.none { it.dictations > 0 }) NeedsMoreDays() else CalendarHeatmap(e.calendar, calendarDescription(e.calendar))
+    if (e.calendar.none { it.dictations > 0 }) NeedsMoreDays() else CalendarHeatmap(e.calendar, Series.calendarDescription(e.calendar))
     Footnote("Last 12 weeks, whatever the range.", Modifier.padding(top = 8.dp))
-}
-
-private fun calendarDescription(days: List<CalendarDay>): String {
-    val format = DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
-    val peak = ChartText.peak("Dictations per day", "last 12 weeks", days.map { format.format(it.date) to it.dictations.toDouble() }) {
-        DashboardText.count(it.toInt())
-    }
-    return "$peak Dictated on ${days.count { it.dictations > 0 }} of ${days.size} days."
 }
 
 /** Earned badges as chips, then progress toward the closest one not yet earned. Lifetime. */

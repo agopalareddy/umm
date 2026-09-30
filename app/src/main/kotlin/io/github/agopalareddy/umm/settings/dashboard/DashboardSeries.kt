@@ -1,6 +1,7 @@
 package io.github.agopalareddy.umm.settings.dashboard
 
 import io.github.agopalareddy.umm.core.openrouter.KeyInfo
+import io.github.agopalareddy.umm.core.stats.CalendarDay
 import io.github.agopalareddy.umm.core.stats.DashboardRange
 import io.github.agopalareddy.umm.core.stats.DayStat
 import io.github.agopalareddy.umm.core.stats.LatencyPoint
@@ -20,6 +21,9 @@ import kotlin.math.roundToInt
  * [starts] holds each bar's day, or the Monday of its week.
  */
 internal class WordBars(val starts: List<LocalDate>, val words: List<Int>, val previous: List<Int>?, val weekly: Boolean)
+
+/** An app in the top-apps list: its label, the title of its category when known, and its dictation count. */
+internal class AppUse(val label: String, val category: String?, val dictations: Int)
 
 /** The numbers and TalkBack sentences behind the productivity and cost cards. */
 internal object Series {
@@ -80,8 +84,18 @@ internal object Series {
         val format = DateTimeFormatter.ofPattern("MMM d", locale)
         val fastest = days.filter { it.wpm != null }.maxByOrNull { it.wpm!! }
         val averaging = average?.let { ", averaging ${it.roundToInt()} wpm" }.orEmpty()
-        val peak = fastest?.let { " Fastest on ${format.format(it.date)}: ${it.wpm!!.roundToInt()} wpm." }.orEmpty()
-        return "Speaking pace, ${DashboardText.span(range)}$averaging.$peak"
+        val peak = fastest?.let { ", fastest on ${format.format(it.date)}: ${it.wpm!!.roundToInt()} wpm" }.orEmpty()
+        return "Speaking pace, ${DashboardText.span(range)}$averaging$peak."
+    }
+
+    /** The busiest of the last 12 weeks' days, and on how many of them anything was dictated, in one sentence. */
+    fun calendarDescription(days: List<CalendarDay>, locale: Locale = Locale.getDefault()): String {
+        val format = DateTimeFormatter.ofPattern("MMM d", locale)
+        val active = days.count { it.dictations > 0 }
+        return ChartText.peak(
+            "Dictations per day", "last 12 weeks", days.map { format.format(it.date) to it.dictations.toDouble() },
+            tail = ", dictated on $active of ${days.size} days",
+        ) { DashboardText.count(it.toInt()) }
     }
 
     fun spendDescription(days: List<DayStat>, range: DashboardRange, locale: Locale = Locale.getDefault()): String {
@@ -90,7 +104,9 @@ internal object Series {
     }
 
     fun modelsDescription(title: String, models: List<ModelSpend>): String =
-        "$title by spend: " + if (models.isEmpty()) "none." else models.joinToString(", ", postfix = ".") { "${it.model} ${usd(it.usd)}" }
+        "$title by spend: " + if (models.isEmpty()) "none." else models.joinToString(", ", postfix = ".") {
+            "${it.model} ${usd(it.usd)} (${DashboardText.dictations(it.dictations)})"
+        }
 
     /** The busiest weekday and hour of [grid] (`[weekday][hour]`, Monday first); a missing cell counts as zero. */
     fun hourDescription(grid: List<List<Int>>, range: DashboardRange, clock24: Boolean, locale: Locale = Locale.getDefault()): String {
@@ -110,10 +126,13 @@ internal object Series {
         else -> "${hour - 12} pm"
     }
 
-    /** [apps] are label and dictation count pairs, most first. */
-    fun appsDescription(apps: List<Pair<String, Int>>, range: DashboardRange): String {
+    /** [apps] are most first; an app with a known category reads as `Gmail (Work) 12 dictations`. */
+    fun appsDescription(apps: List<AppUse>, range: DashboardRange): String {
         if (apps.isEmpty()) return ChartText.empty("Top apps")
-        return "Top apps, ${DashboardText.span(range)}: " + apps.joinToString(", ", postfix = ".") { (label, n) -> "$label ${DashboardText.dictations(n)}" }
+        return "Top apps, ${DashboardText.span(range)}: " + apps.joinToString(", ", postfix = ".") {
+            val category = it.category?.let { c -> " ($c)" }.orEmpty()
+            "${it.label}$category ${DashboardText.dictations(it.dictations)}"
+        }
     }
 
     /** [levels] are label and dictation count pairs; levels with no dictations are left out. */
@@ -144,7 +163,7 @@ internal object Series {
         val slowest = points.maxBy { it.avgMs }
         val fastest = points.minOf { it.avgMs }
         val spread = if (fastest == slowest.avgMs) DashboardText.wait(fastest) else "from ${DashboardText.wait(fastest)} to ${DashboardText.wait(slowest.avgMs)}"
-        return "Wait time, ${DashboardText.span(range)}, $spread. Slowest on ${format.format(slowest.date)}: ${DashboardText.wait(slowest.avgMs)}."
+        return "Wait time, ${DashboardText.span(range)}, $spread, slowest on ${format.format(slowest.date)}: ${DashboardText.wait(slowest.avgMs)}."
     }
 }
 

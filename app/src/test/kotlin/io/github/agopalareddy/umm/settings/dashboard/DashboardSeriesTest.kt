@@ -1,6 +1,7 @@
 package io.github.agopalareddy.umm.settings.dashboard
 
 import io.github.agopalareddy.umm.core.openrouter.KeyInfo
+import io.github.agopalareddy.umm.core.stats.CalendarDay
 import io.github.agopalareddy.umm.core.stats.DashboardRange
 import io.github.agopalareddy.umm.core.stats.DayStat
 import io.github.agopalareddy.umm.core.stats.LatencyPoint
@@ -64,7 +65,7 @@ class DashboardSeriesTest {
         val days = listOf(day("2026-09-21", words = 10), day("2026-09-22", words = 420), day("2026-09-23", words = 1))
         val bars = Series.wordBars(days, null, weekly = false)
         assertEquals(
-            "Words per day, last 30 days. Most on Sep 22: 420 words.",
+            "Words per day, last 30 days, most on Sep 22: 420 words.",
             Series.wordsDescription(bars, DashboardRange.D30, us),
         )
     }
@@ -73,7 +74,7 @@ class DashboardSeriesTest {
         val days = run("2026-09-21", 7) { if (it == 0) 1 else 0 }
         val bars = Series.wordBars(days, null, weekly = true)
         assertEquals(
-            "Words per week, last 90 days. Most on the week of Sep 21: 1 word.",
+            "Words per week, last 90 days, most on the week of Sep 21: 1 word.",
             Series.wordsDescription(bars, DashboardRange.D90, us),
         )
     }
@@ -99,9 +100,22 @@ class DashboardSeriesTest {
     @Test fun paceDescriptionGivesAverageAndFastestDay() {
         val days = listOf(day("2026-09-21", wpm = 120.0), day("2026-09-22"), day("2026-09-23", wpm = 165.4))
         assertEquals(
-            "Speaking pace, last 30 days, averaging 140 wpm. Fastest on Sep 23: 165 wpm.",
+            "Speaking pace, last 30 days, averaging 140 wpm, fastest on Sep 23: 165 wpm.",
             Series.paceDescription(days, 140.2, DashboardRange.D30, us),
         )
+    }
+
+    @Test fun calendarDescriptionIsOneSentence() {
+        val days = listOf(
+            CalendarDay(LocalDate.parse("2026-09-21"), 0, 0),
+            CalendarDay(LocalDate.parse("2026-09-22"), 5, 3),
+            CalendarDay(LocalDate.parse("2026-09-23"), 2, 2),
+        )
+        assertEquals(
+            "Dictations per day, last 12 weeks, most on Sep 22: 5, dictated on 2 of 3 days.",
+            Series.calendarDescription(days, us),
+        )
+        assertEquals("Dictations per day: no data yet.", Series.calendarDescription(days.take(1), us))
     }
 
     @Test fun paceDaysCountOnlyThoseWithAPace() {
@@ -112,12 +126,12 @@ class DashboardSeriesTest {
     @Test fun spendDescriptionUsesDollarsAndFourDecimalsForCents() {
         val days = listOf(day("2026-09-21", cost = 0.004), day("2026-09-22", cost = 0.42))
         assertEquals(
-            "Spend per day, last 30 days. Most on Sep 22: $0.42.",
+            "Spend per day, last 30 days, most on Sep 22: $0.42.",
             Series.spendDescription(days, DashboardRange.D30, us),
         )
         val tiny = listOf(day("2026-09-21", cost = 0.004))
         assertEquals(
-            "Spend per day, all time. Most on Sep 21: $0.0040.",
+            "Spend per day, all time, most on Sep 21: $0.0040.",
             Series.spendDescription(tiny, DashboardRange.ALL, us),
         )
     }
@@ -125,7 +139,7 @@ class DashboardSeriesTest {
     @Test fun modelDescriptionListsEachModelAndItsSpend() {
         val models = listOf(ModelSpend("whisper", 0.31, 12), ModelSpend("mini", 0.0042, 1))
         assertEquals(
-            "Speech models by spend: whisper $0.31, mini $0.0042.",
+            "Speech models by spend: whisper $0.31 (12 dictations), mini $0.0042 (1 dictation).",
             Series.modelsDescription("Speech models", models),
         )
         assertEquals("Cleanup models by spend: none.", Series.modelsDescription("Cleanup models", emptyList()))
@@ -196,18 +210,18 @@ class DashboardSeriesTest {
     @Test fun hourDescriptionNamesTheBusiestSlot() {
         val g = grid(Triple(1, 14, 12), Triple(4, 9, 3))
         assertEquals(
-            "Dictations by hour, last 30 days. Most on Tuesday at 2 pm: 12 dictations.",
+            "Dictations by hour, last 30 days, most on Tuesday at 2 pm: 12 dictations.",
             Series.hourDescription(g, DashboardRange.D30, clock24 = false, locale = us),
         )
         assertEquals(
-            "Dictations by hour, last 7 days. Most on Tuesday at 14:00: 12 dictations.",
+            "Dictations by hour, last 7 days, most on Tuesday at 14:00: 12 dictations.",
             Series.hourDescription(g, DashboardRange.D7, clock24 = true, locale = us),
         )
     }
 
     @Test fun hourDescriptionSaysOneDictationInTheSingular() {
         assertEquals(
-            "Dictations by hour, all time. Most on Monday at 12 am: 1 dictation.",
+            "Dictations by hour, all time, most on Monday at 12 am: 1 dictation.",
             Series.hourDescription(grid(Triple(0, 0, 1)), DashboardRange.ALL, clock24 = false, locale = us),
         )
         assertTrue(Series.hourDescription(grid(Triple(6, 12, 2)), DashboardRange.D30, false, us).contains("Sunday at 12 pm"))
@@ -217,15 +231,18 @@ class DashboardSeriesTest {
         assertEquals("Dictations by hour: no data yet.", Series.hourDescription(grid(), DashboardRange.D30, false, us))
         assertEquals("Dictations by hour: no data yet.", Series.hourDescription(emptyList(), DashboardRange.D30, false, us))
         assertEquals(
-            "Dictations by hour, last 30 days. Most on Tuesday at 1 am: 4 dictations.",
+            "Dictations by hour, last 30 days, most on Tuesday at 1 am: 4 dictations.",
             Series.hourDescription(listOf(emptyList(), listOf(0, 4)), DashboardRange.D30, false, us),
         )
     }
 
-    @Test fun appsDescriptionListsEachAppWithItsCount() {
+    @Test fun appsDescriptionListsEachAppWithItsCategoryAndCount() {
         assertEquals(
-            "Top apps, last 30 days: Gmail 12 dictations, Slack 1 dictation.",
-            Series.appsDescription(listOf("Gmail" to 12, "Slack" to 1), DashboardRange.D30),
+            "Top apps, last 30 days: Gmail (Work) 12 dictations, Slack 1 dictation, Notes (Personal) 1 dictation.",
+            Series.appsDescription(
+                listOf(AppUse("Gmail", "Work", 12), AppUse("Slack", null, 1), AppUse("Notes", "Personal", 1)),
+                DashboardRange.D30,
+            ),
         )
         assertEquals("Top apps: no data yet.", Series.appsDescription(emptyList(), DashboardRange.D30))
     }
@@ -265,7 +282,7 @@ class DashboardSeriesTest {
     @Test fun latencyDescriptionGivesTheSpreadAndTheSlowestDay() {
         val points = listOf(latency("2026-09-10", 1_200), latency("2026-09-11", 3_200), latency("2026-09-12", 1_800))
         assertEquals(
-            "Wait time, last 30 days, from 1.2 s to 3.2 s. Slowest on Sep 11: 3.2 s.",
+            "Wait time, last 30 days, from 1.2 s to 3.2 s, slowest on Sep 11: 3.2 s.",
             Series.latencyDescription(points, DashboardRange.D30, us),
         )
     }
@@ -273,7 +290,7 @@ class DashboardSeriesTest {
     @Test fun latencyDescriptionOfOneValueSaysNoSpread() {
         val points = listOf(latency("2026-09-10", 900), latency("2026-09-11", 900))
         assertEquals(
-            "Wait time, last 7 days, 900 ms. Slowest on Sep 10: 900 ms.",
+            "Wait time, last 7 days, 900 ms, slowest on Sep 10: 900 ms.",
             Series.latencyDescription(points, DashboardRange.D7, us),
         )
     }

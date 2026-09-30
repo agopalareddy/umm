@@ -68,7 +68,7 @@ class ChartTextTest {
 
     @Test fun peakSinglePoint() {
         assertEquals(
-            "Words per day, last 7 days. Most on Sun: 9.",
+            "Words per day, last 7 days, most on Sun: 9.",
             ChartText.peak("Words per day", "last 7 days", listOf("Sun" to 9.0)) { it.toInt().toString() },
         )
     }
@@ -76,7 +76,7 @@ class ChartTextTest {
     @Test fun peakSkipsNonFinitePoints() {
         val points = listOf("Mon" to Double.POSITIVE_INFINITY, "Tue" to 4.0, "Wed" to Double.NaN)
         assertEquals(
-            "Words per day, last 7 days. Most on Tue: 4.",
+            "Words per day, last 7 days, most on Tue: 4.",
             ChartText.peak("Words per day", "last 7 days", points) { it.toInt().toString() },
         )
         assertEquals(
@@ -88,15 +88,22 @@ class ChartTextTest {
     @Test fun peakNamesTheLargestPoint() {
         val points = listOf("Mon" to 100.0, "Tue" to 420.0, "Wed" to 0.0)
         assertEquals(
-            "Words per day, last 30 days. Most on Tue: 420.",
+            "Words per day, last 30 days, most on Tue: 420.",
             ChartText.peak("Words per day", "last 30 days", points) { it.toInt().toString() },
+        )
+    }
+
+    @Test fun peakKeepsAnExtraClauseInTheSameSentence() {
+        assertEquals(
+            "Words per day, last 7 days, most on Sun: 9, on 3 of 7 days.",
+            ChartText.peak("Words per day", "last 7 days", listOf("Sun" to 9.0), tail = ", on 3 of 7 days") { it.toInt().toString() },
         )
     }
 
     @Test fun peakFirstLargestWinsOnTie() {
         val points = listOf("Mon" to 50.0, "Tue" to 50.0)
         assertEquals(
-            "Words per day, last 7 days. Most on Mon: 50.",
+            "Words per day, last 7 days, most on Mon: 50.",
             ChartText.peak("Words per day", "last 7 days", points) { it.toInt().toString() },
         )
     }

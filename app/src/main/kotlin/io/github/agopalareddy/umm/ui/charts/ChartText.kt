@@ -26,20 +26,22 @@ object ChartText {
 
     /**
      * One-sentence description naming the biggest point, e.g.
-     * `"Words per day, last 30 days. Most on Tue: 420."`. When several points tie
+     * `"Words per day, last 30 days, most on Tue: 420."`. When several points tie
      * for the largest value the first one wins. Non-finite points are skipped.
-     * Falls back to [empty] when no point is above zero.
+     * [tail] is an extra clause (with its own leading comma) before the closing
+     * period. Falls back to [empty] when no point is above zero.
      */
     fun peak(
         title: String,
         span: String,
         points: List<Pair<String, Double>>,
+        tail: String = "",
         format: (Double) -> String,
     ): String {
         var best: Pair<String, Double>? = null
         for (p in points) if (p.second.isFinite() && p.second > 0 && (best == null || p.second > best.second)) best = p
         val top = best ?: return empty(title)
-        return "$title, $span. Most on ${top.first}: ${format(top.second)}."
+        return "$title, $span, most on ${top.first}: ${format(top.second)}$tail."
     }
 
     fun empty(title: String): String = "$title: no data yet."

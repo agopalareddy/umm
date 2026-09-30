@@ -32,7 +32,7 @@ data class UmmSettings(
     val dynamicColor: Boolean = true,
     /** Use only zero data retention models, even if the OpenRouter account doesn't require it. */
     val zdrOnly: Boolean = false,
-    /** Show the Stats screen entry point. */
+    /** Show the stats dashboard on Home. */
     val statsVisible: Boolean = true,
     /** Record a stats row for each dictation. */
     val statsRecording: Boolean = true,
