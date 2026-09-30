@@ -104,10 +104,12 @@ Umm types:  "Can we meet at 6 tomorrow?"
 You can also dictate using an optional floating button without switching away from your current keyboard:
 
 1. Turn on **Floating button** in Settings → Floating button.
-2. Read the prominent disclosure and tap **Accept** to open Accessibility settings, then enable Umm.
+2. Read the prominent disclosure and tap **Accept** to open Accessibility settings, then enable Umm. If Android
+   won't let you on a sideloaded install, open **Can't turn it on?** on the Floating button page for the
+   Restricted settings steps.
 3. The button appears docked at the screen edge over editable fields.
 4. **Hold to talk:** press and hold the button, speak, and release to insert.
-5. **Tap:** records until silence, using your silence timeout.
+5. **Tap:** records until silence (or until you tap again if the silence timeout is off; see Settings → Dictation → Stop after silence).
 6. **Double-tap:** continuous mode; records through pauses until your next tap.
 7. **Drag:** drag the button to reposition it; it snaps to the nearest screen edge.
 
@@ -135,7 +137,7 @@ The full [privacy policy](https://agopalareddy.github.io/umm/privacy/) is short.
   use only providers that don't keep your data. If your OpenRouter account already requires it, Umm detects that,
   tells you, and switches automatically.
 - Your key is encrypted on the phone with an Android Keystore key and is never logged.
-- The optional floating button uses Android's Accessibility permission only to locate the active text field and insert text. It never reads password fields, never stores screen content, and sends nothing except your spoken dictation to OpenRouter.
+- The optional floating button uses Android's Accessibility permission to see the selected text field and its app and to insert text. It never reads the text of password fields and never stores screen content. Only your speech and its transcript go to OpenRouter.
 - History, stats, and any audio kept for a retry stay on the phone. Retry audio is deleted once it succeeds, or
   after 7 days. In Settings → Stats you can hide stats on Home, stop recording them, or delete them.
 

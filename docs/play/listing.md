@@ -92,7 +92,13 @@ and delete it after review.
 | Processed ephemerally? | No (providers may retain data unless zero data retention is on) |
 | Required or optional? | Audio and text processing are required for dictation. The floating button and its Accessibility permission are optional. |
 | Purpose | App functionality |
-| Accessibility API usage | Optional. Reads only the focused editable field's text and cursor to insert dictated text, and the foreground app name to choose the cleanup level. Never reads password fields. No screen content is stored or transmitted. |
+
+The Data safety form has no row for the Accessibility API. The floating button's Accessibility use is optional and
+is covered by the Permissions declaration form (`accessibility-declaration.md`). In short: it reads the focused
+editable field's text and cursor when the dictated text is ready, to place it, and the focused field's app package
+name, to choose the cleanup level. It does not read the text of fields Android reports as password fields, and it
+does not store or send screen content. If a field refuses direct insertion or has changed, the dictated text is put
+on the clipboard.
 
 ## Content rating
 
