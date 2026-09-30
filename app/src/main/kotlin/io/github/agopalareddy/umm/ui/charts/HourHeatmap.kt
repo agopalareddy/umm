@@ -52,7 +52,7 @@ internal fun HourHeatmap(grid: List<List<Int>>, description: String, modifier: M
                 val cell = Size((colPitch - gap).coerceAtLeast(0f), (rowPitch - gap).coerceAtLeast(0f))
                 val corner = CornerRadius(min(cell.minDimension / 4, 3.dp.toPx()))
                 fun cellAt(hour: Int, day: Int) = Offset(gridLeft + hour * colPitch, day * rowPitch)
-                val track = scheme.primary.copy(alpha = 0.12f)
+                val track = scheme.primary.copy(alpha = 0.07f)
 
                 onDrawBehind {
                     rowLabels.forEachIndexed { day, layout ->

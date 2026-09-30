@@ -45,10 +45,12 @@ internal fun WordsPerDayCard(ctx: CardContext) {
         labels = labels,
         description = Series.wordsDescription(bars, ctx.range),
         previous = bars.previous?.map { it.toFloat() },
+        partial = bars.partial,
         peakLabel = { value -> compact(value).let { if (it == "1") "1 word" else "$it words" } },
     )
     val notes = listOfNotNull(
         if (weekly) "Weekly totals; weeks start on Monday." else null,
+        Series.partialNote(bars),
         DashboardText.previous(ctx.range)?.let { "Faint bars show $it." },
     )
     if (notes.isNotEmpty()) Footnote(notes.joinToString(" "), Modifier.padding(top = 8.dp))
@@ -68,6 +70,7 @@ internal fun TimeSavedCard(ctx: CardContext) {
         values = running.map { it / 60_000f },
         labels = labels,
         description = Series.timeSavedDescription(period.days, ctx.range),
+        valueLabel = "Total ${DashboardText.duration(period.current.timeSavedMs)}",
     )
     Footnote("Running total, in minutes. Typing at 40 wpm, minus the time spent speaking and waiting.", Modifier.padding(top = 8.dp))
 }
@@ -85,6 +88,7 @@ internal fun SpeakingPaceCard(ctx: CardContext) {
         values = period.days.map { it.wpm?.toFloat() },
         labels = labels,
         description = Series.paceDescription(period.days, average, ctx.range),
+        valueLabel = "Peak ${period.days.maxOf { it.wpm ?: 0.0 }.roundToInt()} wpm",
     )
     Footnote("Words per minute of speech; dictations under 2 s of audio are left out.", Modifier.padding(top = 8.dp))
 }

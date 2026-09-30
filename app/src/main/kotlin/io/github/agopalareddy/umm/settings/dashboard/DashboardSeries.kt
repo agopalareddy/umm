@@ -18,9 +18,16 @@ import kotlin.math.roundToInt
 
 /**
  * Words per bar: one bar per day, or one per Monday-start week. [previous] lines up with [words] bar for bar.
- * [starts] holds each bar's day, or the Monday of its week.
+ * [starts] holds each bar's day, or the Monday of its week. [partial] marks the weeks the range cuts short (the
+ * first, and the latest while it is still under way); it is all false for daily bars.
  */
-internal class WordBars(val starts: List<LocalDate>, val words: List<Int>, val previous: List<Int>?, val weekly: Boolean)
+internal class WordBars(
+    val starts: List<LocalDate>,
+    val words: List<Int>,
+    val previous: List<Int>?,
+    val weekly: Boolean,
+    val partial: List<Boolean>,
+)
 
 /** An app in the top-apps list: its label, the title of its category when known, and its dictation count. */
 internal class AppUse(val label: String, val category: String?, val dictations: Int)
@@ -55,7 +62,15 @@ internal object Series {
             words = groups.map { g -> g.sumOf { days[it].words } },
             previous = before?.let { b -> groups.map { g -> g.sumOf { b[it].words } } },
             weekly = weekly,
+            // A Monday-to-Sunday week always spans 7 days, so a shorter group is cut off by an end of the range.
+            partial = groups.map { weekly && it.count() < 7 },
         )
+    }
+
+    /** What to add to the words footnote about outlined bars; null when every bar is a whole week. */
+    fun partialNote(bars: WordBars): String? {
+        if (bars.partial.none { it }) return null
+        return "Outlined bars are partial weeks." + if (bars.partial.last()) " Latest week is still in progress." else ""
     }
 
     fun cumulative(values: List<Long>): List<Long> {
@@ -71,7 +86,8 @@ internal object Series {
         val points = bars.starts.zip(bars.words) { start, words ->
             (if (bars.weekly) "the week of " else "") + format.format(start) to words.toDouble()
         }
-        return ChartText.peak(if (bars.weekly) "Words per week" else "Words per day", DashboardText.span(range), points) {
+        val tail = if (bars.partial.lastOrNull() == true) ", latest week still in progress" else ""
+        return ChartText.peak(if (bars.weekly) "Words per week" else "Words per day", DashboardText.span(range), points, tail) {
             val n = it.toInt()
             if (n == 1) "1 word" else "${DashboardText.count(n)} words"
         }

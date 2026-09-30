@@ -43,8 +43,9 @@ private class Arc(val label: String, val value: Float, val color: Color)
 internal fun Donut(slices: List<DonutSlice>, description: String, modifier: Modifier = Modifier) {
     val drawIn = rememberDrawIn(slices)
     val scheme = MaterialTheme.colorScheme
-    // Two hues at two strengths: secondary and outline are both greys under many wallpaper palettes.
-    val palette = listOf(scheme.primary, scheme.tertiary, scheme.primary.copy(alpha = 0.45f), scheme.tertiary.copy(alpha = 0.45f))
+    // Four clearly different colors: a neutral, two theme hues and error red. Secondary is left out because it is
+    // a grey under many wallpaper palettes, and tints of one hue read as the same slice.
+    val palette = listOf(scheme.outline, scheme.primary, scheme.tertiary, scheme.error)
     val arcs = slices.mapIndexedNotNull { i, s ->
         plottable(s.value).takeIf { it > 0f }?.let { Arc(s.label, it, palette[i % palette.size]) }
     }

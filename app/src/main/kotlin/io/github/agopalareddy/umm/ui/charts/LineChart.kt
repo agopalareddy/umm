@@ -17,21 +17,31 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import kotlin.math.sqrt
 
 /**
  * A smoothed line over [values] with a soft fill under it and a dot on the newest point. A null value breaks the
- * line; a point with no neighbours is drawn as a dot. The line draws in from the left.
+ * line; a point with no neighbours is drawn as a dot. The line draws in from the left. [valueLabel], such as
+ * `Peak 165 wpm`, is worded with its unit and sits top left in a strip of its own above the plot, since the chart
+ * has no value axis.
  */
 @Composable
-internal fun LineChart(values: List<Float?>, labels: List<String>, description: String, modifier: Modifier = Modifier) {
+internal fun LineChart(
+    values: List<Float?>,
+    labels: List<String>,
+    description: String,
+    modifier: Modifier = Modifier,
+    valueLabel: String? = null,
+) {
     val points = values.map { v -> v?.let(::plottable) }
     val progress = rememberDrawIn(points)
     val scheme = MaterialTheme.colorScheme
     val measurer = rememberTextMeasurer()
     val labelStyle = MaterialTheme.typography.labelSmall.copy(color = scheme.onSurfaceVariant)
+    val valueStyle = labelStyle.copy(color = scheme.primary, fontWeight = FontWeight.SemiBold)
 
     Spacer(
         modifier.fillMaxWidth().height(CHART_HEIGHT)
@@ -41,7 +51,9 @@ internal fun LineChart(values: List<Float?>, labels: List<String>, description: 
                 val n = points.size
                 // Side and top room for the halo around the newest point.
                 val inset = 8.dp.toPx()
-                val plot = plotArea(top = inset, labelHeight = measurer.measure("0", labelStyle).size.height.toFloat(), side = inset)
+                val value = valueLabel?.let { measurer.measure(it, valueStyle, maxLines = 1) }
+                val strip = if (value != null) value.size.height + 4.dp.toPx() else 0f
+                val plot = plotArea(top = strip + inset, labelHeight = measurer.measure("0", labelStyle).size.height.toFloat(), side = inset)
                 val spacing = if (n > 1) plot.width / (n - 1) else plot.width
                 fun xOf(i: Int) = if (n == 1) plot.center.x else plot.left + spacing * i
                 val at = points.mapIndexed { i, v -> v?.let { Offset(xOf(i), plot.bottom - it / max * plot.height) } }
@@ -88,6 +100,7 @@ internal fun LineChart(values: List<Float?>, labels: List<String>, description: 
                 onDrawBehind {
                     drawGrid(plot, scheme.outlineVariant)
                     axis.forEach { (layout, pos) -> drawText(layout, topLeft = pos) }
+                    value?.let { drawText(it, topLeft = Offset.Zero) }
                     val p = progress.value
                     clipRect(right = size.width * p) {
                         drawPath(fill, shade)

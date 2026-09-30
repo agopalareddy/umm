@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextLayoutResult
@@ -40,7 +41,8 @@ import kotlin.math.roundToInt
 /**
  * One rounded bar per value with [labels] underneath (thinned out when they would collide, always keeping the
  * newest) and the tallest bar's value above it. [previous] is drawn faint behind, index for index, so the last
- * period shows through wherever it was higher. [peakLabel] words the tallest bar's value (default: a bare number).
+ * period shows through wherever it was higher. A bar flagged in [partial] is outlined and lighter, for a period that
+ * is not whole. [peakLabel] words the tallest bar's value (default: a bare number).
  */
 @Composable
 internal fun BarChart(
@@ -49,6 +51,7 @@ internal fun BarChart(
     description: String,
     modifier: Modifier = Modifier,
     previous: List<Float>? = null,
+    partial: List<Boolean> = emptyList(),
     peakLabel: (Float) -> String = ::compact,
 ) {
     val bars = values.map(::plottable)
@@ -80,7 +83,9 @@ internal fun BarChart(
                 val path = Path()
                 val ghost = scheme.primary.copy(alpha = 0.2f)
 
-                fun DrawScope.bar(i: Int, value: Float, t: Float, color: Color) {
+                val outline = Stroke(1.5.dp.toPx())
+
+                fun DrawScope.bar(i: Int, value: Float, t: Float, color: Color, outlined: Boolean = false) {
                     val h = value / max * plot.height * t
                     if (h <= 0f) return
                     val r = min(corner, h)
@@ -93,7 +98,8 @@ internal fun BarChart(
                             bottomRightCornerRadius = CornerRadius.Zero, bottomLeftCornerRadius = CornerRadius.Zero,
                         ),
                     )
-                    drawPath(path, color)
+                    drawPath(path, if (outlined) color.copy(alpha = 0.3f) else color)
+                    if (outlined) drawPath(path, color, style = outline)
                 }
 
                 onDrawBehind {
@@ -103,7 +109,7 @@ internal fun BarChart(
                     for (i in 0 until n) {
                         val t = stagger(p, i, n)
                         behind.getOrNull(i)?.let { bar(i, it, t, ghost) }
-                        bar(i, bars[i], t, scheme.primary)
+                        bar(i, bars[i], t, scheme.primary, outlined = partial.getOrNull(i) == true)
                     }
                     if (peak != null && peakText != null) {
                         val t = stagger(p, peak, n)

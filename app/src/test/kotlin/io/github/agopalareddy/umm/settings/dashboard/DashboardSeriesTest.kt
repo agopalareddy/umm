@@ -61,6 +61,43 @@ class DashboardSeriesTest {
         assertEquals(listOf(0 + 1, 2 + 3 + 4 + 5 + 6 + 7 + 8, 9 + 10 + 11), bars.previous)
     }
 
+    @Test fun weeklyBarsFlagPartialFirstAndLastWeeks() {
+        val bars = Series.wordBars(run("2026-09-19", 12), null, weekly = true) // Sat, Sun | Mon..Sun | Mon..Wed
+        assertEquals(listOf(true, false, true), bars.partial)
+    }
+
+    @Test fun weeklyBarsAreNotPartialWhenTheyRunMondayToSunday() {
+        val bars = Series.wordBars(run("2026-09-21", 14), null, weekly = true)
+        assertEquals(listOf(false, false), bars.partial)
+    }
+
+    @Test fun weeklyBarEndingOnASundayIsComplete() {
+        val bars = Series.wordBars(run("2026-09-14", 7), null, weekly = true)
+        assertEquals(listOf(false), bars.partial)
+    }
+
+    @Test fun dailyBarsAreNeverPartial() {
+        val bars = Series.wordBars(run("2026-09-19", 5), null, weekly = false)
+        assertEquals(List(5) { false }, bars.partial)
+    }
+
+    @Test fun partialNoteNamesTheLatestWeekOnlyWhenItIsPartial() {
+        fun note(from: String, count: Int, weekly: Boolean = true) = Series.partialNote(Series.wordBars(run(from, count), null, weekly))
+        assertEquals("Outlined bars are partial weeks. Latest week is still in progress.", note("2026-09-19", 12))
+        assertEquals("Outlined bars are partial weeks. Latest week is still in progress.", note("2026-09-21", 10))
+        assertEquals("Outlined bars are partial weeks.", note("2026-09-19", 9)) // Sat..Sun | Mon..Sun
+        assertNull(note("2026-09-21", 14))
+        assertNull(note("2026-09-19", 5, weekly = false))
+    }
+
+    @Test fun wordDescriptionMentionsAnInProgressWeek() {
+        val bars = Series.wordBars(run("2026-09-21", 10) { 5 }, null, weekly = true)
+        assertEquals(
+            "Words per week, last 90 days, most on the week of Sep 21: 35 words, latest week still in progress.",
+            Series.wordsDescription(bars, DashboardRange.D90, us),
+        )
+    }
+
     @Test fun wordDescriptionNamesThePeakDayWithUnits() {
         val days = listOf(day("2026-09-21", words = 10), day("2026-09-22", words = 420), day("2026-09-23", words = 1))
         val bars = Series.wordBars(days, null, weekly = false)

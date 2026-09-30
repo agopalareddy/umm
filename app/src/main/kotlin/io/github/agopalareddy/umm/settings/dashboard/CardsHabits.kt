@@ -32,14 +32,14 @@ import java.util.Locale
 /** Fewest days of wait times a trend needs before it is worth drawing. */
 private const val MIN_TREND_DAYS = 3
 
-/** The week as an hour grid: darker cells are hours with more dictations. */
+/** The week as an hour grid: bolder cells are hours with more dictations. */
 @Composable
 internal fun WhenYouDictateCard(ctx: CardContext) {
     val grid = ctx.stats.habits.hourGrid
     if (grid.none { day -> day.any { it > 0 } }) return NothingHere("No dictations in this range.")
     val clock24 = DateFormat.is24HourFormat(LocalContext.current)
     HourHeatmap(grid, remember(grid, ctx.range, clock24) { Series.hourDescription(grid, ctx.range, clock24) })
-    Footnote("Dictations by hour and weekday, in your local time. Darker cells are busier.", Modifier.padding(top = 8.dp))
+    Footnote("Dictations by hour and weekday, in your local time. Bolder cells are busier.", Modifier.padding(top = 8.dp))
 }
 
 /** The apps dictated into most, each with the category it is filed under. */
@@ -106,6 +106,7 @@ internal fun ReliabilityCard(ctx: CardContext) {
         values = latency.map { it.avgMs / 1000f },
         labels = labels,
         description = Series.latencyDescription(latency, ctx.range),
+        valueLabel = "Slowest ${DashboardText.wait(latency.maxOf { it.avgMs })}",
     )
     Footnote("Average wait per dictation each day, in seconds.", Modifier.padding(top = 8.dp))
 }
