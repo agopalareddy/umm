@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Not an accessibility tool (Play policy): never add isAccessibilityTool or other flags or event types.
+<!-- Not an accessibility tool (Play policy): never add isAccessibilityTool. The event types and flags below are
+     the complete set the bubble needs; add no others. flagIncludeNotImportantViews is there so the focused input
+     field can be found in apps that mark their fields not important for accessibility.
      notificationTimeout rate-limits the selection-changed events that fire on every keystroke while typing. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeViewFocused|typeViewTextSelectionChanged|typeWindowStateChanged"

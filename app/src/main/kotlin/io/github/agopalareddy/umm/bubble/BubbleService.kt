@@ -45,7 +45,9 @@ import kotlinx.coroutines.launch
 
 /**
  * The floating dictation button. Draws [BubbleView] in an accessibility overlay while the setting is on, and
- * shows it by the focused field. It reads only whether that field is editable or a password field, never its text.
+ * shows it by the focused field. To decide that, it reads only whether the focused field is editable or a
+ * password field. It reads the field's text and selection only at delivery time, to place the dictated text
+ * ([NodeField]), and never stores or logs them.
  * Presses go through [BubbleGesture]; this class carries out its commands on the shared pipeline.
  */
 class BubbleService : AccessibilityService() {
