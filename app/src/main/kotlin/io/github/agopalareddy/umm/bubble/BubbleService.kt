@@ -383,7 +383,7 @@ class BubbleService : AccessibilityService() {
                 null
             }
             ensureActive() // aborted during a read that didn't notice: abortStart already cleaned up
-            // Aborted, or another start or the keyboard took delivery over, while the category was read.
+            // The category read failed, or the bubble's own target was released meanwhile.
             if (config == null || !delivery.isCurrent(origin)) {
                 releaseTarget()
                 ownedOrigin = null
