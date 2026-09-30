@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="bubble_description">Shows Umm\'s floating dictation button and puts what you dictate into the text field you selected. It reads only that field and which app it is in, never password fields.</string>
+</resources>
