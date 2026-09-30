@@ -17,12 +17,12 @@
 <h1>Umm privacy policy</h1>
 <p class="meta">Effective September 27, 2026</p>
 
-<p>Umm is a voice keyboard for Android made by Aadarsha Gopala Reddy. This policy explains what Umm does with your
+<p>Umm is a voice keyboard and floating dictation button for Android made by Aadarsha Gopala Reddy. This policy explains what Umm does with your
 data. The short version: Umm has no server and no account. Your recordings go from your phone to OpenRouter, using
 your own OpenRouter key, and nowhere else.</p>
 
 <h2>What Umm records and sends</h2>
-<p>Umm records from the microphone only while its keyboard is open and listening. When you stop talking, Umm sends
+<p>Umm records from the microphone only while its keyboard or floating button is actively listening. When you stop talking, Umm sends
 the recording to <a href="https://openrouter.ai">OpenRouter</a> to be transcribed, then sends the transcript to
 OpenRouter again to be cleaned up (unless you choose the Raw level). OpenRouter passes each request to an AI model
 provider, such as OpenAI, Mistral, or Google, to do the work. Umm sends these requests with your OpenRouter key,
@@ -53,6 +53,18 @@ can hide the statistics on the home screen, stop recording them, or delete them.
 apply the cleanup level for that app and to turn itself off in password fields. Umm has no letter keys and does not
 read what you type with other keyboards. It only reads the character next to the cursor, to decide whether to add
 a space before or after the text it inserts.</p>
+
+<h2>What the floating button and Accessibility permission can see</h2>
+<p>If you turn on the optional floating button in Settings, Umm requests Android's Accessibility permission.
+Umm uses this permission solely to:</p>
+<ul>
+  <li>Detect when an editable text field is selected, so the button can appear and insert your dictated text.</li>
+  <li>Read the selected field's current text and cursor position, to correctly format spacing and insert text.</li>
+  <li>Read the foreground app's package name, to apply the cleanup level you chose for that app's category.</li>
+</ul>
+<p>Umm <strong>never reads password fields</strong> (the floating button automatically hides and refuses recording
+over password fields) and never reads or stores anything else on your screen. No screen content is ever saved or sent
+off your phone. As with the keyboard, only your spoken audio goes to OpenRouter with your key.</p>
 
 <h2>What Umm does not do</h2>
 <ul>

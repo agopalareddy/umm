@@ -20,6 +20,7 @@ bullets in email; Hinglish stays Hinglish. It is named after the filler word it 
   - [Dependencies](#dependencies)
   - [Updating](#updating)
 - [Usage](#usage)
+  - [Floating button](#floating-button)
 - [How it works](#how-it-works)
 - [Privacy](#privacy)
 - [Building from source](#building-from-source)
@@ -98,6 +99,20 @@ Umm types:  "Can we meet at 6 tomorrow?"
 - If the network fails, the audio is kept for a retry. If you have left the text field by the time the text is
   ready, it goes to the clipboard. History keeps your last 50 dictations.
 
+### Floating button
+
+You can also dictate using an optional floating button without switching away from your current keyboard:
+
+1. Turn on **Floating button** in Settings → Floating button.
+2. Read the prominent disclosure and tap **Accept** to open Accessibility settings, then enable Umm.
+3. The button appears docked at the screen edge over editable fields.
+4. **Hold to talk:** press and hold the button, speak, and release to insert.
+5. **Tap:** records until silence, using your silence timeout.
+6. **Double-tap:** continuous mode; records through pauses until your next tap.
+7. **Drag:** drag the button to reposition it; it snaps to the nearest screen edge.
+
+The floating button automatically hides over password fields and never records without an active text field.
+
 ## How it works
 
 1. The keyboard records mono AAC audio and detects speech and silence on the phone. Silent recordings are never
@@ -120,6 +135,7 @@ The full [privacy policy](https://agopalareddy.github.io/umm/privacy/) is short.
   use only providers that don't keep your data. If your OpenRouter account already requires it, Umm detects that,
   tells you, and switches automatically.
 - Your key is encrypted on the phone with an Android Keystore key and is never logged.
+- The optional floating button uses Android's Accessibility permission only to locate the active text field and insert text. It never reads password fields, never stores screen content, and sends nothing except your spoken dictation to OpenRouter.
 - History, stats, and any audio kept for a retry stay on the phone. Retry audio is deleted once it succeeds, or
   after 7 days. In Settings → Stats you can hide stats on Home, stop recording them, or delete them.
 

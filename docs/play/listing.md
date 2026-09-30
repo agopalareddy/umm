@@ -30,6 +30,9 @@ Umm runs on your own OpenRouter account, so there is no subscription. A short di
 YOU CHOOSE HOW MUCH IT REWRITES
 Four cleanup levels: Raw, Light, Formatted, and Polished. Set a level per app category. Messaging defaults to Light, email and notes to Formatted, and you can move any app between categories from the keyboard.
 
+FLOATING BUTTON OR KEYBOARD
+Dictate from the keyboard or turn on the floating button to talk without switching away from your favorite keyboard. Hold to talk, tap to stop on silence, or double-tap for continuous dictation. Drag it to either edge of your screen.
+
 QUIET SPEECH AND MIXED LANGUAGES
 Double-tap the mic to keep recording through pauses or a whisper. Mixed speech such as Hinglish is kept as spoken, never translated, in Latin or native script.
 
@@ -87,8 +90,9 @@ and delete it after review.
 | Data types collected | Audio → Voice or sound recordings; App activity → Other user-generated content (dictated text) |
 | Collected or shared? | Collected. Processed by OpenRouter and model providers as service providers for the app's function |
 | Processed ephemerally? | No (providers may retain data unless zero data retention is on) |
-| Required or optional? | Required: dictation doesn't work without it |
+| Required or optional? | Audio and text processing are required for dictation. The floating button and its Accessibility permission are optional. |
 | Purpose | App functionality |
+| Accessibility API usage | Optional. Reads only the focused editable field's text and cursor to insert dictated text, and the foreground app name to choose the cleanup level. Never reads password fields. No screen content is stored or transmitted. |
 
 ## Content rating
 
