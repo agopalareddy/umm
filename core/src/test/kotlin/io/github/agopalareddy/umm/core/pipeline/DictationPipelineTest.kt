@@ -402,6 +402,34 @@ class DictationPipelineTest {
         assertEquals("Whispered words.", (p.awaitEnd() as DictationState.Done).text)
     }
 
+    @Test fun turningContinuousBackOffStopsForSilence() = runTest {
+        audio.amplitudes = rep(90, 5) + rep(8000, 5) + rep(90, 60)
+        audio.holdOpen = true
+        api.transcribeResults += "whispered words"
+        api.completeResults += "Whispered words."
+        val p = backgroundScope.pipeline()
+        p.start(request(continuous = true))
+        p.state.first { it is DictationState.Listening && it.speechDetected }
+        p.setContinuous(false)
+        assertEquals("Whispered words.", (p.awaitEnd() as DictationState.Done).text)
+    }
+
+    @Test fun setContinuousDefaultsToOn() = runTest {
+        audio.amplitudes = rep(90, 5) + rep(8000, 5) + rep(90, 60)
+        audio.holdOpen = true
+        api.transcribeResults += "whispered words"
+        api.completeResults += "Whispered words."
+        val p = backgroundScope.pipeline()
+        p.start(request())
+        p.state.first { it is DictationState.Listening && it.speechDetected }
+        p.setContinuous()
+        delay(1_000)
+        val listening = p.state.value as DictationState.Listening
+        assertTrue(listening.continuous)
+        p.stop()
+        assertEquals("Whispered words.", (p.awaitEnd() as DictationState.Done).text)
+    }
+
     @Test fun continuousRequestNeverCancelsForNoSpeech() = runTest {
         audio.amplitudes = rep(90, 100) // a whisper the detector cannot hear
         audio.holdOpen = true

@@ -79,9 +79,9 @@ class DictationPipeline(
         audio.stop()
     }
 
-    /** Turns off silence detection for the current recording; it then runs until stop() or the duration cap. */
-    fun setContinuous() {
-        continuous = true
+    /** Turns silence detection off (or back on) for the current recording; while off it runs until stop() or the duration cap. */
+    fun setContinuous(on: Boolean = true) {
+        continuous = on
     }
 
     /** Changes the cleanup level of the current dictation, if cleanup has not started yet. */
