@@ -18,6 +18,7 @@ data class Snap(val edge: BubbleEdge, val yFraction: Float)
 object BubblePosition {
     private const val MIN_TOUCH_DP = 48f
     private const val DEFAULT_FRACTION = 0.5f
+    private const val FLING_DP_PER_S = 400f
 
     fun sizePx(size: BubbleSize, density: Float): Int {
         val dp = when (size) {
@@ -54,9 +55,12 @@ object BubblePosition {
         return x to y
     }
 
+    /** The release speed, in px/s, above which a flick picks the edge: 400 dp/s, so it feels the same on any screen. */
+    fun flingThresholdPx(density: Float): Float = FLING_DP_PER_S * density
+
     /**
      * Docks a bubble released with its centre at ([centerX], [centerY]). If flicked horizontally with [vx]
-     * exceeding [flingThresholdPx], it docks on the flicked edge; otherwise on the nearer side (ties go right).
+     * exceeding [flingThresholdPx] (see [flingThresholdPx]), it docks on the flicked edge; otherwise on the nearer side (ties go right).
      * [vy] carries momentum to project the landing Y position down the edge when moving between edges; when
      * moving along the same edge ([currentEdge]), velocity is ignored to prevent overshooting small adjustments.
      */

@@ -146,6 +146,28 @@ class BubblePositionTest {
         }
     }
 
+    @Test fun flingThresholdIs400DpPerSecond() {
+        assertEquals(400f, BubblePosition.flingThresholdPx(1f), 0f)
+        assertEquals(800f, BubblePosition.flingThresholdPx(2f), 0f)
+        assertEquals(1050f, BubblePosition.flingThresholdPx(2.625f), 0.001f)
+    }
+
+    @Test fun theSameFlickDocksTheSameOnAnyDensity() {
+        // 300 dp/s to the left from the right half: below the threshold at every density, so the nearer side wins.
+        for (density in listOf(1f, 2f, 2.625f, 3.5f)) {
+            val slow = BubblePosition.snap(
+                area, box, centerX = 800f, centerY = 1100f, vx = -300f * density,
+                flingThresholdPx = BubblePosition.flingThresholdPx(density),
+            )
+            assertEquals(BubbleEdge.RIGHT, slow.edge)
+            val fast = BubblePosition.snap(
+                area, box, centerX = 800f, centerY = 1100f, vx = -500f * density,
+                flingThresholdPx = BubblePosition.flingThresholdPx(density),
+            )
+            assertEquals(BubbleEdge.LEFT, fast.edge)
+        }
+    }
+
     @Test fun flickLeftFromRightHalfDocksLeft() {
         val snap = BubblePosition.snap(area, box, centerX = 800f, centerY = 1100f, vx = -1500f, flingThresholdPx = 1000f)
         assertEquals(BubbleEdge.LEFT, snap.edge)

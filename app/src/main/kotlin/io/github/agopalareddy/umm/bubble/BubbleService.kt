@@ -513,12 +513,11 @@ class BubbleService : AccessibilityService() {
         dragArea = null
         val area = usableArea()
         val box = boxPx()
-        val density = resources.displayMetrics.density
         val snap = BubblePosition.snap(
             area, box,
             params.x + box / 2f, params.y + box / 2f,
             vx, vy,
-            flingThresholdPx = 400f * density,
+            flingThresholdPx = BubblePosition.flingThresholdPx(resources.displayMetrics.density),
             currentEdge = settings.bubbleEdge,
         )
         val (targetX, targetY) = BubblePosition.place(area, box, snap.edge, snap.yFraction)
