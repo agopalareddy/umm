@@ -37,6 +37,8 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.agopalareddy.umm.core.pipeline.DictationState
@@ -47,7 +49,8 @@ import io.github.agopalareddy.umm.core.pipeline.DictationState
  * a fixed-height panel; all motion is drawing.
  *
  * [continuousRing] overrides the ring and the "Finish" label; pass it only while listening (null follows the state).
- * [clickable] false leaves touch to the caller: no click handling and no ripple.
+ * [clickable] false leaves touch to the caller: no touch click handling and no ripple, but TalkBack's click and
+ * "Record until I finish" action still call [onClick] and [onDoubleClick].
  */
 @Composable
 internal fun VoiceOrb(
@@ -147,7 +150,11 @@ internal fun VoiceOrb(
                     if (clickable) {
                         Modifier.combinedClickable(enabled = !busy, role = Role.Button, onClick = onClick, onDoubleClick = onDoubleClick)
                     } else {
-                        Modifier
+                        // Touch belongs to the caller, but TalkBack's click is an action, not a touch: expose it.
+                        Modifier.semantics {
+                            role = Role.Button
+                            if (!busy) onClick(label = null) { onClick.invoke(); true }
+                        }
                     },
                 ),
             contentAlignment = Alignment.Center,

@@ -36,8 +36,9 @@ import io.github.agopalareddy.umm.ui.VoiceOrb
  * [BubblePosition.boxPx] so the orb's rings fit around the disc. It owns the lifecycle and saved state a
  * [ComposeView] needs outside an activity, alive while the overlay is.
  *
- * Every touch on the window goes to [BubbleGesture]; the orb only draws. [pipelineView] is asked on each press,
- * [onCommand] gets what the machine decides, and [onTouched] is called on every press and release.
+ * Every touch on the window goes to [BubbleGesture]; the orb only draws, and maps TalkBack's click and double-tap
+ * action to the same commands ([BubbleControl.accessibilityClick]). [pipelineView] is asked on each press,
+ * [onCommand] gets what the machine decides, and [onTouched] is called on every press, release and action.
  */
 internal class BubbleView(
     context: Context,
@@ -96,8 +97,9 @@ internal class BubbleView(
                         // VoiceOrb has a fixed layout size, so scale its drawing until the disc is orbSizePx wide.
                         VoiceOrb(
                             state,
-                            onClick = {},
-                            onDoubleClick = {},
+                            // Only TalkBack's actions call these; touches go to the gesture machine.
+                            onClick = { onAccessibilityAction(BubbleControl.accessibilityClick(pipelineView())) },
+                            onDoubleClick = { onAccessibilityAction(BubbleControl.accessibilityDoubleClick(pipelineView())) },
                             modifier = Modifier.requiredSize(ORB_SLOT).graphicsLayer {
                                 val scale = orbSizePx / ORB_DISC.toPx()
                                 scaleX = scale
@@ -140,6 +142,11 @@ internal class BubbleView(
             }
             commands.forEach(onCommand)
         }
+    }
+
+    private fun onAccessibilityAction(commands: List<BubbleCommand>) {
+        onTouched()
+        commands.forEach(onCommand)
     }
 
     /** A short sideways shake: this press did nothing. */

@@ -49,6 +49,47 @@ class BubbleControlTest {
         for (command in others) for (view in PipelineView.entries) assertTrue(BubbleControl.applies(command, view))
     }
 
+    @Test fun keyProblemsOpenSetupOnceThenRetry() {
+        for (reason in listOf(FailureReason.UNAUTHORIZED, FailureReason.MISSING_KEY)) {
+            assertEquals(FailedPress.SETUP, BubbleControl.failedPress(reason, redirected = false))
+            // Back from setup with a fixed key: the next press retries instead of sending the user away again.
+            assertEquals(FailedPress.RETRY, BubbleControl.failedPress(reason, redirected = true))
+        }
+    }
+
+    @Test fun noCreditsOpensTheCreditsPageOnceThenRetries() {
+        assertEquals(FailedPress.CREDITS, BubbleControl.failedPress(FailureReason.NO_CREDITS, redirected = false))
+        assertEquals(FailedPress.RETRY, BubbleControl.failedPress(FailureReason.NO_CREDITS, redirected = true))
+    }
+
+    @Test fun otherFailuresRetry() {
+        val others = FailureReason.entries - setOf(FailureReason.UNAUTHORIZED, FailureReason.MISSING_KEY, FailureReason.NO_CREDITS)
+        assertEquals(5, others.size)
+        for (reason in others) for (redirected in listOf(false, true)) {
+            assertEquals(FailedPress.RETRY, BubbleControl.failedPress(reason, redirected))
+        }
+    }
+
+    @Test fun accessibilityClickActsLikeATapOrAStopPress() {
+        assertEquals(
+            listOf(BubbleCommand.Start, BubbleCommand.SetSilenceDetection(true)),
+            BubbleControl.accessibilityClick(IDLE),
+        )
+        assertEquals(listOf(BubbleCommand.Stop), BubbleControl.accessibilityClick(RECORDING))
+        assertEquals(listOf(BubbleCommand.Reject), BubbleControl.accessibilityClick(BUSY))
+        assertEquals(listOf(BubbleCommand.Retry), BubbleControl.accessibilityClick(FAILED))
+    }
+
+    @Test fun accessibilityDoubleClickRecordsThroughSilence() {
+        assertEquals(
+            listOf(BubbleCommand.Start, BubbleCommand.SetSilenceDetection(false)),
+            BubbleControl.accessibilityDoubleClick(IDLE),
+        )
+        assertEquals(listOf(BubbleCommand.SetSilenceDetection(false)), BubbleControl.accessibilityDoubleClick(RECORDING))
+        assertEquals(listOf(BubbleCommand.Reject), BubbleControl.accessibilityDoubleClick(BUSY))
+        assertEquals(listOf(BubbleCommand.Retry), BubbleControl.accessibilityDoubleClick(FAILED))
+    }
+
     @Test fun ringOverrideOnlyWhileListening() {
         assertEquals(true, BubbleControl.continuousRing(listening, doubleTap = true))
         assertEquals(false, BubbleControl.continuousRing(listening.copy(continuous = true), doubleTap = false))

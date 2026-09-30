@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.PixelFormat
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -75,6 +76,9 @@ class BubbleService : AccessibilityService() {
      * screen to control the dictation.
      */
     private var ownedOrigin: Long? = null
+
+    /** The failure a press last sent to setup or the credits page; the next press on it retries. */
+    private var redirectedFor: DictationState.Failed? = null
 
     /** Silence detection asked for while startJob still runs: a quick tap's release can come first. */
     private var silenceOn = false
@@ -427,12 +431,28 @@ class BubbleService : AccessibilityService() {
         bubble?.doubleTap = null
     }
 
-    /** Like the keyboard's Retry: processes the failed recording again, into the field focused now. */
+    /**
+     * Like the keyboard's Retry: processes the failed recording again, into the field focused now. A key or
+     * credit failure first sends the user to fix it, as the keyboard's buttons do.
+     */
     private fun retry(bubble: BubbleView) {
         val failed = pipeline.state.value as? DictationState.Failed ?: return
         if (!setupDone()) {
             openSetup()
             return
+        }
+        when (BubbleControl.failedPress(failed.reason, redirected = redirectedFor == failed)) {
+            FailedPress.SETUP -> {
+                redirectedFor = failed
+                openSetup()
+                return
+            }
+            FailedPress.CREDITS -> {
+                redirectedFor = failed
+                openCredits()
+                return
+            }
+            FailedPress.RETRY -> Unit
         }
         val node = focusedNode()
         if (node == null || !BubbleVisibility.canRecord(node.isEditable, node.isPassword)) {
@@ -583,6 +603,13 @@ class BubbleService : AccessibilityService() {
         runCatching { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
 
+    /** Like the keyboard's "Add credits on OpenRouter". */
+    private fun openCredits() {
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(CREDITS_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
     /** Brings Umm back to the Bubble page after the user turned the service on from it. */
     private fun returnToApp() {
         // A bound accessibility service is allowed to start activities from the background.
@@ -603,6 +630,9 @@ class BubbleService : AccessibilityService() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.CONTEXT_CLICK
 
         private const val SNAP_ANIMATION_MS = 250L
+
+        // The page the keyboard's "Add credits on OpenRouter" button opens.
+        private const val CREDITS_URL = "https://openrouter.ai/settings/credits"
 
         private val _connected = MutableStateFlow(false)
 

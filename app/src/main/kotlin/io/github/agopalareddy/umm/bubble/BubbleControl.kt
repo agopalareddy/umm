@@ -2,6 +2,10 @@ package io.github.agopalareddy.umm.bubble
 
 import io.github.agopalareddy.umm.core.data.UmmSettings
 import io.github.agopalareddy.umm.core.pipeline.DictationState
+import io.github.agopalareddy.umm.core.pipeline.FailureReason
+
+/** What a press on a failed dictation does. */
+enum class FailedPress { RETRY, SETUP, CREDITS }
 
 /** Pure decisions between the bubble's gestures and the shared pipeline; [BubbleService] does the calls. */
 object BubbleControl {
@@ -19,6 +23,34 @@ object BubbleControl {
     fun applies(command: BubbleCommand, view: PipelineView): Boolean = when (command) {
         BubbleCommand.Stop, is BubbleCommand.SetSilenceDetection -> view == PipelineView.RECORDING
         else -> true
+    }
+
+    /**
+     * A press on a failed dictation. A rejected or missing key and an empty account can't be fixed by retrying,
+     * so the first press sends the user where the keyboard's "Reconnect" and "Add credits" buttons do; once
+     * [redirected] for this failure, a press retries, since the bubble can't tell whether the problem is fixed.
+     */
+    fun failedPress(reason: FailureReason, redirected: Boolean): FailedPress = when {
+        redirected -> FailedPress.RETRY
+        reason == FailureReason.UNAUTHORIZED || reason == FailureReason.MISSING_KEY -> FailedPress.SETUP
+        reason == FailureReason.NO_CREDITS -> FailedPress.CREDITS
+        else -> FailedPress.RETRY
+    }
+
+    /** TalkBack's click, which never reaches the touch handler: a tap, or a stop press while recording. */
+    fun accessibilityClick(view: PipelineView): List<BubbleCommand> = when (view) {
+        PipelineView.IDLE -> listOf(BubbleCommand.Start, BubbleCommand.SetSilenceDetection(true))
+        PipelineView.RECORDING -> listOf(BubbleCommand.Stop)
+        PipelineView.BUSY -> listOf(BubbleCommand.Reject)
+        PipelineView.FAILED -> listOf(BubbleCommand.Retry)
+    }
+
+    /** The orb's "Record until I finish" action: a double-tap, as on the keyboard's mic. */
+    fun accessibilityDoubleClick(view: PipelineView): List<BubbleCommand> = when (view) {
+        PipelineView.IDLE -> listOf(BubbleCommand.Start, BubbleCommand.SetSilenceDetection(false))
+        PipelineView.RECORDING -> listOf(BubbleCommand.SetSilenceDetection(false))
+        PipelineView.BUSY -> listOf(BubbleCommand.Reject)
+        PipelineView.FAILED -> listOf(BubbleCommand.Retry)
     }
 
     /** The ring is the bubble's to decide only while it listens; otherwise the orb follows the state. */
