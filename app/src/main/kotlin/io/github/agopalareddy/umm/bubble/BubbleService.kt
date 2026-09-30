@@ -1,8 +1,11 @@
 package io.github.agopalareddy.umm.bubble
 
+import android.Manifest
 import android.accessibilityservice.AccessibilityService
 import android.annotation.SuppressLint
+import android.content.ClipboardManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.os.Build
@@ -10,14 +13,24 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.WindowManager.LayoutParams
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Toast
+import androidx.core.content.ContextCompat
+import io.github.agopalareddy.umm.core.cleanup.LanguageChoice
 import io.github.agopalareddy.umm.core.data.UmmSettings
+import io.github.agopalareddy.umm.core.pipeline.DictationRequest
+import io.github.agopalareddy.umm.core.pipeline.DictationState
+import io.github.agopalareddy.umm.core.policy.LevelResolver
 import io.github.agopalareddy.umm.graph
+import io.github.agopalareddy.umm.ime.InsertionTarget
 import io.github.agopalareddy.umm.settings.MainActivity
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -29,11 +42,14 @@ import kotlinx.coroutines.launch
 /**
  * The floating dictation button. Draws [BubbleView] in an accessibility overlay while the setting is on, and
  * shows it by the focused field. It reads only whether that field is editable or a password field, never its text.
+ * Presses go through [BubbleGesture]; this class carries out its commands on the shared pipeline.
  */
 class BubbleService : AccessibilityService() {
     private val scope = MainScope()
     private val handler = Handler(Looper.getMainLooper())
     private val windowManager by lazy { getSystemService(WindowManager::class.java) }
+    private val pipeline by lazy { graph.pipeline }
+    private val delivery by lazy { graph.delivery }
     private var focus = FocusTracker()
 
     private var settings = UmmSettings()
@@ -43,6 +59,20 @@ class BubbleService : AccessibilityService() {
 
     private var active = false
     private var lastInteraction = 0L
+
+    // The dictation the bubble started. startJob runs while its app category is read, before the pipeline
+    // starts; target is attached from the press until its result is delivered or the dictation ends.
+    private val latch = PipelineLatch()
+    private var startJob: Job? = null
+    private var target: BubbleTarget? = null
+
+    /** Silence detection asked for while startJob still runs: a quick tap's release can come first. */
+    private var silenceOn = false
+
+    private var dragging = false
+    private var dragArea: Area? = null
+    private var dragX = 0f
+    private var dragY = 0f
 
     private val recheckVisibility = Runnable { applyVisibility() }
     private val dim = Runnable { applyAlpha() }
@@ -138,7 +168,7 @@ class BubbleService : AccessibilityService() {
 
     private fun addOverlay() {
         if (bubble != null) return
-        val bubble = BubbleView(this)
+        val bubble = BubbleView(this, ::pipelineView, ::onCommand, ::noteInteraction)
         params.flags = params.flags or LayoutParams.FLAG_NOT_TOUCHABLE
         layOut(bubble, resources.configuration.orientation, attached = false)
         // The system can refuse the window (for example while the service is being unbound); skip it, don't crash.
@@ -148,9 +178,11 @@ class BubbleService : AccessibilityService() {
         }
         this.bubble = bubble
         pipelineJob = scope.launch {
-            graph.pipeline.state.collect { state ->
+            pipeline.state.collect { state ->
                 bubble.state = state
                 active = BubbleAlpha.isActive(state)
+                latch.view(state, SystemClock.uptimeMillis()) // the expectation ends once the pipeline moves
+                onPipelineState(bubble, state)
                 noteInteraction() // also undims, so the orb's frame clock runs to show the new state
             }
         }
@@ -160,6 +192,17 @@ class BubbleService : AccessibilityService() {
 
     private fun removeOverlay() {
         val bubble = bubble ?: return
+        // Nothing may keep recording without a bubble to stop it. A dictation already processing is copied to
+        // the clipboard instead, since its target goes too.
+        if (startJob?.isActive == true) {
+            abortStart()
+        } else if (target != null && pipeline.state.value is DictationState.Listening) {
+            pipeline.cancel()
+        }
+        releaseTarget()
+        latch.clear()
+        dragging = false
+        dragArea = null
         this.bubble = null
         pipelineJob?.cancel()
         pipelineJob = null
@@ -176,11 +219,11 @@ class BubbleService : AccessibilityService() {
      * drawn sizePx wide in its middle.
      */
     private fun layOut(bubble: BubbleView, orientation: Int, attached: Boolean) {
+        if (dragging) return // the finger owns the position until the drag ends and docks it
         val density = resources.displayMetrics.density
         val box = BubblePosition.boxPx(settings.bubbleSize, density)
         bubble.orbSizePx = BubblePosition.sizePx(settings.bubbleSize, density)
-        val fraction =
-            if (orientation == Configuration.ORIENTATION_LANDSCAPE) settings.bubbleYLandscape else settings.bubbleYPortrait
+        val fraction = BubbleControl.yFraction(settings, orientation == Configuration.ORIENTATION_LANDSCAPE)
         val (x, y) = BubblePosition.place(usableArea(), box, settings.bubbleEdge, fraction)
         if (params.width == box && params.height == box && params.x == x && params.y == y) return
         params.width = box
@@ -217,8 +260,11 @@ class BubbleService : AccessibilityService() {
 
     // --- Visibility and opacity ---
 
+    private fun focusedNode(): AccessibilityNodeInfo? =
+        runCatching { rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()
+
     private fun readFocus() {
-        val node = runCatching { rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()
+        val node = focusedNode()
         focus.update(editable = node?.isEditable == true, password = node?.isPassword == true, now = SystemClock.uptimeMillis())
     }
 
@@ -247,7 +293,233 @@ class BubbleService : AccessibilityService() {
         bubble.dimmed = alpha == BubbleAlpha.DIMMED
     }
 
+    // --- Gestures ---
+
+    /** What the gesture machine sees: a start or retry just asked for counts before the pipeline shows it. */
+    private fun pipelineView(): PipelineView =
+        if (startJob?.isActive == true) {
+            PipelineView.RECORDING
+        } else {
+            latch.view(pipeline.state.value, SystemClock.uptimeMillis())
+        }
+
+    private fun onCommand(command: BubbleCommand) {
+        val bubble = bubble ?: return
+        if (!BubbleControl.applies(command, pipelineView())) return
+        val starting = startJob?.isActive == true
+        when (command) {
+            BubbleCommand.Start -> start(bubble)
+            BubbleCommand.Stop ->
+                if (starting) {
+                    abortStart() // released before recording began: there is nothing to process
+                } else {
+                    pipeline.stop()
+                    bubble.haptic(STOP_HAPTIC)
+                }
+            is BubbleCommand.SetSilenceDetection -> {
+                bubble.doubleTap = !command.on
+                if (starting) silenceOn = command.on else pipeline.setContinuous(!command.on)
+            }
+            BubbleCommand.Cancel -> cancel(bubble)
+            BubbleCommand.Retry -> retry(bubble)
+            BubbleCommand.Reject -> {
+                bubble.shake()
+                noteInteraction()
+            }
+            is BubbleCommand.DragBy -> dragBy(bubble, command.dx, command.dy)
+            BubbleCommand.DragEnd -> dragEnd(bubble)
+        }
+    }
+
+    /**
+     * Starts recording into the field focused right now, with silence detection off; the level and script come
+     * from the app's category, as on the keyboard.
+     */
+    private fun start(bubble: BubbleView) {
+        if (!setupDone()) {
+            openSetup()
+            return
+        }
+        val node = focusedNode()
+        if (node == null || !BubbleVisibility.canRecord(node.isEditable, node.isPassword)) {
+            refuse(bubble)
+            return
+        }
+        val packageName = node.packageName?.toString().orEmpty()
+        val origin = attachTarget(node)
+        val settings = settings
+        silenceOn = false
+        bubble.doubleTap = false
+        bubble.haptic(HapticFeedbackConstants.CONTEXT_CLICK)
+        startJob = scope.launch {
+            val config = try {
+                graph.categories.configFor(packageName)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            // Aborted, or another start or the keyboard took delivery over, while the category was read.
+            if (config == null || !delivery.isCurrent(origin)) {
+                releaseTarget()
+                bubble.doubleTap = null
+                return@launch
+            }
+            val style = LevelResolver.resolve(null, config, settings.defaultLevel)
+            pipeline.reset()
+            pipeline.start(
+                DictationRequest(
+                    packageName, style.level, style.script, LanguageChoice.decode(settings.defaultLanguage),
+                    settings.silenceTimeoutSec, origin, continuous = !silenceOn,
+                ),
+            )
+            latch.expect(PipelineView.RECORDING, SystemClock.uptimeMillis())
+        }
+    }
+
+    /** A press turned into a drag: the recording it started is discarded. */
+    private fun cancel(bubble: BubbleView) {
+        if (startJob?.isActive == true) {
+            abortStart()
+            return
+        }
+        // Only the bubble's own recording; a refused Start left nothing to cancel.
+        if (target != null) pipeline.cancel()
+        releaseTarget()
+        latch.clear()
+        bubble.doubleTap = null
+    }
+
+    private fun abortStart() {
+        startJob?.cancel()
+        startJob = null
+        releaseTarget()
+        latch.clear()
+        bubble?.doubleTap = null
+    }
+
+    /** Like the keyboard's Retry: processes the failed recording again, into the field focused now. */
+    private fun retry(bubble: BubbleView) {
+        val failed = pipeline.state.value as? DictationState.Failed ?: return
+        if (!setupDone()) {
+            openSetup()
+            return
+        }
+        val node = focusedNode()
+        if (node == null || !BubbleVisibility.canRecord(node.isEditable, node.isPassword)) {
+            refuse(bubble)
+            return
+        }
+        val origin = attachTarget(node)
+        pipeline.reset()
+        pipeline.retry(failed.historyId, origin)
+        latch.expect(PipelineView.BUSY, SystemClock.uptimeMillis())
+    }
+
+    /** Nowhere to put text: no editable field has focus, it is a password field, or focus just left. */
+    private fun refuse(bubble: BubbleView) {
+        bubble.shake()
+        noteInteraction()
+        runCatching { Toast.makeText(this, "Tap a text field first", Toast.LENGTH_SHORT).show() }
+    }
+
+    private fun onPipelineState(bubble: BubbleView, state: DictationState) {
+        if (state !is DictationState.Listening && state != DictationState.Idle) bubble.doubleTap = null
+        // Nothing will be delivered for these. A Done releases its target itself once the router has tried it.
+        if (startJob?.isActive != true &&
+            (state is DictationState.Failed || state == DictationState.NoSpeech || state == DictationState.EmptyTranscript)
+        ) {
+            releaseTarget()
+        }
+    }
+
+    private fun dragBy(bubble: BubbleView, dx: Float, dy: Float) {
+        val area = dragArea ?: usableArea().also { dragArea = it }
+        if (!dragging) {
+            dragging = true
+            dragX = params.x.toFloat()
+            dragY = params.y.toFloat()
+        }
+        val (x, y) = BubbleControl.clamp(area, boxPx(), dragX + dx, dragY + dy)
+        dragX = x
+        dragY = y
+        params.x = x.roundToInt()
+        params.y = y.roundToInt()
+        updateWindow(bubble)
+        noteInteraction()
+    }
+
+    /** Docks on the nearer edge and remembers it, with the Y fraction for the current orientation. */
+    private fun dragEnd(bubble: BubbleView) {
+        dragging = false
+        dragArea = null
+        val area = usableArea()
+        val box = boxPx()
+        val snap = BubblePosition.snap(area, box, params.x + box / 2f, params.y + box / 2f)
+        val (x, y) = BubblePosition.place(area, box, snap.edge, snap.yFraction)
+        params.x = x
+        params.y = y
+        updateWindow(bubble)
+        noteInteraction()
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        settings = BubbleControl.docked(settings, snap, landscape)
+        scope.launch { graph.settings.update { BubbleControl.docked(it, snap, landscape) } }
+    }
+
+    /** The window and docking box, the same one [layOut] gives the window. */
+    private fun boxPx(): Int = BubblePosition.boxPx(settings.bubbleSize, resources.displayMetrics.density)
+
+    // --- Delivery ---
+
+    /** Registers a fresh target for [node] under a new origin, replacing the bubble's previous one. */
+    private fun attachTarget(node: AccessibilityNodeInfo): Long {
+        releaseTarget()
+        val origin = delivery.newOrigin()
+        val clipboard = getSystemService(ClipboardManager::class.java)
+        // The live active window, not one tracked from events: the keyboard's window is never the active one,
+        // while switching apps changes it.
+        val field = NodeField(node, clipboard, windowIsCurrent = {
+            runCatching { rootInActiveWindow?.windowId }.getOrNull() == node.windowId
+        })
+        val target = BubbleTarget(origin, field)
+        this.target = target
+        delivery.attach(target)
+        return origin
+    }
+
+    private fun releaseTarget() {
+        target?.let(delivery::detach)
+        target = null
+    }
+
+    /** Detaches once the router has tried it, so it never outlives its dictation, inserted or copied. */
+    private inner class BubbleTarget(override val origin: Long, field: FocusedField) : InsertionTarget {
+        private val insertion = AccessibilityTarget(origin, field, inserted = ::release)
+
+        override fun commit(text: String): Boolean = try {
+            insertion.commit(text)
+        } finally {
+            release()
+        }
+
+        override fun onInserted() = insertion.onInserted()
+
+        private fun release() {
+            delivery.detach(this)
+            if (target === this) target = null
+        }
+    }
+
     // --- Setup ---
+
+    private fun setupDone(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
+            graph.apiKeyStore.get() != null
+
+    /** Like the keyboard's "Finish setup": the key or the microphone permission is missing. */
+    private fun openSetup() {
+        runCatching { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
 
     /** Brings Umm back to the Bubble page after the user turned the service on from it. */
     private fun returnToApp() {
@@ -265,6 +537,9 @@ class BubbleService : AccessibilityService() {
     }
 
     companion object {
+        private val STOP_HAPTIC =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.CONTEXT_CLICK
+
         private val _connected = MutableStateFlow(false)
 
         /** True while the system has the service bound, from onServiceConnected until it is unbound. */

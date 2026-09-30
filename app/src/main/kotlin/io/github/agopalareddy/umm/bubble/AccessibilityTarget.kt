@@ -62,7 +62,7 @@ class NodeField(
     private val clipboard: ClipboardManager,
     // isFocused only means focus inside the node's own window, so it stays true after the user switches apps.
     // node.window is null without flagRetrieveInteractiveWindows, so the service supplies the window check.
-    private val windowIsCurrent: () -> Boolean = { true },
+    private val windowIsCurrent: () -> Boolean,
 ) : FocusedField {
     override val packageName: String get() = node.packageName?.toString().orEmpty()
 

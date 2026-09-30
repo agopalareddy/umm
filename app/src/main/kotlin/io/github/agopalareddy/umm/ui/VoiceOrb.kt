@@ -47,6 +47,7 @@ import io.github.agopalareddy.umm.core.pipeline.DictationState
  * a fixed-height panel; all motion is drawing.
  *
  * [continuousRing] overrides the ring and the "Finish" label; pass it only while listening (null follows the state).
+ * [clickable] false leaves touch to the caller: no click handling and no ripple.
  */
 @Composable
 internal fun VoiceOrb(
@@ -55,6 +56,7 @@ internal fun VoiceOrb(
     onDoubleClick: () -> Unit,
     modifier: Modifier = Modifier,
     continuousRing: Boolean? = null,
+    clickable: Boolean = true,
 ) {
     val listening = state as? DictationState.Listening
     val busy = state == DictationState.Transcribing || state == DictationState.Cleaning
@@ -141,7 +143,13 @@ internal fun VoiceOrb(
                     // TalkBack's double-tap is an ordinary click, so the double-tap gesture needs an action of its own.
                     if (!busy) customActions = listOf(CustomAccessibilityAction("Record until I finish") { onDoubleClick(); true })
                 }
-                .combinedClickable(enabled = !busy, role = Role.Button, onClick = onClick, onDoubleClick = onDoubleClick),
+                .then(
+                    if (clickable) {
+                        Modifier.combinedClickable(enabled = !busy, role = Role.Button, onClick = onClick, onDoubleClick = onDoubleClick)
+                    } else {
+                        Modifier
+                    },
+                ),
             contentAlignment = Alignment.Center,
         ) {
             if (icon != null) Icon(icon, contentDescription = null, tint = ink, modifier = Modifier.size(40.dp))

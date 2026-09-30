@@ -1,7 +1,11 @@
 package io.github.agopalareddy.umm.bubble
 
+import android.animation.ObjectAnimator
 import android.content.Context
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.requiredSize
@@ -31,8 +35,16 @@ import io.github.agopalareddy.umm.ui.VoiceOrb
  * The bubble's content: a [VoiceOrb] whose disc is drawn [orbSizePx] wide in the middle of the window, which is
  * [BubblePosition.boxPx] so the orb's rings fit around the disc. It owns the lifecycle and saved state a
  * [ComposeView] needs outside an activity, alive while the overlay is.
+ *
+ * Every touch on the window goes to [BubbleGesture]; the orb only draws. [pipelineView] is asked on each press,
+ * [onCommand] gets what the machine decides, and [onTouched] is called on every press and release.
  */
-internal class BubbleView(context: Context) : LifecycleOwner, SavedStateRegistryOwner {
+internal class BubbleView(
+    context: Context,
+    private val pipelineView: () -> PipelineView,
+    private val onCommand: (BubbleCommand) -> Unit,
+    private val onTouched: () -> Unit,
+) : LifecycleOwner, SavedStateRegistryOwner {
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val savedStateController = SavedStateRegistryController.create(this)
     override val lifecycle: Lifecycle get() = lifecycleRegistry
@@ -41,7 +53,17 @@ internal class BubbleView(context: Context) : LifecycleOwner, SavedStateRegistry
     var state: DictationState by mutableStateOf(DictationState.Idle)
     var orbSizePx: Int by mutableIntStateOf(0)
 
-    val view: ComposeView
+    /** For a recording the bubble started: true after a double-tap, false for a held or single tap; else null. */
+    var doubleTap: Boolean? by mutableStateOf(null)
+
+    private val gesture = BubbleGesture(slopPx = DRAG_SLOP_DP * context.resources.displayMetrics.density)
+    private val pointer = PrimaryPointer()
+    private var shaking: ObjectAnimator? = null
+
+    private val compose: ComposeView
+
+    /** The window's root view. */
+    val view: View
 
     /** Starts hidden. */
     var shown: Boolean = false
@@ -67,10 +89,7 @@ internal class BubbleView(context: Context) : LifecycleOwner, SavedStateRegistry
     init {
         savedStateController.performRestore(null)
         lifecycleRegistry.moveIfAlive(Lifecycle.Event.ON_CREATE)
-        view = ComposeView(context).apply {
-            visibility = View.GONE
-            setViewTreeLifecycleOwner(this@BubbleView)
-            setViewTreeSavedStateRegistryOwner(this@BubbleView)
+        compose = ComposeView(context).apply {
             setContent {
                 UmmTheme {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -84,18 +103,75 @@ internal class BubbleView(context: Context) : LifecycleOwner, SavedStateRegistry
                                 scaleX = scale
                                 scaleY = scale
                             },
+                            continuousRing = BubbleControl.continuousRing(state, doubleTap),
+                            clickable = false,
                         )
                     }
                 }
             }
         }
+        view = TouchFrame(context, ::onTouch).apply {
+            visibility = View.GONE
+            setViewTreeLifecycleOwner(this@BubbleView)
+            setViewTreeSavedStateRegistryOwner(this@BubbleView)
+            addView(compose, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+    }
+
+    // Raw screen coordinates, so moving the window during a drag doesn't shift the finger's position under it.
+    private fun onTouch(event: MotionEvent) {
+        for (step in pointer.onEvent(event.actionMasked, event.getPointerId(event.actionIndex))) {
+            val commands = when (step) {
+                PrimaryPointer.Step.DOWN -> {
+                    onTouched()
+                    val i = event.actionIndex
+                    gesture.onDown(event.eventTime, event.getRawX(i), event.getRawY(i), pipelineView())
+                }
+                PrimaryPointer.Step.MOVE -> {
+                    val i = pointer.id?.let(event::findPointerIndex) ?: -1
+                    if (i < 0) emptyList() else gesture.onMove(event.eventTime, event.getRawX(i), event.getRawY(i))
+                }
+                PrimaryPointer.Step.UP -> {
+                    onTouched()
+                    gesture.onUp(event.eventTime)
+                }
+            }
+            commands.forEach(onCommand)
+        }
+    }
+
+    /** A short sideways shake: this press did nothing. */
+    fun shake() {
+        val d = SHAKE_DP * view.resources.displayMetrics.density
+        shaking?.cancel()
+        shaking = ObjectAnimator.ofFloat(compose, View.TRANSLATION_X, 0f, d, -d, d * 0.6f, -d * 0.6f, 0f).apply {
+            duration = SHAKE_MS
+            start()
+        }
+    }
+
+    fun haptic(feedback: Int) {
+        runCatching { view.performHapticFeedback(feedback) }
     }
 
     fun destroy() {
-        view.disposeComposition()
+        shaking?.cancel()
+        compose.disposeComposition()
         lifecycleRegistry.moveIfAlive(Lifecycle.Event.ON_DESTROY)
     }
 }
+
+/** Takes every touch before the Compose content sees it. */
+private class TouchFrame(context: Context, private val onTouch: (MotionEvent) -> Unit) : FrameLayout(context) {
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        onTouch(event)
+        return true
+    }
+}
+
+private const val DRAG_SLOP_DP = 12f
+private const val SHAKE_DP = 4f
+private const val SHAKE_MS = 300L
 
 // VoiceOrb's own slot and disc sizes (private in VoiceOrb.kt).
 private val ORB_SLOT = 92.dp
