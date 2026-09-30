@@ -41,12 +41,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.agopalareddy.umm.core.policy.ModelPlan
-import io.github.agopalareddy.umm.core.stats.UsageSummary
 import io.github.agopalareddy.umm.graph
 import io.github.agopalareddy.umm.settings.dashboard.Dashboard
 import io.github.agopalareddy.umm.ui.UmmLogo
 import java.time.LocalDate
-import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
@@ -55,7 +53,6 @@ import kotlinx.coroutines.launch
 internal fun HomeScreen(setupComplete: Boolean, onSetup: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val graph = context.graph
-    val summary by remember { graph.stats.observeSummary() }.collectAsStateWithLifecycle(null)
     val scope = rememberCoroutineScope()
     val settings by remember { graph.settings.settings }.collectAsStateWithLifecycle(null)
     val change: SettingsChange = { transform -> scope.launch { graph.settings.update(transform) } }
@@ -154,73 +151,6 @@ internal fun HomeScreen(setupComplete: Boolean, onSetup: () -> Unit, onOpen: (St
         Spacer(Modifier.height(16.dp))
     }
 }
-
-@Composable
-private fun Stats(s: UsageSummary, plan: ModelPlan?) {
-    val context = LocalContext.current
-    Section("Your dictation") {
-        Tiles(
-            "Dictations" to "${s.dictations}",
-            "Words" to "%,d".format(s.words),
-            "Time spoken" to duration(s.spokenMs),
-            "This week" to "${s.dictationsThisWeek}",
-        )
-    }
-    Section("Fun") {
-        Tiles(
-            "Umms removed" to "${s.fillersRemoved}",
-            "Time saved vs typing" to duration(s.timeSavedMs),
-            "Longest dictation" to "${s.longestWords} words",
-            "Day streak" to if (s.streakDays > 0) "${s.streakDays} 🔥" else "0",
-            "Favorite app" to (s.topApp?.let { appLabel(context, it) } ?: "—"),
-        )
-    }
-    Section("For power users") {
-        Tiles(
-            "Total spend" to money(s.totalCostUsd),
-            "Per dictation" to (s.averageCostUsd?.let(::money) ?: "—"),
-            "Average wait" to (s.averageLatencyMs?.let { "%.1f s".format(Locale.US, it / 1000.0) } ?: "—"),
-            "Success rate" to "${(s.successRate * 100).toInt()}%",
-        )
-        val levels = s.levelCounts.entries.sortedByDescending { it.value }.joinToString(" · ") { "${it.key.title()} ${it.value}" }
-        if (levels.isNotEmpty()) Text("Levels: $levels", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
-        plan?.let {
-            Text("Speech-to-text: ${it.stt.first()}", style = MaterialTheme.typography.bodySmall)
-            Text("Cleanup: ${it.cleanup.first()}", style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
-@Composable
-private fun Tiles(vararg tiles: Pair<String, String>) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-        tiles.toList().chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { (label, value) ->
-                    Card(Modifier.weight(1f)) {
-                        Column(Modifier.padding(12.dp)) {
-                            Text(value, style = MaterialTheme.typography.titleLarge, maxLines = 1)
-                            Text(label, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-private fun duration(ms: Long): String {
-    val seconds = ms / 1000
-    return when {
-        seconds < 60 -> "$seconds s"
-        seconds < 3600 -> "${seconds / 60} min ${seconds % 60} s"
-        else -> "${seconds / 3600} h ${(seconds % 3600) / 60} min"
-    }
-}
-
-private fun money(usd: Double): String =
-    if (usd < 0.01) "$%.4f".format(Locale.US, usd) else "$%.2f".format(Locale.US, usd)
 
 /** Shown once when Umm learns the account only allows zero data retention providers. */
 @Composable

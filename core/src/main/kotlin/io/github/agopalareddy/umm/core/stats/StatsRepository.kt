@@ -23,9 +23,6 @@ class StatsRepository(db: UmmDatabase, private val enabled: suspend () -> Boolea
 
     fun observeAll(): Flow<List<StatsEntry>> = dao.observeAll()
 
-    fun observeSummary(clock: () -> Long = System::currentTimeMillis, zone: ZoneId = ZoneId.systemDefault()): Flow<UsageSummary> =
-        dao.observeAll().map { UsageSummary.from(it, clock(), zone) }
-
     /** Recomputed on every table change, off the main thread. */
     fun observeDashboard(
         range: DashboardRange,
