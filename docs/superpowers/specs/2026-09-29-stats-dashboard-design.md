@@ -114,7 +114,7 @@ All 14 are visible by default, in this order.
 | `settings/dashboard/Dashboard.kt` | Range chips, the card column, empty and paused states, Edit mode (per card: switch, up, down; plus Reset layout). |
 | `settings/HomeScreen.kt` | Renders `Dashboard` only when *Show stats* is on. Loses the old `Stats` and `Tiles`. |
 | `settings/SettingsScreen.kt` | The new Stats section and delete confirmation. |
-| `src/debug` and `src/release` | `SampleData`: seeds about 90 days of varied rows in debug builds, and an empty twin in release so it cannot ship. Reached from the Stats section, shown only when `BuildConfig.DEBUG`. |
+| `settings/dashboard/SampleData.kt` | `SampleData`: seeds about 90 days of varied rows. Lives in `main`, not `src/debug` or `src/release`; the only call sites are behind `BuildConfig.DEBUG` on the Stats page, so R8 strips it from release builds (checked: no `SampleData` in the release dex). |
 
 ### Data flow
 

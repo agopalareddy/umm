@@ -121,7 +121,7 @@ The full [privacy policy](https://agopalareddy.github.io/umm/privacy/) is short.
   tells you, and switches automatically.
 - Your key is encrypted on the phone with an Android Keystore key and is never logged.
 - History, stats, and any audio kept for a retry stay on the phone. Retry audio is deleted once it succeeds, or
-  after 7 days.
+  after 7 days. In Settings → Stats you can hide stats on Home, stop recording them, or delete them.
 
 ## Building from source
 
