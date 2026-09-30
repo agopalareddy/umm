@@ -1,5 +1,7 @@
 package io.github.agopalareddy.umm.settings
 
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -23,6 +25,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -39,8 +43,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -54,6 +60,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.agopalareddy.umm.bubble.Area
 import io.github.agopalareddy.umm.bubble.BubbleControl
@@ -80,15 +88,57 @@ internal fun BubbleShowMode.label() = when (this) {
     BubbleShowMode.ALWAYS -> "Always"
 }
 
-internal fun BubbleShowMode.description() = when (this) {
-    BubbleShowMode.WHEN_FOCUSED -> "Shows when an editable field is focused; hides 400 ms after focus leaves"
-    BubbleShowMode.ALWAYS -> "Always visible except over password fields"
+internal fun BubbleSize.label() = when (this) {
+    BubbleSize.SMALL -> "Small"
+    BubbleSize.MEDIUM -> "Medium"
+    BubbleSize.LARGE -> "Large"
 }
 
-internal fun BubbleSize.label() = when (this) {
-    BubbleSize.SMALL -> "Small (44 dp)"
-    BubbleSize.MEDIUM -> "Medium (56 dp)"
-    BubbleSize.LARGE -> "Large (72 dp)"
+/** The Reset position button: the spec's default dock, leaving every other setting as it is. */
+internal fun resetBubblePosition(settings: UmmSettings): UmmSettings =
+    settings.copy(bubbleEdge = BubbleEdge.RIGHT, bubbleYPortrait = 0.6f, bubbleYLandscape = 0.5f)
+
+/** What the disclosure's buttons do. Consent and the switch are stored together, only on Accept. */
+internal data class DisclosureOutcome(val settings: UmmSettings, val openAccessibility: Boolean)
+
+internal fun disclosureOutcome(settings: UmmSettings, accepted: Boolean, now: Long): DisclosureOutcome =
+    if (accepted) {
+        DisclosureOutcome(settings.copy(disclosureAcceptedAt = now, bubbleEnabled = true), openAccessibility = true)
+    } else {
+        DisclosureOutcome(settings, openAccessibility = false)
+    }
+
+/** What flipping the switch on does: ask for consent first, or (consent already stored) turn it on. */
+internal sealed interface SwitchOn {
+    data object ShowDisclosure : SwitchOn
+    data class Enable(val openAccessibility: Boolean) : SwitchOn
+}
+
+internal fun switchOn(settings: UmmSettings, connected: Boolean): SwitchOn =
+    if (settings.disclosureAcceptedAt == 0L) SwitchOn.ShowDisclosure else SwitchOn.Enable(openAccessibility = !connected)
+
+// Hidden SDK constants (Settings.ACTION_ACCESSIBILITY_DETAILS_SETTINGS and
+// Settings.EXTRA_ACCESSIBILITY_SERVICE_COMPONENT_NAME are not in the public stubs); the strings are stable.
+internal const val ACTION_ACCESSIBILITY_DETAILS_SETTINGS = "android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
+internal const val EXTRA_ACCESSIBILITY_SERVICE_COMPONENT_NAME = "android.provider.extra.ACCESSIBILITY_SERVICE_COMPONENT_NAME"
+
+internal data class LaunchSpec(val action: String, val extras: Map<String, String>)
+
+/** Umm's own accessibility page first, the generic list if that can't be opened. */
+internal fun accessibilityLaunchPlan(serviceComponent: String): List<LaunchSpec> = listOf(
+    LaunchSpec(ACTION_ACCESSIBILITY_DETAILS_SETTINGS, mapOf(EXTRA_ACCESSIBILITY_SERVICE_COMPONENT_NAME to serviceComponent)),
+    LaunchSpec(Settings.ACTION_ACCESSIBILITY_SETTINGS, emptyMap()),
+)
+
+/** Marks the enable as awaited, then opens Umm's page in Accessibility settings (or the list, as a fallback). */
+private fun openAccessibilitySettings(context: Context) {
+    BubbleSetup.awaitingEnable = true
+    val component = ComponentName(context, BubbleService::class.java).flattenToString()
+    for (spec in accessibilityLaunchPlan(component)) {
+        val intent = Intent(spec.action).apply { spec.extras.forEach { (k, v) -> putExtra(k, v) } }
+        if (runCatching { context.startActivity(intent) }.isSuccess) return
+    }
+    BubbleSetup.awaitingEnable = false
 }
 
 @Composable
@@ -97,8 +147,25 @@ internal fun BubblePage(settings: UmmSettings, onBack: () -> Unit, onChange: Set
     val connected by BubbleService.connected.collectAsStateWithLifecycle()
     var showDisclosure by remember { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
+    var resumes by remember { mutableIntStateOf(0) }
 
-    val advancedProtectionBlocked = remember {
+    // The page is back in front. If the user backed out of Accessibility settings without turning Umm on, a later
+    // enable from system settings must not pull the app forward; when the service connected, it has cleared the flag.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        resumes++
+        if (BubbleSetup.shouldClearAwaiting(BubbleSetup.awaitingEnable, BubbleService.connected.value)) {
+            BubbleSetup.awaitingEnable = false
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            if (BubbleSetup.shouldClearAwaiting(BubbleSetup.awaitingEnable, BubbleService.connected.value)) {
+                BubbleSetup.awaitingEnable = false
+            }
+        }
+    }
+
+    val advancedProtectionBlocked = remember(resumes) {
         if (Build.VERSION.SDK_INT >= 36) {
             runCatching {
                 val apm = context.getSystemService(android.security.advancedprotection.AdvancedProtectionManager::class.java)
@@ -115,20 +182,19 @@ internal fun BubblePage(settings: UmmSettings, onBack: () -> Unit, onChange: Set
             enabled = !advancedProtectionBlocked,
             onCheckedChange = { on ->
                 if (on) {
-                    if (settings.disclosureAcceptedAt == 0L) {
-                        showDisclosure = true
-                    } else {
-                        onChange { it.copy(bubbleEnabled = true) }
+                    when (val action = switchOn(settings, connected)) {
+                        SwitchOn.ShowDisclosure -> showDisclosure = true
+                        is SwitchOn.Enable -> {
+                            onChange { it.copy(bubbleEnabled = true) }
+                            if (action.openAccessibility) openAccessibilitySettings(context)
+                        }
                     }
                 } else {
                     onChange { it.copy(bubbleEnabled = false) }
                 }
             },
         ) {
-            Column(Modifier.weight(1f)) {
-                Text("Floating button")
-                Text("A button that floats over any app to dictate", style = MaterialTheme.typography.bodySmall)
-            }
+            Text("Floating button", Modifier.weight(1f))
         }
 
         if (advancedProtectionBlocked) {
@@ -166,10 +232,7 @@ internal fun BubblePage(settings: UmmSettings, onBack: () -> Unit, onChange: Set
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            BubbleSetup.awaitingEnable = true
-                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                        }
+                        .clickable { openAccessibilitySettings(context) }
                         .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -230,7 +293,7 @@ internal fun BubblePage(settings: UmmSettings, onBack: () -> Unit, onChange: Set
                                 )
                             },
                         ) {
-                            Text("Open App info")
+                            Text("Open Umm's app info")
                         }
                     }
                 }
@@ -243,10 +306,7 @@ internal fun BubblePage(settings: UmmSettings, onBack: () -> Unit, onChange: Set
                     selected = settings.bubbleVisibility == mode,
                     onClick = { onChange { it.copy(bubbleVisibility = mode) } },
                 ) {
-                    Column {
-                        Text(mode.label())
-                        Text(mode.description(), style = MaterialTheme.typography.bodySmall)
-                    }
+                    Text(mode.label())
                 }
             }
         }
@@ -263,22 +323,10 @@ internal fun BubblePage(settings: UmmSettings, onBack: () -> Unit, onChange: Set
         }
 
         Section("Position") {
-            Text("Drag the bubble to reposition it, or drag the real bubble anywhere on your screen.", style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.height(8.dp))
             BubblePreview(settings, onChange)
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                OutlinedButton(
-                    onClick = {
-                        onChange {
-                            it.copy(
-                                bubbleEdge = BubbleEdge.RIGHT,
-                                bubbleYPortrait = 0.6f,
-                                bubbleYLandscape = 0.5f,
-                            )
-                        }
-                    },
-                ) {
+                OutlinedButton(onClick = { onChange { resetBubblePosition(it) } }) {
                     Text("Reset position")
                 }
             }
@@ -289,15 +337,16 @@ internal fun BubblePage(settings: UmmSettings, onBack: () -> Unit, onChange: Set
         AlertDialog(
             onDismissRequest = { showDisclosure = false },
             title = { Text(DISCLOSURE_TITLE) },
-            text = { Text(DISCLOSURE_TEXT) },
+            text = { Text(DISCLOSURE_TEXT, Modifier.verticalScroll(rememberScrollState())) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showDisclosure = false
                         val now = System.currentTimeMillis()
-                        onChange { it.copy(disclosureAcceptedAt = now, bubbleEnabled = true) }
-                        BubbleSetup.awaitingEnable = true
-                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        onChange { disclosureOutcome(it, accepted = true, now = now).settings }
+                        if (disclosureOutcome(settings, accepted = true, now = now).openAccessibility) {
+                            openAccessibilitySettings(context)
+                        }
                     },
                 ) {
                     Text("Accept")

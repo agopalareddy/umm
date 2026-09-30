@@ -58,9 +58,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (intent?.getBooleanExtra(BubbleSetup.EXTRA_OPEN_BUBBLE_PAGE, false) == true) {
-            bubblePageRequested = true
-        }
+        // A recreate (rotation) delivers the original intent again; only the first launch honours the extra.
+        if (savedInstanceState == null) consumeBubblePageRequest(intent)
         enableEdgeToEdge()
         setContent {
             // Status and navigation bar icons follow the app's theme, not the phone's.
@@ -83,7 +82,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra(BubbleSetup.EXTRA_OPEN_BUBBLE_PAGE, false)) {
+        consumeBubblePageRequest(intent)
+    }
+
+    /** Takes the open-Bubble-page request off [intent] so it is handled once, however often the intent is re-read. */
+    private fun consumeBubblePageRequest(intent: Intent?) {
+        if (intent?.getBooleanExtra(BubbleSetup.EXTRA_OPEN_BUBBLE_PAGE, false) == true) {
+            intent.removeExtra(BubbleSetup.EXTRA_OPEN_BUBBLE_PAGE)
             bubblePageRequested = true
         }
     }
@@ -116,7 +121,7 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(bubblePageRequested) {
             if (bubblePageRequested) {
                 bubblePageRequested = false
-                nav.navigate(Routes.BUBBLE)
+                nav.navigate(Routes.BUBBLE) { launchSingleTop = true }
             }
         }
 
