@@ -50,10 +50,22 @@ class PeriodStatsTest {
         assertEquals(2, s.previous!!.dictations)
     }
 
+    @Test fun previousDaysAreZeroFilledAndAlignedWithDays() {
+        val rows = listOf(entry(1, "2026-09-14", words = 30), entry(2, "2026-09-20", words = 8), entry(3, "2026-09-21"))
+        val s = PeriodStats.from(rows, DashboardRange.D7, nowMs, zone)
+        val before = s.previousDays!!
+        assertEquals((14..20).map { LocalDate.parse("2026-09-$it") }, before.map { it.date })
+        assertEquals(s.days.size, before.size)
+        assertEquals(30, before.first().words)
+        assertEquals(8, before.last().words)
+        assertEquals(s.previous!!.words, before.sumOf { it.words })
+    }
+
     @Test fun allHasNoPreviousAndStartsAtFirstRow() {
         val rows = listOf(entry(1, "2026-09-25"), entry(2, "2026-09-27"))
         val s = PeriodStats.from(rows, DashboardRange.ALL, nowMs, zone)
         assertNull(s.previous)
+        assertNull(s.previousDays)
         assertEquals(
             (25..27).map { LocalDate.parse("2026-09-$it") },
             s.days.map { it.date },

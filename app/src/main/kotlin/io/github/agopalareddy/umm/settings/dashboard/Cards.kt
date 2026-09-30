@@ -20,12 +20,12 @@ internal object Cards {
         CardSpec("streak_calendar", "Streak") { StreakCard(it) },
         CardSpec("milestones", "Milestones") { MilestonesCard(it) },
         CardSpec("fun_facts", "Fun facts") { FunFactsCard(it) },
-        placeholder("words_per_day", "Words per day"),
-        placeholder("time_saved", "Time saved"),
-        placeholder("speaking_pace", "Speaking pace"),
-        placeholder("spend_per_day", "Spend per day"),
-        placeholder("spend_by_model", "Spend by model"),
-        placeholder("budget", "Budget"),
+        CardSpec("words_per_day", "Words per day") { WordsPerDayCard(it) },
+        CardSpec("time_saved", "Time saved") { TimeSavedCard(it) },
+        CardSpec("speaking_pace", "Speaking pace") { SpeakingPaceCard(it) },
+        CardSpec("spend_per_day", "Spend per day") { SpendPerDayCard(it) },
+        CardSpec("spend_by_model", "Spend by model") { SpendByModelCard(it) },
+        CardSpec("budget", "Budget") { BudgetCard(it) },
         placeholder("when_you_dictate", "When you dictate"),
         placeholder("where_you_dictate", "Where you dictate"),
         placeholder("cleanup_levels", "Cleanup levels"),
@@ -97,6 +97,9 @@ internal object DashboardText {
             else -> "$direction ${amount.removeSuffix("%")} percent"
         }
     }
+
+    /** The stretch a range covers, e.g. "last 30 days" or "all time". */
+    fun span(range: DashboardRange): String = range.days?.let { "last $it days" } ?: "all time"
 
     /** What a range is compared with, e.g. "the previous 30 days"; null for all time. */
     fun previous(range: DashboardRange): String? = range.days?.let { "the previous $it days" }

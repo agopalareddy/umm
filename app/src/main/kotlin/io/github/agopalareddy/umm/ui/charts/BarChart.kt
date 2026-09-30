@@ -40,7 +40,7 @@ import kotlin.math.roundToInt
 /**
  * One rounded bar per value with [labels] underneath (thinned out when they would collide, always keeping the
  * newest) and the tallest bar's value above it. [previous] is drawn faint behind, index for index, so the last
- * period shows through wherever it was higher.
+ * period shows through wherever it was higher. [peakLabel] words the tallest bar's value (default: a bare number).
  */
 @Composable
 internal fun BarChart(
@@ -49,6 +49,7 @@ internal fun BarChart(
     description: String,
     modifier: Modifier = Modifier,
     previous: List<Float>? = null,
+    peakLabel: (Float) -> String = ::compact,
 ) {
     val bars = values.map(::plottable)
     val behind = previous.orEmpty().map(::plottable)
@@ -65,7 +66,7 @@ internal fun BarChart(
                 val max = scaleOf(bars + behind)
                 val n = bars.size
                 val peak = bars.indices.maxByOrNull { bars[it] }?.takeIf { bars[it] > 0f }
-                val peakText = peak?.let { measurer.measure(compact(bars[it]), peakStyle, maxLines = 1) }
+                val peakText = peak?.let { measurer.measure(peakLabel(bars[it]), peakStyle, maxLines = 1) }
                 val plot = plotArea(
                     top = measurer.measure("0", peakStyle).size.height + 4.dp.toPx(),
                     labelHeight = measurer.measure("0", labelStyle).size.height.toFloat(),

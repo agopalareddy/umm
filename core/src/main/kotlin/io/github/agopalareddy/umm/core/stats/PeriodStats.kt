@@ -15,8 +15,17 @@ data class DayStat(
     val wpm: Double?,
 )
 
-/** Totals for a dashboard range, the equal window before it, and one zero-filled bucket per day. */
-data class PeriodStats(val current: Totals, val previous: Totals?, val days: List<DayStat>, val averageWpm: Double?) {
+/**
+ * Totals for a dashboard range, the equal window before it, and one zero-filled bucket per day.
+ * [previousDays] are the days of that earlier window, index for index with [days]; null for all time.
+ */
+data class PeriodStats(
+    val current: Totals,
+    val previous: Totals?,
+    val days: List<DayStat>,
+    val averageWpm: Double?,
+    val previousDays: List<DayStat>? = null,
+) {
     companion object {
         private const val TYPING_MS_PER_WORD = 60_000L / 40
         private const val MIN_PACE_AUDIO_MS = 2_000L
@@ -28,11 +37,11 @@ data class PeriodStats(val current: Totals, val previous: Totals?, val days: Lis
 
             val window = range.window(today, byDay.keys.minOrNull())
             val days = window.dates().map { dayStat(it, byDay[it].orEmpty()) }
-            val previous = range.previousWindow(today)?.let { prev ->
-                totals(prev.dates().map { dayStat(it, byDay[it].orEmpty()) })
+            val previousDays = range.previousWindow(today)?.let { prev ->
+                prev.dates().map { dayStat(it, byDay[it].orEmpty()) }
             }
             val paced = window.dates().flatMap { byDay[it].orEmpty() }.filter(::isPaced)
-            return PeriodStats(totals(days), previous, days, wpm(paced))
+            return PeriodStats(totals(days), previousDays?.let(::totals), days, wpm(paced), previousDays)
         }
 
         private fun ClosedRange<LocalDate>.dates(): List<LocalDate> =

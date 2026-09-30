@@ -137,8 +137,9 @@ internal fun FunFactsCard(ctx: CardContext) {
     Footnote("All time. Typing at 40 wpm; a novel is 80,000 words.", Modifier.padding(top = 8.dp))
 }
 
+/** A label with its value at the end of the row; TalkBack reads the pair as one item. */
 @Composable
-private fun Fact(label: String, value: String) {
+internal fun Fact(label: String, value: String) {
     Row(
         Modifier.fillMaxWidth().padding(vertical = 6.dp).semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically,
