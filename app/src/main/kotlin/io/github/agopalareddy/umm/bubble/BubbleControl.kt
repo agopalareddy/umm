@@ -53,6 +53,12 @@ object BubbleControl {
         PipelineView.FAILED -> listOf(BubbleCommand.Retry)
     }
 
+    /**
+     * True when a relayout would put the bubble where the running snap animation ([snappingTo], null when none
+     * runs) is already taking it: the settings echo of a drag's dock must not cut the animation short.
+     */
+    fun snapCovers(snappingTo: Pair<Int, Int>?, placed: Pair<Int, Int>): Boolean = snappingTo == placed
+
     /** The ring is the bubble's to decide only while it listens; otherwise the orb follows the state. */
     fun continuousRing(state: DictationState, doubleTap: Boolean?): Boolean? =
         if (state is DictationState.Listening) doubleTap else null

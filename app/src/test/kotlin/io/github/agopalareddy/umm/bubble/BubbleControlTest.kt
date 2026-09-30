@@ -90,6 +90,14 @@ class BubbleControlTest {
         assertEquals(listOf(BubbleCommand.Retry), BubbleControl.accessibilityDoubleClick(FAILED))
     }
 
+    @Test fun aRunningSnapToTheSameSpotSurvivesARelayout() {
+        assertTrue(BubbleControl.snapCovers(snappingTo = 10 to 20, placed = 10 to 20))
+        assertFalse(BubbleControl.snapCovers(snappingTo = 10 to 20, placed = 10 to 21))
+        assertFalse(BubbleControl.snapCovers(snappingTo = 10 to 20, placed = 11 to 20))
+        // No snap running: lay out as usual.
+        assertFalse(BubbleControl.snapCovers(snappingTo = null, placed = 10 to 20))
+    }
+
     @Test fun ringOverrideOnlyWhileListening() {
         assertEquals(true, BubbleControl.continuousRing(listening, doubleTap = true))
         assertEquals(false, BubbleControl.continuousRing(listening.copy(continuous = true), doubleTap = false))

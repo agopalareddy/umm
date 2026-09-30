@@ -137,6 +137,8 @@ class BubbleService : AccessibilityService() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        // A drag in progress keeps going but clamps to the new screen's area from its next step.
+        dragArea = null
         bubble?.let { layOut(it, newConfig.orientation, attached = true) }
     }
 
@@ -238,12 +240,14 @@ class BubbleService : AccessibilityService() {
      */
     private fun layOut(bubble: BubbleView, orientation: Int, attached: Boolean) {
         if (dragging) return // the finger owns the position until the drag ends and docks it
-        cancelSnapAnimation()
         val density = resources.displayMetrics.density
         val box = BubblePosition.boxPx(settings.bubbleSize, density)
         bubble.orbSizePx = BubblePosition.sizePx(settings.bubbleSize, density)
         val fraction = BubbleControl.yFraction(settings, orientation == Configuration.ORIENTATION_LANDSCAPE)
         val (x, y) = BubblePosition.place(usableArea(), box, settings.bubbleEdge, fraction)
+        val snappingTo = snapTarget.takeIf { snapAnimator?.isRunning == true }
+        if (params.width == box && BubbleControl.snapCovers(snappingTo, x to y)) return
+        cancelSnapAnimation()
         if (params.width == box && params.height == box && params.x == x && params.y == y) return
         params.width = box
         params.height = box
@@ -377,7 +381,6 @@ class BubbleService : AccessibilityService() {
         val settings = settings
         silenceOn = false
         bubble.doubleTap = false
-        bubble.haptic(HapticFeedbackConstants.CONTEXT_CLICK)
         startJob = scope.launch {
             val config = try {
                 graph.categories.configFor(packageName)
@@ -396,6 +399,9 @@ class BubbleService : AccessibilityService() {
                 applyVisibility()
                 return@launch
             }
+            // Only now is the recording really starting: a start aborted during the read (a drag, a stop, a
+            // failed read) must not buzz.
+            bubble.haptic(HapticFeedbackConstants.CONTEXT_CLICK)
             val style = LevelResolver.resolve(null, config, settings.defaultLevel)
             pipeline.reset()
             pipeline.start(
@@ -485,9 +491,13 @@ class BubbleService : AccessibilityService() {
 
     private var snapAnimator: ValueAnimator? = null
 
+    /** Where [snapAnimator] is taking the window. */
+    private var snapTarget: Pair<Int, Int>? = null
+
     private fun cancelSnapAnimation() {
         snapAnimator?.cancel()
         snapAnimator = null
+        snapTarget = null
     }
 
     private fun dragBy(bubble: BubbleView, dx: Float, dy: Float) {
@@ -525,7 +535,8 @@ class BubbleService : AccessibilityService() {
         noteInteraction()
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         settings = BubbleControl.docked(settings, snap, landscape)
-        scope.launch { graph.settings.update { BubbleControl.docked(it, snap, landscape) } }
+        // A failed write (DataStore IOException) only loses the remembered dock; it must not crash the service.
+        scope.launch { runCatching { graph.settings.update { BubbleControl.docked(it, snap, landscape) } } }
     }
 
     private fun animateTo(bubble: BubbleView, targetX: Int, targetY: Int) {
@@ -534,6 +545,7 @@ class BubbleService : AccessibilityService() {
         val startY = params.y
         if (startX == targetX && startY == targetY) return
 
+        snapTarget = targetX to targetY
         snapAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = SNAP_ANIMATION_MS
             interpolator = DecelerateInterpolator(1.5f)
