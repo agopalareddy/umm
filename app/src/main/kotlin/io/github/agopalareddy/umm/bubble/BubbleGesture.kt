@@ -29,7 +29,7 @@ sealed interface BubbleCommand {
  */
 class BubbleGesture(
     private val slopPx: Float,
-    private val holdMs: Long = 250,
+    private val holdMs: Long = HOLD_MS,
     private val doubleTapMs: Long = 300,
 ) {
     private enum class State {
@@ -174,11 +174,14 @@ class BubbleGesture(
         return (newest.x - oldest.x) * 1000f / dtMs to (newest.y - oldest.y) * 1000f / dtMs
     }
 
-    private companion object {
-        const val VELOCITY_WINDOW_MS = 120L
-        const val STOPPED_MS = 50L
+    companion object {
+        /** A press held this long is push-to-talk; a drag must start before it. */
+        const val HOLD_MS = 250L
+
+        private const val VELOCITY_WINDOW_MS = 120L
+        private const val STOPPED_MS = 50L
 
         /** Samples closer together than this give no usable velocity. */
-        const val MIN_SPAN_MS = 5L
+        private const val MIN_SPAN_MS = 5L
     }
 }

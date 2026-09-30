@@ -57,6 +57,9 @@ internal class BubbleView(
     /** For a recording the bubble started: true after a double-tap, false for a held or single tap; else null. */
     var doubleTap: Boolean? by mutableStateOf(null)
 
+    /** While set, a recording shows as idle: its press may still turn into a drag ([PressFeedback]). */
+    var pending: Boolean by mutableStateOf(false)
+
     private val gesture = BubbleGesture(slopPx = DRAG_SLOP_DP * context.resources.displayMetrics.density)
     private val pointer = PrimaryPointer()
     private var shaking: ObjectAnimator? = null
@@ -94,9 +97,10 @@ internal class BubbleView(
             setContent {
                 UmmTheme {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        val orbState = if (pending && state is DictationState.Listening) DictationState.Idle else state
                         // VoiceOrb has a fixed layout size, so scale its drawing until the disc is orbSizePx wide.
                         VoiceOrb(
-                            state,
+                            orbState,
                             // Only TalkBack's actions call these; touches go to the gesture machine.
                             onClick = { onAccessibilityAction(BubbleControl.accessibilityClick(pipelineView())) },
                             onDoubleClick = { onAccessibilityAction(BubbleControl.accessibilityDoubleClick(pipelineView())) },
@@ -105,7 +109,7 @@ internal class BubbleView(
                                 scaleX = scale
                                 scaleY = scale
                             },
-                            continuousRing = BubbleControl.continuousRing(state, doubleTap),
+                            continuousRing = BubbleControl.continuousRing(orbState, doubleTap),
                             clickable = false,
                         )
                     }

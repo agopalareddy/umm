@@ -113,3 +113,43 @@ class PipelineLatch(private val holdMs: Long = 2_000) {
         return real
     }
 }
+
+/**
+ * When a press's recording is felt and seen. It starts on the press, so the first word is kept, but stays silent
+ * and looks idle until the press turns out a hold or a tap: a drag then discards it without a buzz or a flash.
+ */
+class PressFeedback {
+    /** True while the press's recording must look idle. */
+    var pending = false
+        private set
+    private var confirmed = false
+    private var begun = false
+
+    /** A press asked for a recording. */
+    fun pressed() {
+        pending = true
+        confirmed = false
+        begun = false
+    }
+
+    /** The recording really started; true when the start buzz is due now. */
+    fun begun(): Boolean {
+        begun = true
+        return confirmed
+    }
+
+    /** The press became a hold or a tap; true when the start buzz is due now. */
+    fun confirmed(): Boolean {
+        if (!pending) return false
+        pending = false
+        confirmed = true
+        return begun
+    }
+
+    /** The press was dragged, stopped or aborted: no start buzz from it any more. */
+    fun clear() {
+        pending = false
+        confirmed = false
+        begun = false
+    }
+}

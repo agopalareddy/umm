@@ -85,6 +85,9 @@ class BubbleService : AccessibilityService() {
     /** Silence detection asked for while startJob still runs: a quick tap's release can come first. */
     private var silenceOn = false
 
+    private val feedback = PressFeedback()
+    private val holdReached = Runnable { confirmPress() }
+
     private var dragging = false
     private var dragArea: Area? = null
     private var dragX = 0f
@@ -228,6 +231,7 @@ class BubbleService : AccessibilityService() {
         this.bubble = null
         pipelineJob?.cancel()
         pipelineJob = null
+        clearPress()
         handler.removeCallbacks(recheckVisibility)
         handler.removeCallbacks(dim)
         runCatching { windowManager.removeViewImmediate(bubble.view) }
@@ -344,10 +348,12 @@ class BubbleService : AccessibilityService() {
                 if (starting) {
                     abortStart() // released before recording began: there is nothing to process
                 } else {
+                    clearPress()
                     pipeline.stop()
                     bubble.haptic(STOP_HAPTIC)
                 }
             is BubbleCommand.SetSilenceDetection -> {
+                if (command.on) confirmPress() // a tap: it can no longer become a drag
                 bubble.doubleTap = !command.on
                 if (starting) silenceOn = command.on else pipeline.setContinuous(!command.on)
             }
@@ -383,6 +389,10 @@ class BubbleService : AccessibilityService() {
         val settings = settings
         silenceOn = false
         bubble.doubleTap = false
+        feedback.pressed()
+        bubble.pending = true
+        handler.removeCallbacks(holdReached)
+        handler.postDelayed(holdReached, BubbleGesture.HOLD_MS)
         startJob = scope.launch {
             val config = try {
                 graph.categories.configFor(packageName)
@@ -397,13 +407,11 @@ class BubbleService : AccessibilityService() {
                 releaseTarget()
                 ownedOrigin = null
                 bubble.doubleTap = null
+                clearPress()
                 startJob = null // over: the visibility check below must not count it as starting
                 applyVisibility()
                 return@launch
             }
-            // Only now is the recording really starting: a start aborted during the read (a drag, a stop, a
-            // failed read) must not buzz.
-            bubble.haptic(HapticFeedbackConstants.CONTEXT_CLICK)
             val style = LevelResolver.resolve(null, config, settings.defaultLevel)
             pipeline.reset()
             pipeline.start(
@@ -413,11 +421,29 @@ class BubbleService : AccessibilityService() {
                 ),
             )
             latch.expect(PipelineView.RECORDING, SystemClock.uptimeMillis())
+            // Buzz only once the recording has really started (not for a start aborted during the read) and the
+            // press is a hold or a tap (not a drag).
+            if (feedback.begun()) bubble.haptic(START_HAPTIC)
         }
+    }
+
+    /** The press is a hold or a tap: its recording now shows, and buzzes if it has started. */
+    private fun confirmPress() {
+        handler.removeCallbacks(holdReached)
+        if (feedback.confirmed()) bubble?.haptic(START_HAPTIC)
+        bubble?.pending = feedback.pending
+    }
+
+    /** The press ended without being confirmed, or its recording is over: no start buzz or hiding from it. */
+    private fun clearPress() {
+        handler.removeCallbacks(holdReached)
+        feedback.clear()
+        bubble?.pending = false
     }
 
     /** A press turned into a drag: the recording it started is discarded. */
     private fun cancel(bubble: BubbleView) {
+        clearPress()
         if (startJob?.isActive == true) {
             abortStart()
             return
@@ -431,6 +457,7 @@ class BubbleService : AccessibilityService() {
     }
 
     private fun abortStart() {
+        clearPress()
         startJob?.cancel()
         startJob = null
         releaseTarget()
@@ -639,6 +666,7 @@ class BubbleService : AccessibilityService() {
     }
 
     companion object {
+        private const val START_HAPTIC = HapticFeedbackConstants.CONTEXT_CLICK
         private val STOP_HAPTIC =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.CONTEXT_CLICK
 
