@@ -84,6 +84,18 @@ class AccessibilityTargetTest {
         assertEquals("paste(hi)", field.calls.last())
     }
 
+    @Test fun pasteFallbackUsesTheSameInsertionAsTheMerge() {
+        // reversed selection over "5..8" of "hello world"
+        val reversed = FakeField(text = "hello world", selectionStart = 8, selectionEnd = 5, setTextWorks = false)
+        AccessibilityTarget(1, reversed) {}.commit("big")
+        assertEquals(listOf("refresh", "setText(hello big rld)", "paste( big )"), reversed.calls)
+
+        // a cursor inside a surrogate pair moves before the pair, so no leading space after "a "
+        val pair = FakeField(text = "a 😀b", selectionStart = 3, selectionEnd = 3, setTextWorks = false)
+        AccessibilityTarget(1, pair) {}.commit("x")
+        assertEquals(listOf("refresh", "setText(a x 😀b)", "paste(x )"), pair.calls)
+    }
+
     @Test fun nullTextAndMissingSelectionInsertAtTheEnd() {
         val field = FakeField(text = null)
         assertTrue(AccessibilityTarget(1, field) {}.commit("hi"))

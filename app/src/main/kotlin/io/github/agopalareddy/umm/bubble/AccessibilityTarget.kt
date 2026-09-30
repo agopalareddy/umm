@@ -5,13 +5,15 @@ import android.content.ClipboardManager
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import io.github.agopalareddy.umm.ime.InsertionTarget
-import io.github.agopalareddy.umm.ime.TextInsertion
 
 /** The text field the bubble dictates into; [NodeField] is the real one, tests use a fake. */
 interface FocusedField {
     val packageName: String
 
-    /** False if the node is gone or no longer focused and editable. */
+    /**
+     * False if the node is gone, no longer focused and editable, or no longer in the window where dictation
+     * started.
+     */
     fun refresh(): Boolean
 
     val text: CharSequence?
@@ -45,36 +47,26 @@ class AccessibilityTarget(
             return true
         }
         // The node is still the focused editable field but refused ACTION_SET_TEXT, so paste is safe.
-        return field.paste(prepareForPaste(text))
+        val prepared = NodeInsertion.prepared(
+            field.text, field.showingHint, field.selectionStart, field.selectionEnd, text, field.multiLine,
+        )
+        return field.paste(prepared)
     }
 
     override fun onInserted() = inserted()
-
-    private fun prepareForPaste(text: String): String {
-        val current = if (field.showingHint) "" else field.text ?: ""
-        val start = field.selectionStart
-        val end = field.selectionEnd
-        val before: CharSequence
-        val after: CharSequence
-        if (start < 0 || end < 0) {
-            before = current
-            after = ""
-        } else {
-            before = current.subSequence(0, minOf(start, end).coerceAtMost(current.length))
-            after = current.subSequence(maxOf(start, end).coerceAtMost(current.length), current.length)
-        }
-        return TextInsertion.prepare(text, before, after, field.multiLine)
-    }
 }
 
 /** Thin mapping onto the framework node; every decision lives in [AccessibilityTarget]. Device-verified only. */
 class NodeField(
     private val node: AccessibilityNodeInfo,
     private val clipboard: ClipboardManager,
+    // isFocused only means focus inside the node's own window, so it stays true after the user switches apps.
+    // node.window is null without flagRetrieveInteractiveWindows, so the service supplies the window check.
+    private val windowIsCurrent: () -> Boolean = { true },
 ) : FocusedField {
     override val packageName: String get() = node.packageName?.toString().orEmpty()
 
-    override fun refresh(): Boolean = node.refresh() && node.isFocused && node.isEditable
+    override fun refresh(): Boolean = node.refresh() && node.isFocused && node.isEditable && windowIsCurrent()
 
     override val text: CharSequence? get() = node.text
     override val showingHint: Boolean get() = node.isShowingHintText
@@ -97,8 +89,9 @@ class NodeField(
         return node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, args)
     }
 
-    override fun paste(text: String): Boolean {
+    // A clipboard failure must not escape commit and skip the router's own clipboard fallback.
+    override fun paste(text: String): Boolean = runCatching {
         clipboard.setPrimaryClip(ClipData.newPlainText("", text))
-        return node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-    }
+        node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+    }.getOrDefault(false)
 }

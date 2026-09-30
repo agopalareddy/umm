@@ -45,6 +45,8 @@ import io.github.agopalareddy.umm.core.pipeline.DictationState
  * The dictation button. It shows the state at a glance and reacts to the voice: halos swell with loudness and
  * fall back slowly, while silence leaves only a faint breathing. Its layout size never changes, so it is safe in
  * a fixed-height panel; all motion is drawing.
+ *
+ * [continuousRing] overrides the ring and the "Finish" label; pass it only while listening (null follows the state).
  */
 @Composable
 internal fun VoiceOrb(

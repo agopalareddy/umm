@@ -84,4 +84,39 @@ class NodeInsertionTest {
     @Test fun selectionStartingInsideASurrogatePairTakesTheWholePair() {
         assertEquals(Merge("a x b", 4), merge("a😀b", false, 2, 3, "x"))
     }
+
+    private fun prepared(
+        current: CharSequence?,
+        showingHint: Boolean,
+        selStart: Int,
+        selEnd: Int,
+        insert: String,
+        multiLine: Boolean = false,
+    ) = NodeInsertion.prepared(current, showingHint, selStart, selEnd, insert, multiLine)
+
+    @Test fun preparedIsTheInsertedPartOfTheMerge() {
+        val text = "hello world"
+        assertEquals(" big ", prepared(text, false, 5, 8, "big"))
+        assertEquals(Merge("hello big rld", 10), merge(text, false, 5, 8, "big"))
+    }
+
+    @Test fun preparedNormalizesAReversedSelection() {
+        assertEquals(" big ", prepared("hello world", false, 8, 5, "big"))
+    }
+
+    @Test fun preparedFollowsTheSurrogatePairAdjustment() {
+        // "a 😀b": the emoji occupies indices 2 and 3; a cursor between them moves before the pair, after a space
+        assertEquals("x ", prepared("a 😀b", false, 3, 3, "x"))
+        assertEquals(Merge("a x 😀b", 4), merge("a 😀b", false, 3, 3, "x"))
+    }
+
+    @Test fun preparedTreatsHintAndNullTextAsEmpty() {
+        assertEquals("hi", prepared("Message", true, 7, 7, "hi"))
+        assertEquals("hi", prepared(null, false, -1, -1, "hi"))
+    }
+
+    @Test fun preparedFlattensNewlinesInSingleLineFields() {
+        assertEquals("a b", prepared("", false, 0, 0, "a\nb"))
+        assertEquals("a\nb", prepared("", false, 0, 0, "a\nb", multiLine = true))
+    }
 }

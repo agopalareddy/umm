@@ -21,6 +21,30 @@ object NodeInsertion {
         insert: String,
         multiLine: Boolean,
     ): Merge {
+        val plan = plan(current, showingHint, selStart, selEnd, insert, multiLine)
+        return Merge(plan.before.toString() + plan.prepared + plan.after, plan.before.length + plan.prepared.length)
+    }
+
+    /** The part of [merge]'s text that is the dictation, adapted to its surroundings: what a paste must insert. */
+    fun prepared(
+        current: CharSequence?,
+        showingHint: Boolean,
+        selStart: Int,
+        selEnd: Int,
+        insert: String,
+        multiLine: Boolean,
+    ): String = plan(current, showingHint, selStart, selEnd, insert, multiLine).prepared
+
+    private class Plan(val before: CharSequence, val prepared: String, val after: CharSequence)
+
+    private fun plan(
+        current: CharSequence?,
+        showingHint: Boolean,
+        selStart: Int,
+        selEnd: Int,
+        insert: String,
+        multiLine: Boolean,
+    ): Plan {
         val text: CharSequence = if (showingHint) "" else current ?: ""
         var start: Int
         var end: Int
@@ -36,8 +60,7 @@ object NodeInsertion {
         if (splitsPair(text, end)) end = if (collapsed) end - 1 else end + 1
         val before = text.subSequence(0, start)
         val after = text.subSequence(end, text.length)
-        val prepared = TextInsertion.prepare(insert, before, after, multiLine)
-        return Merge(before.toString() + prepared + after, start + prepared.length)
+        return Plan(before, TextInsertion.prepare(insert, before, after, multiLine), after)
     }
 
     private fun splitsPair(text: CharSequence, index: Int): Boolean =
