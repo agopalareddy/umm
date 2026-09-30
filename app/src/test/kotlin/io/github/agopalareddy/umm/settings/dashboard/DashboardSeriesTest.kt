@@ -3,6 +3,7 @@ package io.github.agopalareddy.umm.settings.dashboard
 import io.github.agopalareddy.umm.core.openrouter.KeyInfo
 import io.github.agopalareddy.umm.core.stats.DashboardRange
 import io.github.agopalareddy.umm.core.stats.DayStat
+import io.github.agopalareddy.umm.core.stats.LatencyPoint
 import io.github.agopalareddy.umm.core.stats.ModelSpend
 import java.time.LocalDate
 import java.util.Locale
@@ -184,5 +185,100 @@ class DashboardSeriesTest {
         val b = BudgetUse.of(info(10.0, 8.8, reset = "monthly"))!!
         assertEquals("Budget: $1.20 of $10.00 used, $8.80 left, resets monthly.", b.spoken)
         assertTrue(BudgetUse.of(info(10.0, null))!!.spoken.startsWith("Budget: Limit $10.00"))
+    }
+
+    private fun grid(vararg cells: Triple<Int, Int, Int>): List<List<Int>> {
+        val counts = List(7) { IntArray(24) }
+        cells.forEach { (day, hour, n) -> counts[day][hour] = n }
+        return counts.map { it.toList() }
+    }
+
+    @Test fun hourDescriptionNamesTheBusiestSlot() {
+        val g = grid(Triple(1, 14, 12), Triple(4, 9, 3))
+        assertEquals(
+            "Dictations by hour, last 30 days. Most on Tuesday at 2 pm: 12 dictations.",
+            Series.hourDescription(g, DashboardRange.D30, clock24 = false, locale = us),
+        )
+        assertEquals(
+            "Dictations by hour, last 7 days. Most on Tuesday at 14:00: 12 dictations.",
+            Series.hourDescription(g, DashboardRange.D7, clock24 = true, locale = us),
+        )
+    }
+
+    @Test fun hourDescriptionSaysOneDictationInTheSingular() {
+        assertEquals(
+            "Dictations by hour, all time. Most on Monday at 12 am: 1 dictation.",
+            Series.hourDescription(grid(Triple(0, 0, 1)), DashboardRange.ALL, clock24 = false, locale = us),
+        )
+        assertTrue(Series.hourDescription(grid(Triple(6, 12, 2)), DashboardRange.D30, false, us).contains("Sunday at 12 pm"))
+    }
+
+    @Test fun hourDescriptionOfAnEmptyOrShortGridFallsBack() {
+        assertEquals("Dictations by hour: no data yet.", Series.hourDescription(grid(), DashboardRange.D30, false, us))
+        assertEquals("Dictations by hour: no data yet.", Series.hourDescription(emptyList(), DashboardRange.D30, false, us))
+        assertEquals(
+            "Dictations by hour, last 30 days. Most on Tuesday at 1 am: 4 dictations.",
+            Series.hourDescription(listOf(emptyList(), listOf(0, 4)), DashboardRange.D30, false, us),
+        )
+    }
+
+    @Test fun appsDescriptionListsEachAppWithItsCount() {
+        assertEquals(
+            "Top apps, last 30 days: Gmail 12 dictations, Slack 1 dictation.",
+            Series.appsDescription(listOf("Gmail" to 12, "Slack" to 1), DashboardRange.D30),
+        )
+        assertEquals("Top apps: no data yet.", Series.appsDescription(emptyList(), DashboardRange.D30))
+    }
+
+    @Test fun levelsDescriptionSkipsLevelsWithNoDictations() {
+        assertEquals(
+            "Cleanup levels, last 90 days, by dictations: Light 3 (25%), Polished 9 (75%).",
+            Series.levelsDescription(listOf("Raw" to 0, "Light" to 3, "Formatted" to 0, "Polished" to 9), DashboardRange.D90),
+        )
+    }
+
+    @Test fun levelsDescriptionOfNothingFallsBack() {
+        assertEquals("Cleanup levels: no data yet.", Series.levelsDescription(listOf("Raw" to 0, "Light" to 0), DashboardRange.D30))
+        assertEquals("Cleanup levels: no data yet.", Series.levelsDescription(emptyList(), DashboardRange.ALL))
+    }
+
+    @Test fun levelsDescriptionGivesATinyShareAsUnderOnePercent() {
+        val text = Series.levelsDescription(listOf("Raw" to 1, "Light" to 500), DashboardRange.ALL)
+        assertTrue(text, text.contains("Raw 1 (<1%)"))
+        // 99.8% rounds to 100, but another level has a share.
+        assertTrue(text, text.contains("Light 500 (99%)"))
+        assertTrue(Series.levelsDescription(listOf("Raw" to 0, "Light" to 7), DashboardRange.ALL).contains("Light 7 (100%)"))
+    }
+
+    @Test fun percentRoundsButNeverClaimsPerfectOrNothing() {
+        assertEquals("100%", Series.percent(1.0))
+        assertEquals("0%", Series.percent(0.0))
+        assertEquals("97%", Series.percent(0.97))
+        assertEquals("98%", Series.percent(0.975))
+        // 99.6% rounds up to 100, but a failure happened.
+        assertEquals("99%", Series.percent(0.996))
+        assertEquals("<1%", Series.percent(0.004))
+    }
+
+    private fun latency(date: String, ms: Long) = LatencyPoint(LocalDate.parse(date), ms)
+
+    @Test fun latencyDescriptionGivesTheSpreadAndTheSlowestDay() {
+        val points = listOf(latency("2026-09-10", 1_200), latency("2026-09-11", 3_200), latency("2026-09-12", 1_800))
+        assertEquals(
+            "Wait time, last 30 days, from 1.2 s to 3.2 s. Slowest on Sep 11: 3.2 s.",
+            Series.latencyDescription(points, DashboardRange.D30, us),
+        )
+    }
+
+    @Test fun latencyDescriptionOfOneValueSaysNoSpread() {
+        val points = listOf(latency("2026-09-10", 900), latency("2026-09-11", 900))
+        assertEquals(
+            "Wait time, last 7 days, 900 ms. Slowest on Sep 10: 900 ms.",
+            Series.latencyDescription(points, DashboardRange.D7, us),
+        )
+    }
+
+    @Test fun latencyDescriptionOfNothingFallsBack() {
+        assertEquals("Wait time: no data yet.", Series.latencyDescription(emptyList(), DashboardRange.D30, us))
     }
 }

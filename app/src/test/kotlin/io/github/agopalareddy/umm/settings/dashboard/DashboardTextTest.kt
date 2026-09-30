@@ -65,6 +65,20 @@ class DashboardTextTest {
         assertEquals("new", DashboardText.spokenDelta("new"))
     }
 
+    @Test fun dictationsAgreeWithTheirCount() {
+        assertEquals("0 dictations", DashboardText.dictations(0))
+        assertEquals("1 dictation", DashboardText.dictations(1))
+        assertEquals("1,200 dictations", DashboardText.dictations(1_200))
+    }
+
+    @Test fun waitShowsMillisecondsUnderASecondThenTenthsOfSeconds() {
+        assertEquals("0 ms", DashboardText.wait(-5))
+        assertEquals("900 ms", DashboardText.wait(900))
+        assertEquals("1.0 s", DashboardText.wait(1_000))
+        assertEquals("1.8 s", DashboardText.wait(1_849))
+        assertEquals("12.3 s", DashboardText.wait(12_300))
+    }
+
     @Test fun previousPeriodNames() {
         assertEquals("the previous 7 days", DashboardText.previous(DashboardRange.D7))
         assertEquals("the previous 90 days", DashboardText.previous(DashboardRange.D90))

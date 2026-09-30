@@ -26,13 +26,11 @@ internal object Cards {
         CardSpec("spend_per_day", "Spend per day") { SpendPerDayCard(it) },
         CardSpec("spend_by_model", "Spend by model") { SpendByModelCard(it) },
         CardSpec("budget", "Budget") { BudgetCard(it) },
-        placeholder("when_you_dictate", "When you dictate"),
-        placeholder("where_you_dictate", "Where you dictate"),
-        placeholder("cleanup_levels", "Cleanup levels"),
-        placeholder("reliability", "Reliability"),
+        CardSpec("when_you_dictate", "When you dictate") { WhenYouDictateCard(it) },
+        CardSpec("where_you_dictate", "Where you dictate") { WhereYouDictateCard(it) },
+        CardSpec("cleanup_levels", "Cleanup levels") { CleanupLevelsCard(it) },
+        CardSpec("reliability", "Reliability") { ReliabilityCard(it) },
     ).associateBy { it.id }
-
-    private fun placeholder(id: String, title: String) = CardSpec(id, title) { Text("Coming in the next task") }
 }
 
 /** Shown in place of a chart that has too little data to be worth drawing; the card keeps its title. */
@@ -52,6 +50,14 @@ internal object DashboardText {
     fun count(n: Int): String = String.format(Locale.US, "%,d", n)
 
     fun days(n: Int): String = if (n == 1) "1 day" else "${count(n)} days"
+
+    fun dictations(n: Int): String = if (n == 1) "1 dictation" else "${count(n)} dictations"
+
+    /** A wait as `"900 ms"` under a second, else seconds with one decimal (`"1.8 s"`); negative counts as zero. */
+    fun wait(ms: Long): String = when {
+        ms < 1000 -> "${ms.coerceAtLeast(0)} ms"
+        else -> String.format(Locale.US, "%.1f s", ms / 1000.0)
+    }
 
     /** `"44 s"`, `"2 min 44 s"`, `"1 h 5 min"`; negative counts as zero. */
     fun duration(ms: Long): String {

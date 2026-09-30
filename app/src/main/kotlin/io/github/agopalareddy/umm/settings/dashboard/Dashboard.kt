@@ -10,9 +10,15 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
@@ -27,11 +33,14 @@ import io.github.agopalareddy.umm.graph
 import io.github.agopalareddy.umm.settings.SettingsChange
 
 /**
- * The stats dashboard on Home: range chips, then each visible card in the saved order. Nothing while [stats]
- * loads, and a single line until the first dictation succeeds.
+ * The stats dashboard on Home: range chips, then each visible card in the saved order, with an Edit button for
+ * showing, hiding and moving cards. Nothing while [stats] loads, and a single line until the first dictation
+ * succeeds.
  */
 @Composable
 internal fun Dashboard(stats: DashboardStats?, settings: UmmSettings, onChange: SettingsChange) {
+    // Kept above the early returns, so a stats reload does not close Edit mode.
+    var editing by rememberSaveable { mutableStateOf(false) }
     if (stats == null) return
     if (!stats.hasData) {
         Text("Your stats show up here after your first dictation.", style = MaterialTheme.typography.bodyLarge)
@@ -43,22 +52,39 @@ internal fun Dashboard(stats: DashboardStats?, settings: UmmSettings, onChange: 
     }
     // The cards follow the range of the stats they were given, which can trail the chips for a moment.
     val context = CardContext(stats, stats.range, apiKey)
+    val allHidden = layout.visible.isEmpty()
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            "Your stats",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.semantics { heading() },
-        )
-        Column {
-            RangeChips(settings.dashboardRange) { range -> onChange { it.copy(dashboardRange = range) } }
-            if (!settings.statsRecording) {
-                Footnote("Recording is paused")
-            }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Your stats",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f).semantics { heading() },
+            )
+            if (!editing && !allHidden) TextButton(onClick = { editing = true }) { Text("Edit") }
         }
-        layout.visible.forEach { id ->
-            val spec = Cards.byId[id] ?: return@forEach
-            key(id) { DashboardCard(spec, context) }
+        when {
+            editing -> EditLayout(
+                layout,
+                onChange = { order, hidden -> onChange { it.copy(dashboardOrder = order, dashboardHidden = hidden) } },
+                onDone = { editing = false },
+            )
+            allHidden -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Stats are hidden", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                TextButton(onClick = { editing = true }) { Text("Edit") }
+            }
+            else -> {
+                Column {
+                    RangeChips(settings.dashboardRange) { range -> onChange { it.copy(dashboardRange = range) } }
+                    if (!settings.statsRecording) {
+                        Footnote("Recording is paused")
+                    }
+                }
+                layout.visible.forEach { id ->
+                    val spec = Cards.byId[id] ?: return@forEach
+                    key(id) { DashboardCard(spec, context) }
+                }
+            }
         }
     }
 }

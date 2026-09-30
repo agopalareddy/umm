@@ -3,12 +3,14 @@ package io.github.agopalareddy.umm.settings.dashboard
 import io.github.agopalareddy.umm.core.openrouter.KeyInfo
 import io.github.agopalareddy.umm.core.stats.DashboardRange
 import io.github.agopalareddy.umm.core.stats.DayStat
+import io.github.agopalareddy.umm.core.stats.LatencyPoint
 import io.github.agopalareddy.umm.core.stats.ModelSpend
 import io.github.agopalareddy.umm.settings.usd
 import io.github.agopalareddy.umm.ui.charts.ChartText
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -89,6 +91,61 @@ internal object Series {
 
     fun modelsDescription(title: String, models: List<ModelSpend>): String =
         "$title by spend: " + if (models.isEmpty()) "none." else models.joinToString(", ", postfix = ".") { "${it.model} ${usd(it.usd)}" }
+
+    /** The busiest weekday and hour of [grid] (`[weekday][hour]`, Monday first); a missing cell counts as zero. */
+    fun hourDescription(grid: List<List<Int>>, range: DashboardRange, clock24: Boolean, locale: Locale = Locale.getDefault()): String {
+        val points = (0 until 7).flatMap { day ->
+            val name = DayOfWeek.of(day + 1).getDisplayName(TextStyle.FULL, locale)
+            (0 until 24).map { hour -> "$name at ${spokenHour(hour, clock24)}" to (grid.getOrNull(day)?.getOrNull(hour) ?: 0).toDouble() }
+        }
+        return ChartText.peak("Dictations by hour", DashboardText.span(range), points) { DashboardText.dictations(it.toInt()) }
+    }
+
+    /** `14:00` on a 24-hour clock, `2 pm` otherwise. */
+    private fun spokenHour(hour: Int, clock24: Boolean): String = when {
+        clock24 -> "%02d:00".format(Locale.ROOT, hour)
+        hour == 0 -> "12 am"
+        hour < 12 -> "$hour am"
+        hour == 12 -> "12 pm"
+        else -> "${hour - 12} pm"
+    }
+
+    /** [apps] are label and dictation count pairs, most first. */
+    fun appsDescription(apps: List<Pair<String, Int>>, range: DashboardRange): String {
+        if (apps.isEmpty()) return ChartText.empty("Top apps")
+        return "Top apps, ${DashboardText.span(range)}: " + apps.joinToString(", ", postfix = ".") { (label, n) -> "$label ${DashboardText.dictations(n)}" }
+    }
+
+    /** [levels] are label and dictation count pairs; levels with no dictations are left out. */
+    fun levelsDescription(levels: List<Pair<String, Int>>, range: DashboardRange): String {
+        val used = levels.filter { it.second > 0 }
+        val total = used.sumOf { it.second }
+        if (total == 0) return ChartText.empty("Cleanup levels")
+        val parts = used.joinToString(", ", postfix = ".") { (label, n) -> "$label ${DashboardText.count(n)} (${share(n.toDouble() / total)})" }
+        return "Cleanup levels, ${DashboardText.span(range)}, by dictations: $parts"
+    }
+
+    /** Whole percent, but never `0%` for a share above zero (`<1%`) nor `100%` while anything is left over (`99%`). */
+    private fun share(fraction: Double): String {
+        val pct = Math.round(fraction * 100)
+        return when {
+            fraction > 0 && pct == 0L -> "<1%"
+            fraction < 1 && pct == 100L -> "99%"
+            else -> "$pct%"
+        }
+    }
+
+    /** A success rate (0..1) as text. */
+    fun percent(rate: Double): String = share(rate)
+
+    fun latencyDescription(points: List<LatencyPoint>, range: DashboardRange, locale: Locale = Locale.getDefault()): String {
+        if (points.isEmpty()) return ChartText.empty("Wait time")
+        val format = DateTimeFormatter.ofPattern("MMM d", locale)
+        val slowest = points.maxBy { it.avgMs }
+        val fastest = points.minOf { it.avgMs }
+        val spread = if (fastest == slowest.avgMs) DashboardText.wait(fastest) else "from ${DashboardText.wait(fastest)} to ${DashboardText.wait(slowest.avgMs)}"
+        return "Wait time, ${DashboardText.span(range)}, $spread. Slowest on ${format.format(slowest.date)}: ${DashboardText.wait(slowest.avgMs)}."
+    }
 }
 
 /** A key's spending limit and how much of it is used, from what OpenRouter reports. */
