@@ -132,8 +132,10 @@ class DictationPipeline(
     private suspend fun record(request: DictationRequest) {
         audioDir.mkdirs()
         val file = File(audioDir, "${UUID.randomUUID()}.m4a")
-        val detector = SilenceDetector(SilenceConfig(silenceTimeoutMs = request.silenceTimeoutSec?.let { it * 1000L }))
+        val config = SilenceConfig(silenceTimeoutMs = request.silenceTimeoutSec?.let { it * 1000L })
+        val detector = SilenceDetector(config)
         var elapsedMs = 0L
+        var peak = 0
         var noSpeech = false
         var interrupted = false
         if (cancelRequested) {
@@ -144,6 +146,7 @@ class DictationPipeline(
         _state.value = DictationState.Listening(0, false, continuous)
         try {
             audio.record(file).collect { amplitude ->
+                peak = maxOf(peak, amplitude)
                 if (stopRequested || cancelRequested) audio.stop()
                 detector.continuous = continuous
                 val event = detector.onSample(amplitude, elapsedMs)
@@ -164,7 +167,9 @@ class DictationPipeline(
         recording = false
         when {
             cancelRequested -> discard(file, DictationState.Idle)
-            noSpeech || (interrupted && !detector.speechDetected) -> discard(file, DictationState.NoSpeech)
+            // A stop keeps an unheard whisper, but not a recording that stayed room-quiet throughout.
+            noSpeech || (!detector.speechDetected && (interrupted || peak < config.silentPeakAmplitude)) ->
+                discard(file, DictationState.NoSpeech)
             else -> {
                 val id = history.createPending(
                     request.packageName, request.level, request.script, request.language.encode(), file.path,

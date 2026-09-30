@@ -12,6 +12,11 @@ data class SilenceConfig(
      * quiet room reads ~60-110, normal speech ~250-550, and a whisper ~200-700.
      */
     val minSpeechAmplitude: Int = 200,
+    /**
+     * A recording that never got this loud and never detected speech is silent: it is discarded even when the
+     * user stopped it. Below the quietest whisper, so a whisper the detector missed is still sent.
+     */
+    val silentPeakAmplitude: Int = 150,
     val noiseMultiplier: Double = 4.5,
     /** Noise floor = 25th percentile of this many recent non-speech samples. */
     val noiseWindowSamples: Int = 30,

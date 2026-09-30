@@ -431,7 +431,7 @@ class DictationPipelineTest {
     }
 
     @Test fun continuousRequestNeverCancelsForNoSpeech() = runTest {
-        audio.amplitudes = rep(90, 100) // a whisper the detector cannot hear
+        audio.amplitudes = rep(180, 100) // a whisper the detector cannot hear
         audio.holdOpen = true
         api.transcribeResults += "quiet"
         api.completeResults += "Quiet."
@@ -441,6 +441,19 @@ class DictationPipelineTest {
         assertTrue(p.state.value is DictationState.Listening)
         p.stop()
         assertEquals("Quiet.", (p.awaitEnd() as DictationState.Done).text)
+    }
+
+    @Test fun stoppedSilentRecordingDiscardsWithoutNetwork() = runTest {
+        audio.amplitudes = rep(90, 20) // a quiet room: a hold with nothing said
+        audio.holdOpen = true
+        val p = backgroundScope.pipeline()
+        p.start(request(continuous = true))
+        delay(1_000)
+        p.stop()
+        assertEquals(DictationState.NoSpeech, p.awaitEnd())
+        assertTrue(api.transcribeCalls.isEmpty())
+        assertTrue(history.observeRecent().first().isEmpty())
+        assertFalse(audio.recordedFile!!.exists())
     }
 
     @Test fun statsRecordedForSuccessfulDictation() = runTest {
