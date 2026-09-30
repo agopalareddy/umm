@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.SmartButton
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -66,6 +67,7 @@ internal fun SettingsHome(settings: UmmSettings, keyConnected: Boolean, onBack: 
         NavRow(Icons.Default.AccountCircle, "Account", if (keyConnected) "Connected to OpenRouter" else "Not connected") { onOpen(Routes.ACCOUNT) }
         val silence = settings.silenceTimeoutSec?.let { "stop after $it s of silence" } ?: "tap to stop"
         NavRow(Icons.Default.Mic, "Dictation", "${settings.defaultLevel.title()} by default · $silence") { onOpen(Routes.DICTATION) }
+        NavRow(Icons.Default.SmartButton, "Floating button", if (settings.bubbleEnabled) "On" else "Off") { onOpen(Routes.BUBBLE) }
         val languages = settings.keyboardLanguages.joinToString { LANGUAGES[it] ?: it }
         NavRow(Icons.Default.Translate, "Languages", languages) { onOpen(Routes.LANGUAGES) }
         NavRow(Icons.Default.Category, "App categories", "Cleanup level and script per app") { onOpen(Routes.CATEGORIES) }

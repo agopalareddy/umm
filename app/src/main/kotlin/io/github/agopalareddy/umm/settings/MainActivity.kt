@@ -27,6 +27,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import io.github.agopalareddy.umm.auth.SignInLauncher
+import io.github.agopalareddy.umm.bubble.BubbleSetup
 import io.github.agopalareddy.umm.core.data.UmmSettings
 import io.github.agopalareddy.umm.graph
 import io.github.agopalareddy.umm.ui.UmmTheme
@@ -41,6 +42,7 @@ internal object Routes {
     const val SETTINGS = "settings"
     const val ACCOUNT = "settings/account"
     const val DICTATION = "settings/dictation"
+    const val BUBBLE = "settings/bubble"
     const val LANGUAGES = "settings/languages"
     const val APPEARANCE = "settings/appearance"
     const val CATEGORIES = "settings/categories"
@@ -52,9 +54,13 @@ internal object Routes {
 class MainActivity : ComponentActivity() {
     private var keyboardEnabled by mutableStateOf(false)
     private var micGranted by mutableStateOf(false)
+    private var bubblePageRequested by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (intent?.getBooleanExtra(BubbleSetup.EXTRA_OPEN_BUBBLE_PAGE, false) == true) {
+            bubblePageRequested = true
+        }
         enableEdgeToEdge()
         setContent {
             // Status and navigation bar icons follow the app's theme, not the phone's.
@@ -72,6 +78,14 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshSetup()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(BubbleSetup.EXTRA_OPEN_BUBBLE_PAGE, false)) {
+            bubblePageRequested = true
+        }
     }
 
     private fun refreshSetup() {
@@ -99,6 +113,13 @@ class MainActivity : ComponentActivity() {
         val connect = { SignInLauncher.start(this@MainActivity) }
         val saveKey: (String) -> Unit = { graph.apiKeyStore.set(it) }
 
+        LaunchedEffect(bubblePageRequested) {
+            if (bubblePageRequested) {
+                bubblePageRequested = false
+                nav.navigate(Routes.BUBBLE)
+            }
+        }
+
         NavHost(nav, startDestination = if (status.complete) Routes.HOME else Routes.ONBOARDING) {
             composable(Routes.ONBOARDING) {
                 LaunchedEffect(status.complete) {
@@ -122,6 +143,7 @@ class MainActivity : ComponentActivity() {
             composable(Routes.SETTINGS) { SettingsHome(settings, key != null, back) { nav.navigate(it) } }
             composable(Routes.ACCOUNT) { AccountPage(back, connect, saveKey) { graph.apiKeyStore.clear() } }
             composable(Routes.DICTATION) { DictationPage(settings, back, change) }
+            composable(Routes.BUBBLE) { BubblePage(settings, back, change) }
             composable(Routes.LANGUAGES) { LanguagesPage(settings, back, change) }
             composable(Routes.APPEARANCE) { AppearancePage(settings, back, change) }
             composable(Routes.STATS) { StatsPage(settings, back, change) }
