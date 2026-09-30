@@ -34,24 +34,18 @@ class BubbleService : AccessibilityService() {
     private val scope = MainScope()
     private val handler = Handler(Looper.getMainLooper())
     private val windowManager by lazy { getSystemService(WindowManager::class.java) }
-    private val focus = FocusTracker()
+    private var focus = FocusTracker()
 
     private var settings = UmmSettings()
     private var settingsJob: Job? = null
     private var bubble: BubbleView? = null
     private var pipelineJob: Job? = null
-    /** Set by onInterrupt, which removes the bubble; the next event brings it back. */
-    private var interrupted = false
 
     private var active = false
     private var lastInteraction = 0L
 
     private val recheckVisibility = Runnable { applyVisibility() }
     private val dim = Runnable { applyAlpha() }
-
-    /** The window of the app in front, from typeWindowStateChanged; never the bubble's own overlay. */
-    @Volatile var currentWindowId: Int = NO_WINDOW
-        private set
 
     // Never focusable, so the overlay can't take input focus from the field it types into. Laid out in screen
     // coordinates: x and y come from the usable area, which already leaves out system bars and the cutout.
@@ -84,25 +78,18 @@ class BubbleService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val type = event?.eventType ?: return
         when (type) {
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> noteWindow(event)
-            AccessibilityEvent.TYPE_VIEW_FOCUSED, AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> Unit
+            AccessibilityEvent.TYPE_VIEW_FOCUSED,
+            AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> Unit
             else -> return
         }
-        if (!settings.bubbleEnabled) return
-        if (interrupted) {
-            interrupted = false
-            addOverlay()
-        }
-        if (bubble == null) return
+        if (!settings.bubbleEnabled || bubble == null) return
         readFocus()
         if (type == AccessibilityEvent.TYPE_VIEW_FOCUSED) noteInteraction()
         applyVisibility()
     }
 
-    override fun onInterrupt() {
-        if (bubble != null) interrupted = true
-        removeOverlay()
-    }
+    override fun onInterrupt() = Unit
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
@@ -135,11 +122,9 @@ class BubbleService : AccessibilityService() {
     private fun applySettings(next: UmmSettings) {
         settings = next
         if (!next.bubbleEnabled) {
-            interrupted = false
             removeOverlay()
             return
         }
-        interrupted = false
         val bubble = bubble
         if (bubble == null) {
             addOverlay()
@@ -152,6 +137,7 @@ class BubbleService : AccessibilityService() {
     // --- Overlay ---
 
     private fun addOverlay() {
+        if (bubble != null) return
         val bubble = BubbleView(this)
         params.flags = params.flags or LayoutParams.FLAG_NOT_TOUCHABLE
         layOut(bubble, resources.configuration.orientation, attached = false)
@@ -161,13 +147,11 @@ class BubbleService : AccessibilityService() {
             return
         }
         this.bubble = bubble
-        if (currentWindowId == NO_WINDOW) currentWindowId = activeWindowId() ?: NO_WINDOW
         pipelineJob = scope.launch {
             graph.pipeline.state.collect { state ->
-                val changed = state::class != bubble.state::class
                 bubble.state = state
                 active = BubbleAlpha.isActive(state)
-                if (changed) noteInteraction() else applyAlpha()
+                noteInteraction() // also undims, so the orb's frame clock runs to show the new state
             }
         }
         readFocus()
@@ -183,12 +167,17 @@ class BubbleService : AccessibilityService() {
         handler.removeCallbacks(dim)
         runCatching { windowManager.removeViewImmediate(bubble.view) }
         bubble.destroy()
+        // A later overlay starts from the next focus read, not from what this one last saw.
+        focus = FocusTracker()
     }
 
-    /** Sizes and docks the window. The box handed to place() is the touch box; the orb is drawn inside it. */
+    /**
+     * Sizes and docks the window. Window and docking box are boxPx, big enough for the orb's rings; the disc is
+     * drawn sizePx wide in its middle.
+     */
     private fun layOut(bubble: BubbleView, orientation: Int, attached: Boolean) {
         val density = resources.displayMetrics.density
-        val box = BubblePosition.touchPx(settings.bubbleSize, density)
+        val box = BubblePosition.boxPx(settings.bubbleSize, density)
         bubble.orbSizePx = BubblePosition.sizePx(settings.bubbleSize, density)
         val fraction =
             if (orientation == Configuration.ORIENTATION_LANDSCAPE) settings.bubbleYLandscape else settings.bubbleYPortrait
@@ -253,19 +242,12 @@ class BubbleService : AccessibilityService() {
 
     private fun applyAlpha() {
         val bubble = bubble ?: return
-        bubble.view.alpha = BubbleAlpha.of(active, SystemClock.uptimeMillis() - lastInteraction)
+        val alpha = BubbleAlpha.of(active, SystemClock.uptimeMillis() - lastInteraction)
+        bubble.view.alpha = alpha
+        bubble.dimmed = alpha == BubbleAlpha.DIMMED
     }
 
-    // --- Windows and setup ---
-
-    private fun noteWindow(event: AccessibilityEvent) {
-        // The overlay is never focusable, so it is never the active window; any other Umm window (the Try-it
-        // field) is recorded like any app's.
-        if (event.packageName?.toString() == packageName && event.windowId != activeWindowId()) return
-        currentWindowId = event.windowId
-    }
-
-    private fun activeWindowId(): Int? = runCatching { rootInActiveWindow?.windowId }.getOrNull()
+    // --- Setup ---
 
     /** Brings Umm back to the Bubble page after the user turned the service on from it. */
     private fun returnToApp() {
@@ -283,8 +265,6 @@ class BubbleService : AccessibilityService() {
     }
 
     companion object {
-        private const val NO_WINDOW = -1
-
         private val _connected = MutableStateFlow(false)
 
         /** True while the system has the service bound, from onServiceConnected until it is unbound. */

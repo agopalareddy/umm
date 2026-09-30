@@ -33,6 +33,13 @@ object BubblePosition {
         max(sizePx(size, density), (MIN_TOUCH_DP * density).roundToInt())
 
     /**
+     * The bubble's window and docking box: the touch target, or the disc plus room for the orb's state rings
+     * (VoiceOrb's 92 dp slot around its 88 dp disc, rounded up), whichever is larger. [place] and [snap] take it.
+     */
+    fun boxPx(size: BubbleSize, density: Float): Int =
+        max(touchPx(size, density), (sizePx(size, density) * 100f / 88f).roundToInt())
+
+    /**
      * Top-left of the bubble docked on [edge]. A stored [yFraction] outside 0..1 is clamped and NaN counts as
      * the middle; an [area] smaller than [boxPx] pins the bubble to its top-left instead of leaving it.
      */

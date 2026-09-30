@@ -121,4 +121,28 @@ class BubblePositionTest {
             assertInside(area, boxPx, lx to ly)
         }
     }
+
+    @Test fun boxLeavesRoomForTheOrbRingsAtDensityTwo() {
+        // Disc 88 / 112 / 144 px; box = disc * 100 / 88, and Small is still held up by its 96 px touch target.
+        assertEquals(100, BubblePosition.boxPx(BubbleSize.SMALL, 2f))
+        assertEquals(127, BubblePosition.boxPx(BubbleSize.MEDIUM, 2f))
+        assertEquals(164, BubblePosition.boxPx(BubbleSize.LARGE, 2f))
+    }
+
+    @Test fun boxAtFractionalDensity() {
+        // Disc 116 / 147 / 189 px at 2.625; Small's touch target is 126 px.
+        assertEquals(132, BubblePosition.boxPx(BubbleSize.SMALL, 2.625f))
+        assertEquals(167, BubblePosition.boxPx(BubbleSize.MEDIUM, 2.625f))
+        assertEquals(215, BubblePosition.boxPx(BubbleSize.LARGE, 2.625f))
+    }
+
+    @Test fun boxIsNeverSmallerThanTheTouchTargetOrTheDisc() {
+        for (size in BubbleSize.entries) {
+            for (density in listOf(0.75f, 1f, 1.5f, 2f, 2.625f, 3f, 3.5f, 4f)) {
+                val box = BubblePosition.boxPx(size, density)
+                assertTrue("$size at $density", box >= BubblePosition.touchPx(size, density))
+                assertTrue("$size at $density", box > BubblePosition.sizePx(size, density))
+            }
+        }
+    }
 }

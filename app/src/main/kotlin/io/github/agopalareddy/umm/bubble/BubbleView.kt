@@ -28,8 +28,9 @@ import io.github.agopalareddy.umm.ui.UmmTheme
 import io.github.agopalareddy.umm.ui.VoiceOrb
 
 /**
- * The bubble's content: a [VoiceOrb] drawn [orbSizePx] wide in the middle of the (at least 48 dp) touch box. It
- * owns the lifecycle and saved state a [ComposeView] needs outside an activity, alive while the overlay is.
+ * The bubble's content: a [VoiceOrb] whose disc is drawn [orbSizePx] wide in the middle of the window, which is
+ * [BubblePosition.boxPx] so the orb's rings fit around the disc. It owns the lifecycle and saved state a
+ * [ComposeView] needs outside an activity, alive while the overlay is.
  */
 internal class BubbleView(context: Context) : LifecycleOwner, SavedStateRegistryOwner {
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -42,16 +43,26 @@ internal class BubbleView(context: Context) : LifecycleOwner, SavedStateRegistry
 
     val view: ComposeView
 
-    /**
-     * Starts hidden. Hiding also stops the lifecycle, which pauses Compose's frame clock, so the orb's endless
-     * animations don't run while nobody can see them.
-     */
+    /** Starts hidden. */
     var shown: Boolean = false
         set(value) {
             field = value
             view.visibility = if (value) View.VISIBLE else View.GONE
-            lifecycleRegistry.moveIfAlive(if (value) Lifecycle.Event.ON_RESUME else Lifecycle.Event.ON_STOP)
+            syncLifecycle()
         }
+
+    /** Set while the bubble sits dimmed and untouched. */
+    var dimmed: Boolean = false
+        set(value) {
+            field = value
+            syncLifecycle()
+        }
+
+    // A stopped lifecycle pauses Compose's frame clock, so the orb's endless animations only run while it is
+    // shown and not dimmed; the next interaction undims it and they resume.
+    private fun syncLifecycle() {
+        lifecycleRegistry.moveIfAlive(if (shown && !dimmed) Lifecycle.Event.ON_RESUME else Lifecycle.Event.ON_STOP)
+    }
 
     init {
         savedStateController.performRestore(null)
