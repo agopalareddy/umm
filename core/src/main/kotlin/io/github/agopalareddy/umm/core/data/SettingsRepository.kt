@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -16,6 +17,12 @@ import kotlinx.coroutines.flow.map
 enum class ModelMode { RECOMMENDED, NEWEST_STT, MANUAL }
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
+enum class BubbleShowMode { WHEN_FOCUSED, ALWAYS }
+
+enum class BubbleSize { SMALL, MEDIUM, LARGE }
+
+enum class BubbleEdge { LEFT, RIGHT }
 
 data class UmmSettings(
     val defaultLevel: CleanupLevel = CleanupLevel.LIGHT,
@@ -40,6 +47,15 @@ data class UmmSettings(
     /** Dashboard card IDs in display order; empty means the default order. */
     val dashboardOrder: List<String> = emptyList(),
     val dashboardHidden: Set<String> = emptySet(),
+    val bubbleEnabled: Boolean = false,
+    val bubbleVisibility: BubbleShowMode = BubbleShowMode.WHEN_FOCUSED,
+    val bubbleSize: BubbleSize = BubbleSize.MEDIUM,
+    val bubbleEdge: BubbleEdge = BubbleEdge.RIGHT,
+    /** Bubble top edge as a fraction (0..1) of the free screen height, per orientation. */
+    val bubbleYPortrait: Float = 0.6f,
+    val bubbleYLandscape: Float = 0.5f,
+    /** Epoch ms when the bubble disclosure was accepted; 0 means not yet. */
+    val disclosureAcceptedAt: Long = 0,
 )
 
 class SettingsRepository(private val dataStore: DataStore<Preferences>) {
@@ -66,6 +82,13 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
             prefs[DASHBOARD_RANGE] = next.dashboardRange.name
             prefs[DASHBOARD_ORDER] = next.dashboardOrder.joinToString(",")
             prefs[DASHBOARD_HIDDEN] = next.dashboardHidden.joinToString(",")
+            prefs[BUBBLE_ENABLED] = next.bubbleEnabled
+            prefs[BUBBLE_VISIBILITY] = next.bubbleVisibility.name
+            prefs[BUBBLE_SIZE] = next.bubbleSize.name
+            prefs[BUBBLE_EDGE] = next.bubbleEdge.name
+            prefs[BUBBLE_Y_PORTRAIT] = next.bubbleYPortrait.coerceIn(0f, 1f)
+            prefs[BUBBLE_Y_LANDSCAPE] = next.bubbleYLandscape.coerceIn(0f, 1f)
+            prefs[DISCLOSURE_ACCEPTED_AT] = next.disclosureAcceptedAt
         }
     }
 
@@ -113,6 +136,16 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
                 ?: defaults.dashboardOrder,
             dashboardHidden = this[DASHBOARD_HIDDEN]?.split(",")?.filter { it.isNotBlank() }?.toSet()
                 ?: defaults.dashboardHidden,
+            bubbleEnabled = this[BUBBLE_ENABLED] ?: defaults.bubbleEnabled,
+            bubbleVisibility = this[BUBBLE_VISIBILITY]?.let { runCatching { BubbleShowMode.valueOf(it) }.getOrNull() }
+                ?: defaults.bubbleVisibility,
+            bubbleSize = this[BUBBLE_SIZE]?.let { runCatching { BubbleSize.valueOf(it) }.getOrNull() }
+                ?: defaults.bubbleSize,
+            bubbleEdge = this[BUBBLE_EDGE]?.let { runCatching { BubbleEdge.valueOf(it) }.getOrNull() }
+                ?: defaults.bubbleEdge,
+            bubbleYPortrait = this[BUBBLE_Y_PORTRAIT] ?: defaults.bubbleYPortrait,
+            bubbleYLandscape = this[BUBBLE_Y_LANDSCAPE] ?: defaults.bubbleYLandscape,
+            disclosureAcceptedAt = this[DISCLOSURE_ACCEPTED_AT] ?: defaults.disclosureAcceptedAt,
         )
     }
 
@@ -136,6 +169,13 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         val DASHBOARD_RANGE = stringPreferencesKey("dashboard_range")
         val DASHBOARD_ORDER = stringPreferencesKey("dashboard_order")
         val DASHBOARD_HIDDEN = stringPreferencesKey("dashboard_hidden")
+        val BUBBLE_ENABLED = booleanPreferencesKey("bubble_enabled")
+        val BUBBLE_VISIBILITY = stringPreferencesKey("bubble_visibility")
+        val BUBBLE_SIZE = stringPreferencesKey("bubble_size")
+        val BUBBLE_EDGE = stringPreferencesKey("bubble_edge")
+        val BUBBLE_Y_PORTRAIT = floatPreferencesKey("bubble_y_portrait")
+        val BUBBLE_Y_LANDSCAPE = floatPreferencesKey("bubble_y_landscape")
+        val DISCLOSURE_ACCEPTED_AT = longPreferencesKey("disclosure_accepted_at")
         fun cacheKey(name: String) = stringPreferencesKey("cache_$name")
         fun cacheTimeKey(name: String) = longPreferencesKey("cache_${name}_at")
     }

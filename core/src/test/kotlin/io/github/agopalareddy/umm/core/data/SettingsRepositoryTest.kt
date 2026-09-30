@@ -38,6 +38,13 @@ class SettingsRepositoryTest {
         assertEquals(DashboardRange.D30, s.dashboardRange)
         assertEquals(emptyList<String>(), s.dashboardOrder)
         assertEquals(emptySet<String>(), s.dashboardHidden)
+        assertEquals(false, s.bubbleEnabled)
+        assertEquals(BubbleShowMode.WHEN_FOCUSED, s.bubbleVisibility)
+        assertEquals(BubbleSize.MEDIUM, s.bubbleSize)
+        assertEquals(BubbleEdge.RIGHT, s.bubbleEdge)
+        assertEquals(0.6f, s.bubbleYPortrait, 0f)
+        assertEquals(0.5f, s.bubbleYLandscape, 0f)
+        assertEquals(0L, s.disclosureAcceptedAt)
     }
 
     @Test fun roundTripsEveryField() = runTest {
@@ -59,9 +66,39 @@ class SettingsRepositoryTest {
             dashboardRange = DashboardRange.D90,
             dashboardOrder = listOf("budget", "summary"),
             dashboardHidden = setOf("fun_facts"),
+            bubbleEnabled = true,
+            bubbleVisibility = BubbleShowMode.ALWAYS,
+            bubbleSize = BubbleSize.LARGE,
+            bubbleEdge = BubbleEdge.LEFT,
+            bubbleYPortrait = 0.25f,
+            bubbleYLandscape = 0.8f,
+            disclosureAcceptedAt = 1_700_000_000_000L,
         )
         repo.update { changed }
         assertEquals(changed, repo.settings.first())
+    }
+
+    @Test fun unknownBubbleEnumsFallBackToDefaults() = runTest {
+        val dataStore = PreferenceDataStoreFactory.create(scope = backgroundScope) {
+            File(tmp.root, "settings.preferences_pb")
+        }
+        dataStore.edit {
+            it[stringPreferencesKey("bubble_visibility")] = "bogus"
+            it[stringPreferencesKey("bubble_size")] = "bogus"
+            it[stringPreferencesKey("bubble_edge")] = "bogus"
+        }
+        val s = SettingsRepository(dataStore).settings.first()
+        assertEquals(BubbleShowMode.WHEN_FOCUSED, s.bubbleVisibility)
+        assertEquals(BubbleSize.MEDIUM, s.bubbleSize)
+        assertEquals(BubbleEdge.RIGHT, s.bubbleEdge)
+    }
+
+    @Test fun bubblePositionIsClampedToZeroOne() = runTest {
+        val repo = repo()
+        repo.update { it.copy(bubbleYPortrait = 1.7f, bubbleYLandscape = -0.2f) }
+        val s = repo.settings.first()
+        assertEquals(1f, s.bubbleYPortrait, 0f)
+        assertEquals(0f, s.bubbleYLandscape, 0f)
     }
 
     @Test fun unknownRangeFallsBackToDefault() = runTest {
