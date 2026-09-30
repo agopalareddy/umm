@@ -47,11 +47,17 @@ import io.github.agopalareddy.umm.core.pipeline.DictationState
  * a fixed-height panel; all motion is drawing.
  */
 @Composable
-internal fun VoiceOrb(state: DictationState, onClick: () -> Unit, onDoubleClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun VoiceOrb(
+    state: DictationState,
+    onClick: () -> Unit,
+    onDoubleClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    continuousRing: Boolean? = null,
+) {
     val listening = state as? DictationState.Listening
     val busy = state == DictationState.Transcribing || state == DictationState.Cleaning
     val failed = state is DictationState.Failed
-    val continuous = listening?.continuous == true
+    val continuous = continuousRing ?: (listening?.continuous == true)
 
     // Rise fast, fall slowly: a jittery orb reads as noise, a smooth one as a voice.
     val level = remember { Animatable(0f) }
