@@ -63,8 +63,8 @@ Umm is source-available: github.com/agopalareddy/umm
 - App icon: `icon-512.png` (512 × 512)
 - Feature graphic: `feature-graphic.png` (1024 × 500)
 - Phone screenshots: `phone/keyboard.png`, `home.png`, `settings.png`, `account.png`, `models.png`, `dark.png`.
-  These are the `../screenshots/` images widened to 746 × 1492, since Play rejects screenshots longer than
-  twice their width.
+  These are the `../screenshots/` images padded to 9:16 and scaled to 1080 × 1920, since Play requires 9:16
+  and 1080 px for promotion.
 
 ## App access
 
