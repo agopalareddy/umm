@@ -2,7 +2,6 @@ package io.github.agopalareddy.umm.bubble
 
 import android.animation.ObjectAnimator
 import android.content.Context
-import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -57,18 +56,9 @@ internal class BubbleView(
     /** For a recording the bubble started: true after a double-tap, false for a held or single tap; else null. */
     var doubleTap: Boolean? by mutableStateOf(null)
 
-    private val gesture = BubbleGesture(
-        slopPx = DRAG_SLOP_DP * context.resources.displayMetrics.density,
-        holdMs = HOLD_MS,
-        flingThresholdPx = 1000f,
-    )
+    private val gesture = BubbleGesture(slopPx = DRAG_SLOP_DP * context.resources.displayMetrics.density)
     private val pointer = PrimaryPointer()
     private var shaking: ObjectAnimator? = null
-
-    private val holdRunnable = Runnable {
-        val commands = gesture.onHold(SystemClock.uptimeMillis())
-        commands.forEach(onCommand)
-    }
 
     private val compose: ComposeView
 
@@ -79,7 +69,6 @@ internal class BubbleView(
     var shown: Boolean = false
         set(value) {
             field = value
-            if (!value) view.removeCallbacks(holdRunnable)
             view.visibility = if (value) View.VISIBLE else View.GONE
             syncLifecycle()
         }
@@ -130,36 +119,23 @@ internal class BubbleView(
     }
 
     // Raw screen coordinates, so moving the window during a drag doesn't shift the finger's position under it.
+    // A cancel reaches the machine as an up (PrimaryPointer maps it), so a cancelled push-to-talk stops and
+    // processes; the up carries no position, so a lost finger's release never takes the new finger's coordinates.
     private fun onTouch(event: MotionEvent) {
-        val action = event.actionMasked
-        for (step in pointer.onEvent(action, event.getPointerId(event.actionIndex))) {
+        for (step in pointer.onEvent(event.actionMasked, event.getPointerId(event.actionIndex))) {
             val commands = when (step) {
                 PrimaryPointer.Step.DOWN -> {
                     onTouched()
-                    view.removeCallbacks(holdRunnable)
-                    view.postDelayed(holdRunnable, HOLD_MS)
                     val i = event.actionIndex
                     gesture.onDown(event.eventTime, event.getRawX(i), event.getRawY(i), pipelineView())
                 }
                 PrimaryPointer.Step.MOVE -> {
                     val i = pointer.id?.let(event::findPointerIndex) ?: -1
-                    if (i < 0) {
-                        emptyList()
-                    } else {
-                        val cmds = gesture.onMove(event.eventTime, event.getRawX(i), event.getRawY(i))
-                        if (gesture.isDragging) {
-                            view.removeCallbacks(holdRunnable)
-                        }
-                        cmds
-                    }
+                    if (i < 0) emptyList() else gesture.onMove(event.eventTime, event.getRawX(i), event.getRawY(i))
                 }
                 PrimaryPointer.Step.UP -> {
                     onTouched()
-                    view.removeCallbacks(holdRunnable)
-                    val i = pointer.id?.let(event::findPointerIndex) ?: -1
-                    val x = if (i >= 0) event.getRawX(i) else null
-                    val y = if (i >= 0) event.getRawY(i) else null
-                    gesture.onUp(event.eventTime, x, y, cancel = action == MotionEvent.ACTION_CANCEL)
+                    gesture.onUp(event.eventTime)
                 }
             }
             commands.forEach(onCommand)
@@ -181,7 +157,6 @@ internal class BubbleView(
     }
 
     fun destroy() {
-        view.removeCallbacks(holdRunnable)
         shaking?.cancel()
         compose.disposeComposition()
         lifecycleRegistry.moveIfAlive(Lifecycle.Event.ON_DESTROY)
@@ -196,7 +171,6 @@ private class TouchFrame(context: Context, private val onTouch: (MotionEvent) ->
     }
 }
 
-private const val HOLD_MS = 250L
 private const val DRAG_SLOP_DP = 12f
 private const val SHAKE_DP = 4f
 private const val SHAKE_MS = 300L
