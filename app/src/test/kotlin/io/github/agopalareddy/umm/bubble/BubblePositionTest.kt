@@ -145,4 +145,45 @@ class BubblePositionTest {
             }
         }
     }
+
+    @Test fun flickLeftFromRightHalfDocksLeft() {
+        val snap = BubblePosition.snap(area, box, centerX = 800f, centerY = 1100f, vx = -1500f, flingThresholdPx = 1000f)
+        assertEquals(BubbleEdge.LEFT, snap.edge)
+    }
+
+    @Test fun flickRightFromLeftHalfDocksRight() {
+        val snap = BubblePosition.snap(area, box, centerX = 200f, centerY = 1100f, vx = 1500f, flingThresholdPx = 1000f)
+        assertEquals(BubbleEdge.RIGHT, snap.edge)
+    }
+
+    @Test fun flickBelowThresholdFallsBackToNearerSide() {
+        val snap = BubblePosition.snap(area, box, centerX = 800f, centerY = 1100f, vx = -500f, flingThresholdPx = 1000f)
+        assertEquals(BubbleEdge.RIGHT, snap.edge)
+    }
+
+    @Test fun flickVerticalMomentumProjectsLandingY() {
+        val still = BubblePosition.snap(area, box, centerX = 800f, centerY = 1100f)
+        val flickDown = BubblePosition.snap(area, box, centerX = 800f, centerY = 1100f, vy = 2000f)
+        val flickUp = BubblePosition.snap(area, box, centerX = 800f, centerY = 1100f, vy = -2000f)
+        assertTrue(flickDown.yFraction > still.yFraction)
+        assertTrue(flickUp.yFraction < still.yFraction)
+    }
+
+    @Test fun movingOnSameEdgeIgnoresVerticalVelocity() {
+        val still = BubblePosition.snap(area, box, centerX = 800f, centerY = 1100f, currentEdge = BubbleEdge.RIGHT)
+        val flickOnSameEdge = BubblePosition.snap(
+            area, box, centerX = 800f, centerY = 1100f,
+            vy = 2000f, currentEdge = BubbleEdge.RIGHT,
+        )
+        assertEquals(still.yFraction, flickOnSameEdge.yFraction, 0.0001f)
+    }
+
+    @Test fun flickingToOtherEdgeAppliesVerticalVelocity() {
+        val still = BubblePosition.snap(area, box, centerX = 200f, centerY = 1100f, currentEdge = BubbleEdge.RIGHT)
+        val flickToOtherEdge = BubblePosition.snap(
+            area, box, centerX = 200f, centerY = 1100f,
+            vx = -1500f, vy = 2000f, currentEdge = BubbleEdge.RIGHT,
+        )
+        assertTrue(flickToOtherEdge.yFraction > still.yFraction)
+    }
 }

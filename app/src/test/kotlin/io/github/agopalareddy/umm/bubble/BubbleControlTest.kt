@@ -44,7 +44,7 @@ class BubbleControlTest {
     @Test fun otherCommandsAlwaysApply() {
         val others = listOf(
             BubbleCommand.Start, BubbleCommand.Cancel, BubbleCommand.Retry, BubbleCommand.Reject,
-            BubbleCommand.DragBy(1f, 2f), BubbleCommand.DragEnd,
+            BubbleCommand.DragBy(1f, 2f), BubbleCommand.DragEnd(),
         )
         for (command in others) for (view in PipelineView.entries) assertTrue(BubbleControl.applies(command, view))
     }

@@ -17,24 +17,30 @@ sealed interface BubbleCommand {
 
     /** Move the bubble by this much since the previous reported position. */
     data class DragBy(val dx: Float, val dy: Float) : BubbleCommand
-    data object DragEnd : BubbleCommand
+    data class DragEnd(val vx: Float = 0f, val vy: Float = 0f) : BubbleCommand
 }
 
 /**
  * Pure state machine behind the floating bubble: raw pointer events in,
  * commands out. It has no timers; every decision compares the `nowMs`
- * values it is given.
+ * values it is given, or reacts to an explicit [onHold] when held still.
  */
 class BubbleGesture(
     private val slopPx: Float,
     private val holdMs: Long = 250,
     private val doubleTapMs: Long = 300,
+    private val flingThresholdPx: Float = 1000f,
 ) {
     private enum class State {
         IDLE,
 
-        /** Fresh press that started a recording. */
+        /** Fresh press: could become a tap, a hold, or a drag. */
         PRESSED,
+
+        /** Held long enough to be push-to-talk. Actively recording while finger stays down. */
+        HOLDING,
+
+        /** Dragging the bubble window across the screen. */
         DRAGGING,
 
         /** A tap was released; a second press within doubleTapMs is a double-tap. */
@@ -46,8 +52,14 @@ class BubbleGesture(
         /** Recording continues until the next press ends it. */
         CONTINUOUS,
 
-        /** A press that stops the recording on release. */
+        /** A press while recording; tapping stops recording, moving drags. */
         PRESSED_STOP,
+
+        /** Press while pipeline is failed; tapping retries, moving drags. */
+        PRESSED_FAILED,
+
+        /** Press while pipeline is busy; tapping rejects, moving drags. */
+        PRESSED_BUSY,
     }
 
     private var state = State.IDLE
@@ -58,6 +70,32 @@ class BubbleGesture(
     private var lastY = 0f
     private var lastUpMs = 0L
 
+    val isDragging: Boolean get() = state == State.DRAGGING
+
+    private data class Sample(val timeMs: Long, val x: Float, val y: Float)
+    private val samples = ArrayDeque<Sample>()
+
+    private fun recordSample(timeMs: Long, x: Float, y: Float) {
+        while (samples.isNotEmpty() && timeMs - samples.first().timeMs > 120L) {
+            samples.removeFirst()
+        }
+        samples.add(Sample(timeMs, x, y))
+    }
+
+    private fun computeVelocity(nowMs: Long): Pair<Float, Float> {
+        while (samples.isNotEmpty() && nowMs - samples.first().timeMs > 120L) {
+            samples.removeFirst()
+        }
+        val oldest = samples.firstOrNull() ?: return 0f to 0f
+        val newest = samples.lastOrNull() ?: return 0f to 0f
+        if (nowMs - newest.timeMs > 50L) return 0f to 0f
+        val dt = (newest.timeMs - oldest.timeMs) / 1000f
+        if (dt <= 0.005f) return 0f to 0f
+        val vx = (newest.x - oldest.x) / dt
+        val vy = (newest.y - oldest.y) / dt
+        return vx to vy
+    }
+
     fun onDown(nowMs: Long, x: Float, y: Float, pipeline: PipelineView): List<BubbleCommand> {
         val previous = state
         downMs = nowMs
@@ -65,20 +103,21 @@ class BubbleGesture(
         downY = y
         lastX = x
         lastY = y
-        // Only a press while recording can continue a tap window; every other
-        // pipeline state resets it.
+        samples.clear()
+        samples.add(Sample(nowMs, x, y))
+
         return when (pipeline) {
             PipelineView.IDLE -> {
                 state = State.PRESSED
-                listOf(BubbleCommand.Start)
+                emptyList()
             }
             PipelineView.BUSY -> {
-                state = State.IDLE
-                listOf(BubbleCommand.Reject)
+                state = State.PRESSED_BUSY
+                emptyList()
             }
             PipelineView.FAILED -> {
-                state = State.IDLE
-                listOf(BubbleCommand.Retry)
+                state = State.PRESSED_FAILED
+                emptyList()
             }
             PipelineView.RECORDING ->
                 if (previous == State.TAP_WINDOW && nowMs - lastUpMs < doubleTapMs) {
@@ -91,49 +130,126 @@ class BubbleGesture(
         }
     }
 
-    fun onMove(nowMs: Long, x: Float, y: Float): List<BubbleCommand> = when (state) {
-        State.PRESSED ->
-            if (nowMs - downMs < holdMs && hypot(x - downX, y - downY) > slopPx) {
-                state = State.DRAGGING
-                val drag = BubbleCommand.DragBy(x - downX, y - downY)
-                lastX = x
-                lastY = y
-                listOf(BubbleCommand.Cancel, drag)
-            } else {
-                emptyList()
-            }
-        State.DRAGGING -> {
-            val drag = BubbleCommand.DragBy(x - lastX, y - lastY)
-            lastX = x
-            lastY = y
-            listOf(drag)
-        }
-        else -> emptyList()
+    fun onHold(nowMs: Long): List<BubbleCommand> {
+        if (state != State.PRESSED) return emptyList()
+        state = State.HOLDING
+        return listOf(BubbleCommand.Start)
     }
 
-    fun onUp(nowMs: Long): List<BubbleCommand> = when (state) {
-        State.PRESSED ->
-            if (nowMs - downMs >= holdMs) {
+    fun onMove(nowMs: Long, x: Float, y: Float): List<BubbleCommand> {
+        recordSample(nowMs, x, y)
+        return when (state) {
+            State.PRESSED, State.PRESSED_FAILED, State.PRESSED_BUSY ->
+                if (hypot(x - downX, y - downY) > slopPx) {
+                    state = State.DRAGGING
+                    val drag = BubbleCommand.DragBy(x - downX, y - downY)
+                    lastX = x
+                    lastY = y
+                    listOf(drag)
+                } else {
+                    emptyList()
+                }
+            State.HOLDING ->
+                if (hypot(x - downX, y - downY) > slopPx) {
+                    state = State.DRAGGING
+                    val drag = BubbleCommand.DragBy(x - downX, y - downY)
+                    lastX = x
+                    lastY = y
+                    listOf(BubbleCommand.Cancel, drag)
+                } else {
+                    emptyList()
+                }
+            State.PRESSED_STOP ->
+                if (hypot(x - downX, y - downY) > slopPx) {
+                    state = State.DRAGGING
+                    val drag = BubbleCommand.DragBy(x - downX, y - downY)
+                    lastX = x
+                    lastY = y
+                    listOf(drag)
+                } else {
+                    emptyList()
+                }
+            State.DRAGGING -> {
+                val drag = BubbleCommand.DragBy(x - lastX, y - lastY)
+                lastX = x
+                lastY = y
+                listOf(drag)
+            }
+            else -> emptyList()
+        }
+    }
+
+    fun onUp(nowMs: Long, x: Float? = null, y: Float? = null, cancel: Boolean = false): List<BubbleCommand> {
+        if (x != null && y != null) {
+            recordSample(nowMs, x, y)
+        }
+        val (vx, vy) = computeVelocity(nowMs)
+        val moved = if (x != null && y != null) hypot(x - downX, y - downY) > slopPx else false
+        val flicked = hypot(vx, vy) > flingThresholdPx
+
+        val was = state
+        samples.clear()
+
+        if (cancel) {
+            state = State.IDLE
+            return when (was) {
+                State.HOLDING -> listOf(BubbleCommand.Cancel)
+                State.DRAGGING -> listOf(BubbleCommand.DragEnd(vx, vy))
+                else -> emptyList()
+            }
+        }
+
+        return when (was) {
+            State.PRESSED -> {
+                if (moved || flicked) {
+                    state = State.IDLE
+                    listOf(BubbleCommand.DragEnd(vx, vy))
+                } else {
+                    // Tap to talk
+                    state = State.TAP_WINDOW
+                    lastUpMs = nowMs
+                    listOf(BubbleCommand.Start, BubbleCommand.SetSilenceDetection(true))
+                }
+            }
+            State.HOLDING -> {
                 state = State.IDLE
                 listOf(BubbleCommand.Stop)
-            } else {
-                state = State.TAP_WINDOW
-                lastUpMs = nowMs
-                listOf(BubbleCommand.SetSilenceDetection(true))
             }
-        State.DRAGGING -> {
-            state = State.IDLE
-            listOf(BubbleCommand.DragEnd)
+            State.PRESSED_FAILED -> {
+                state = State.IDLE
+                if (moved || flicked) {
+                    listOf(BubbleCommand.DragEnd(vx, vy))
+                } else {
+                    listOf(BubbleCommand.Retry)
+                }
+            }
+            State.PRESSED_BUSY -> {
+                state = State.IDLE
+                if (moved || flicked) {
+                    listOf(BubbleCommand.DragEnd(vx, vy))
+                } else {
+                    listOf(BubbleCommand.Reject)
+                }
+            }
+            State.PRESSED_STOP -> {
+                state = State.IDLE
+                if (moved || flicked) {
+                    listOf(BubbleCommand.DragEnd(vx, vy))
+                } else {
+                    listOf(BubbleCommand.Stop)
+                }
+            }
+            State.DRAGGING -> {
+                state = State.IDLE
+                listOf(BubbleCommand.DragEnd(vx, vy))
+            }
+            State.PRESSED_DOUBLE -> {
+                state = State.CONTINUOUS
+                emptyList()
+            }
+            State.IDLE, State.TAP_WINDOW, State.CONTINUOUS -> {
+                emptyList()
+            }
         }
-        State.PRESSED_DOUBLE -> {
-            state = State.CONTINUOUS
-            emptyList()
-        }
-        State.PRESSED_STOP -> {
-            state = State.IDLE
-            listOf(BubbleCommand.Stop)
-        }
-        // No press in progress: nothing to release.
-        State.IDLE, State.TAP_WINDOW, State.CONTINUOUS -> emptyList()
     }
 }

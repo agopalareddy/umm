@@ -54,15 +54,35 @@ object BubblePosition {
         return x to y
     }
 
-    /** Docks a bubble released with its centre at ([centerX], [centerY]) on the nearer side; a tie goes right. */
-    fun snap(area: Area, boxPx: Int, centerX: Float, centerY: Float): Snap {
+    /**
+     * Docks a bubble released with its centre at ([centerX], [centerY]). If flicked horizontally with [vx]
+     * exceeding [flingThresholdPx], it docks on the flicked edge; otherwise on the nearer side (ties go right).
+     * [vy] carries momentum to project the landing Y position down the edge when moving between edges; when
+     * moving along the same edge ([currentEdge]), velocity is ignored to prevent overshooting small adjustments.
+     */
+    fun snap(
+        area: Area,
+        boxPx: Int,
+        centerX: Float,
+        centerY: Float,
+        vx: Float = 0f,
+        vy: Float = 0f,
+        flingThresholdPx: Float = 1000f,
+        currentEdge: BubbleEdge? = null,
+    ): Snap {
         val middle = (area.left + area.right) / 2f
-        val edge = if (centerX < middle) BubbleEdge.LEFT else BubbleEdge.RIGHT
+        val edge = when {
+            vx < -flingThresholdPx -> BubbleEdge.LEFT
+            vx > flingThresholdPx -> BubbleEdge.RIGHT
+            else -> if (centerX < middle) BubbleEdge.LEFT else BubbleEdge.RIGHT
+        }
+        val effectiveVy = if (currentEdge != null && edge == currentEdge) 0f else vy
+        val projectedCenterY = centerY + (effectiveVy * 0.15f)
         val span = area.height - boxPx
         val fraction = when {
             span <= 0 -> 0f
-            centerY.isNaN() -> DEFAULT_FRACTION
-            else -> (((centerY - boxPx / 2f) - area.top) / span).coerceIn(0f, 1f)
+            projectedCenterY.isNaN() -> DEFAULT_FRACTION
+            else -> (((projectedCenterY - boxPx / 2f) - area.top) / span).coerceIn(0f, 1f)
         }
         return Snap(edge, fraction)
     }

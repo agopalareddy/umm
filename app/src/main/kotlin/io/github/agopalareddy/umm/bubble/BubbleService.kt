@@ -2,6 +2,7 @@ package io.github.agopalareddy.umm.bubble
 
 import android.Manifest
 import android.accessibilityservice.AccessibilityService
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.ClipboardManager
 import android.content.Intent
@@ -19,6 +20,7 @@ import android.view.WindowManager
 import android.view.WindowManager.LayoutParams
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.animation.DecelerateInterpolator
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import io.github.agopalareddy.umm.core.cleanup.LanguageChoice
@@ -192,6 +194,7 @@ class BubbleService : AccessibilityService() {
 
     private fun removeOverlay() {
         val bubble = bubble ?: return
+        cancelSnapAnimation()
         // Nothing may keep recording without a bubble to stop it. A dictation already processing is copied to
         // the clipboard instead, since its target goes too.
         if (startJob?.isActive == true) {
@@ -220,6 +223,7 @@ class BubbleService : AccessibilityService() {
      */
     private fun layOut(bubble: BubbleView, orientation: Int, attached: Boolean) {
         if (dragging) return // the finger owns the position until the drag ends and docks it
+        cancelSnapAnimation()
         val density = resources.displayMetrics.density
         val box = BubblePosition.boxPx(settings.bubbleSize, density)
         bubble.orbSizePx = BubblePosition.sizePx(settings.bubbleSize, density)
@@ -327,7 +331,7 @@ class BubbleService : AccessibilityService() {
                 noteInteraction()
             }
             is BubbleCommand.DragBy -> dragBy(bubble, command.dx, command.dy)
-            BubbleCommand.DragEnd -> dragEnd(bubble)
+            is BubbleCommand.DragEnd -> dragEnd(bubble, command.vx, command.vy)
         }
     }
 
@@ -433,7 +437,15 @@ class BubbleService : AccessibilityService() {
         }
     }
 
+    private var snapAnimator: ValueAnimator? = null
+
+    private fun cancelSnapAnimation() {
+        snapAnimator?.cancel()
+        snapAnimator = null
+    }
+
     private fun dragBy(bubble: BubbleView, dx: Float, dy: Float) {
+        cancelSnapAnimation()
         val area = dragArea ?: usableArea().also { dragArea = it }
         if (!dragging) {
             dragging = true
@@ -449,21 +461,45 @@ class BubbleService : AccessibilityService() {
         noteInteraction()
     }
 
-    /** Docks on the nearer edge and remembers it, with the Y fraction for the current orientation. */
-    private fun dragEnd(bubble: BubbleView) {
+    /** Docks on the flicked or nearer edge with momentum, and smoothly animates into place. */
+    private fun dragEnd(bubble: BubbleView, vx: Float = 0f, vy: Float = 0f) {
         dragging = false
         dragArea = null
         val area = usableArea()
         val box = boxPx()
-        val snap = BubblePosition.snap(area, box, params.x + box / 2f, params.y + box / 2f)
-        val (x, y) = BubblePosition.place(area, box, snap.edge, snap.yFraction)
-        params.x = x
-        params.y = y
-        updateWindow(bubble)
+        val density = resources.displayMetrics.density
+        val snap = BubblePosition.snap(
+            area, box,
+            params.x + box / 2f, params.y + box / 2f,
+            vx, vy,
+            flingThresholdPx = 400f * density,
+            currentEdge = settings.bubbleEdge,
+        )
+        val (targetX, targetY) = BubblePosition.place(area, box, snap.edge, snap.yFraction)
+        animateTo(bubble, targetX, targetY)
         noteInteraction()
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         settings = BubbleControl.docked(settings, snap, landscape)
         scope.launch { graph.settings.update { BubbleControl.docked(it, snap, landscape) } }
+    }
+
+    private fun animateTo(bubble: BubbleView, targetX: Int, targetY: Int) {
+        cancelSnapAnimation()
+        val startX = params.x
+        val startY = params.y
+        if (startX == targetX && startY == targetY) return
+
+        snapAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = SNAP_ANIMATION_MS
+            interpolator = DecelerateInterpolator(1.5f)
+            addUpdateListener { anim ->
+                val f = anim.animatedFraction
+                params.x = (startX + f * (targetX - startX)).roundToInt()
+                params.y = (startY + f * (targetY - startY)).roundToInt()
+                updateWindow(bubble)
+            }
+            start()
+        }
     }
 
     /** The window and docking box, the same one [layOut] gives the window. */
@@ -539,6 +575,8 @@ class BubbleService : AccessibilityService() {
     companion object {
         private val STOP_HAPTIC =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.CONTEXT_CLICK
+
+        private const val SNAP_ANIMATION_MS = 250L
 
         private val _connected = MutableStateFlow(false)
 

@@ -4,6 +4,9 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -86,11 +89,6 @@ internal fun BubbleSize.label() = when (this) {
     BubbleSize.SMALL -> "Small (44 dp)"
     BubbleSize.MEDIUM -> "Medium (56 dp)"
     BubbleSize.LARGE -> "Large (72 dp)"
-}
-
-internal fun BubbleEdge.label() = when (this) {
-    BubbleEdge.LEFT -> "Left"
-    BubbleEdge.RIGHT -> "Right"
 }
 
 @Composable
@@ -264,17 +262,6 @@ internal fun BubblePage(settings: UmmSettings, onBack: () -> Unit, onChange: Set
             }
         }
 
-        Section("Edge") {
-            BubbleEdge.entries.forEach { edge ->
-                RadioRow(
-                    selected = settings.bubbleEdge == edge,
-                    onClick = { onChange { it.copy(bubbleEdge = edge) } },
-                ) {
-                    Text(edge.label())
-                }
-            }
-        }
-
         Section("Position") {
             Text("Drag the bubble to reposition it, or drag the real bubble anywhere on your screen.", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(8.dp))
@@ -349,8 +336,20 @@ private fun BubblePreview(
     var dragY by remember { mutableFloatStateOf(0f) }
 
     val (placedX, placedY) = BubblePosition.place(area, boxPx, settings.bubbleEdge, settings.bubbleYPortrait)
-    val currentX = if (dragging) dragX else placedX.toFloat()
-    val currentY = if (dragging) dragY else placedY.toFloat()
+    val targetX = if (dragging) dragX else placedX.toFloat()
+    val targetY = if (dragging) dragY else placedY.toFloat()
+    val animX by animateFloatAsState(
+        targetValue = targetX,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioLowBouncy),
+        label = "animX",
+    )
+    val animY by animateFloatAsState(
+        targetValue = targetY,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioLowBouncy),
+        label = "animY",
+    )
+    val currentX = if (dragging) dragX else animX
+    val currentY = if (dragging) dragY else animY
 
     Box(
         modifier = Modifier

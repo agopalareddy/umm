@@ -17,19 +17,20 @@ class BubbleGestureTest {
 
     private fun tap(downAt: Long, upAt: Long) {
         g.onDown(downAt, 0f, 0f, PipelineView.IDLE)
-        g.onUp(upAt)
+        g.onUp(upAt, 0f, 0f)
     }
 
     @Test
-    fun holdThenReleaseAtHoldMsStops() {
-        assertEquals(listOf(Start), g.onDown(0, 0f, 0f, PipelineView.IDLE))
-        assertEquals(listOf(Stop), g.onUp(250))
+    fun holdThenReleaseStops() {
+        assertEquals(none, g.onDown(0, 0f, 0f, PipelineView.IDLE))
+        assertEquals(listOf(Start), g.onHold(250))
+        assertEquals(listOf(Stop), g.onUp(300))
     }
 
     @Test
-    fun releaseJustBeforeHoldMsIsATap() {
-        assertEquals(listOf(Start), g.onDown(0, 0f, 0f, PipelineView.IDLE))
-        assertEquals(listOf(SetSilenceDetection(true)), g.onUp(249))
+    fun tapStartsAndSetsSilenceDetection() {
+        assertEquals(none, g.onDown(0, 0f, 0f, PipelineView.IDLE))
+        assertEquals(listOf(Start, SetSilenceDetection(true)), g.onUp(100, 0f, 0f))
     }
 
     @Test
@@ -70,28 +71,28 @@ class BubbleGestureTest {
     }
 
     @Test
-    fun dragBeforeHoldCancelsAndMoves() {
-        g.onDown(0, 0f, 0f, PipelineView.IDLE)
-        assertEquals(listOf(Cancel, DragBy(20f, 0f)), g.onMove(100, 20f, 0f))
+    fun dragDoesNotActivateRecording() {
+        assertEquals(none, g.onDown(0, 0f, 0f, PipelineView.IDLE))
+        assertEquals(listOf(DragBy(20f, 0f)), g.onMove(100, 20f, 0f))
         assertEquals(listOf(DragBy(5f, 3f)), g.onMove(120, 25f, 3f))
-        assertEquals(listOf(DragEnd), g.onUp(200))
+        assertEquals(listOf(DragEnd(50f, 30f)), g.onUp(200, 25f, 3f))
+    }
+
+    @Test
+    fun dragAfterHoldCancelsAndMoves() {
+        assertEquals(none, g.onDown(0, 0f, 0f, PipelineView.IDLE))
+        assertEquals(listOf(Start), g.onHold(250))
+        assertEquals(listOf(Cancel, DragBy(20f, 0f)), g.onMove(300, 20f, 0f))
+        assertEquals(listOf(DragEnd()), g.onUp(350, 20f, 0f))
     }
 
     @Test
     fun dragOpensNoTapWindow() {
         g.onDown(0, 0f, 0f, PipelineView.IDLE)
         g.onMove(100, 20f, 0f)
-        g.onUp(150)
+        g.onUp(150, 20f, 0f)
         assertEquals(none, g.onDown(200, 0f, 0f, PipelineView.RECORDING))
         assertEquals(listOf(Stop), g.onUp(220))
-    }
-
-    @Test
-    fun dragEmitsCancelOnlyOnce() {
-        g.onDown(0, 0f, 0f, PipelineView.IDLE)
-        g.onMove(50, 20f, 0f)
-        assertEquals(listOf(DragBy(10f, 0f)), g.onMove(60, 30f, 0f))
-        assertEquals(listOf(DragBy(-40f, 0f)), g.onMove(70, -10f, 0f))
     }
 
     @Test
@@ -99,103 +100,105 @@ class BubbleGestureTest {
         g.onDown(0, 0f, 0f, PipelineView.IDLE)
         g.onMove(100, 20f, 0f)
         assertEquals(listOf(DragBy(10f, 0f)), g.onMove(400, 30f, 0f))
-        assertEquals(listOf(DragEnd), g.onUp(500))
+        assertEquals(listOf(DragEnd()), g.onUp(500, 30f, 0f))
     }
 
     @Test
-    fun moveJustBeforeHoldMsIsADrag() {
+    fun dragFlickEmitsVelocity() {
         g.onDown(0, 0f, 0f, PipelineView.IDLE)
-        assertEquals(listOf(Cancel, DragBy(20f, 0f)), g.onMove(249, 20f, 0f))
+        g.onMove(100, 20f, 0f)
+        g.onMove(120, 80f, 20f)
+        assertEquals(listOf(DragEnd(4000f, 1000f)), g.onUp(130, 140f, 30f))
     }
 
     @Test
-    fun moveAtHoldMsIsIgnored() {
+    fun quickFlickWithoutMoveIsDragEndNotTap() {
         g.onDown(0, 0f, 0f, PipelineView.IDLE)
-        assertEquals(none, g.onMove(250, 20f, 0f))
-        assertEquals(listOf(Stop), g.onUp(300))
+        // Up with displacement > slop and flick velocity
+        assertEquals(listOf(DragEnd(1400f, 400f)), g.onUp(50, 70f, 20f))
     }
 
     @Test
-    fun wobbleAfterHoldIsIgnored() {
+    fun dragCanStartAfterPause() {
         g.onDown(0, 0f, 0f, PipelineView.IDLE)
-        assertEquals(none, g.onMove(300, 30f, 0f))
-        assertEquals(listOf(Stop), g.onUp(400))
+        // User moves after 400ms without hold firing: starts drag
+        assertEquals(listOf(DragBy(20f, 0f)), g.onMove(400, 20f, 0f))
+        assertEquals(listOf(DragEnd()), g.onUp(450, 20f, 0f))
     }
 
     @Test
-    fun smallMoveWithinSlopIsNotADrag() {
+    fun smallMoveWithinSlopIsATap() {
         g.onDown(0, 0f, 0f, PipelineView.IDLE)
         assertEquals(none, g.onMove(50, 8f, 8f))
-        assertEquals(listOf(SetSilenceDetection(true)), g.onUp(100))
+        assertEquals(listOf(Start, SetSilenceDetection(true)), g.onUp(100, 8f, 8f))
     }
 
     @Test
     fun moveExactlyAtSlopIsNotADrag() {
         g.onDown(0, 0f, 0f, PipelineView.IDLE)
         assertEquals(none, g.onMove(50, 12f, 0f))
-        assertEquals(listOf(Cancel, DragBy(13f, 0f)), g.onMove(60, 13f, 0f))
+        assertEquals(listOf(DragBy(13f, 0f)), g.onMove(60, 13f, 0f))
     }
 
     @Test
     fun slopIsMeasuredFromTheDownPoint() {
         g.onDown(0, 100f, 100f, PipelineView.IDLE)
         assertEquals(none, g.onMove(10, 108f, 100f))
-        // 20 px from the down point; the drag delta is from the down point too
-        assertEquals(listOf(Cancel, DragBy(20f, 0f)), g.onMove(20, 120f, 100f))
+        assertEquals(listOf(DragBy(20f, 0f)), g.onMove(20, 120f, 100f))
     }
 
     @Test
-    fun movesDuringStopPressAreIgnored() {
+    fun dragDuringRecordingMovesWithoutStopping() {
         tap(downAt = 0, upAt = 100)
         g.onDown(1000, 0f, 0f, PipelineView.RECORDING)
-        assertEquals(none, g.onMove(1050, 50f, 0f))
-        assertEquals(listOf(Stop), g.onUp(1100))
+        assertEquals(listOf(DragBy(50f, 0f)), g.onMove(1050, 50f, 0f))
+        assertEquals(listOf(DragEnd(500f, 0f)), g.onUp(1100, 50f, 0f))
     }
 
     @Test
-    fun movesDuringDoubleTapPressAreIgnored() {
+    fun tapDuringRecordingStops() {
         tap(downAt = 0, upAt = 100)
-        g.onDown(200, 0f, 0f, PipelineView.RECORDING)
-        assertEquals(none, g.onMove(220, 50f, 0f))
-        assertEquals(none, g.onUp(260))
+        g.onDown(1000, 0f, 0f, PipelineView.RECORDING)
+        assertEquals(listOf(Stop), g.onUp(1050, 0f, 0f))
     }
 
     @Test
-    fun busyPressIsRejected() {
-        assertEquals(listOf(Reject), g.onDown(0, 0f, 0f, PipelineView.BUSY))
-        assertEquals(none, g.onUp(50))
+    fun busyTapIsRejected() {
+        assertEquals(none, g.onDown(0, 0f, 0f, PipelineView.BUSY))
+        assertEquals(listOf(Reject), g.onUp(50, 0f, 0f))
     }
 
     @Test
-    fun failedPressRetries() {
-        assertEquals(listOf(Retry), g.onDown(0, 0f, 0f, PipelineView.FAILED))
-        assertEquals(none, g.onUp(50))
+    fun busyMoveDragsInsteadOfRejecting() {
+        assertEquals(none, g.onDown(0, 0f, 0f, PipelineView.BUSY))
+        assertEquals(listOf(DragBy(20f, 0f)), g.onMove(20, 20f, 0f))
+        assertEquals(listOf(DragEnd(400f, 0f)), g.onUp(50, 20f, 0f))
     }
 
     @Test
-    fun windowResetsWhenPipelineNoLongerRecording() {
-        tap(downAt = 0, upAt = 100)
-        assertEquals(listOf(Start), g.onDown(200, 0f, 0f, PipelineView.IDLE))
-        // a fresh press: a quick release is a tap, not a double-tap release
-        assertEquals(listOf(SetSilenceDetection(true)), g.onUp(300))
+    fun failedTapRetries() {
+        assertEquals(none, g.onDown(0, 0f, 0f, PipelineView.FAILED))
+        assertEquals(listOf(Retry), g.onUp(50, 0f, 0f))
     }
 
     @Test
-    fun busyPressResetsTapWindow() {
-        tap(downAt = 0, upAt = 100)
-        g.onDown(150, 0f, 0f, PipelineView.BUSY)
-        g.onUp(160)
-        assertEquals(none, g.onDown(200, 0f, 0f, PipelineView.RECORDING))
-        assertEquals(listOf(Stop), g.onUp(220))
+    fun failedMoveDragsInsteadOfRetrying() {
+        assertEquals(none, g.onDown(0, 0f, 0f, PipelineView.FAILED))
+        assertEquals(listOf(DragBy(20f, 0f)), g.onMove(20, 20f, 0f))
+        assertEquals(listOf(DragEnd(400f, 0f)), g.onUp(50, 20f, 0f))
     }
 
     @Test
-    fun failedPressResetsTapWindow() {
-        tap(downAt = 0, upAt = 100)
-        g.onDown(150, 0f, 0f, PipelineView.FAILED)
-        g.onUp(160)
-        assertEquals(none, g.onDown(200, 0f, 0f, PipelineView.RECORDING))
-        assertEquals(listOf(Stop), g.onUp(220))
+    fun cancelDoesNotTriggerTap() {
+        g.onDown(0, 0f, 0f, PipelineView.IDLE)
+        assertEquals(none, g.onUp(50, 0f, 0f, cancel = true))
+    }
+
+    @Test
+    fun cancelWhileHoldingCancelsRecording() {
+        g.onDown(0, 0f, 0f, PipelineView.IDLE)
+        g.onHold(250)
+        assertEquals(listOf(Cancel), g.onUp(300, 0f, 0f, cancel = true))
     }
 
     @Test
@@ -211,7 +214,7 @@ class BubbleGestureTest {
     @Test
     fun secondUpIsNoOp() {
         g.onDown(0, 0f, 0f, PipelineView.IDLE)
-        g.onUp(300)
+        g.onUp(300, 0f, 0f)
         assertEquals(none, g.onUp(310))
     }
 }

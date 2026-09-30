@@ -51,9 +51,9 @@ class PipelineLatchTest {
 
     @Test fun doubleTapBeforeThePipelineListensDoesNotStartTwice() {
         val gesture = BubbleGesture(slopPx = 12f)
-        assertEquals(listOf(BubbleCommand.Start), gesture.onDown(0, 0f, 0f, latch.view(DictationState.Idle, 0)))
-        latch.expect(RECORDING, now = 0)
-        assertEquals(listOf(BubbleCommand.SetSilenceDetection(true)), gesture.onUp(100))
+        assertEquals(emptyList<BubbleCommand>(), gesture.onDown(0, 0f, 0f, latch.view(DictationState.Idle, 0)))
+        assertEquals(listOf(BubbleCommand.Start, BubbleCommand.SetSilenceDetection(true)), gesture.onUp(100))
+        latch.expect(RECORDING, now = 100)
         // The pipeline still reads Idle, but the second press is the double-tap, not a second Start.
         assertEquals(
             listOf(BubbleCommand.SetSilenceDetection(false)),

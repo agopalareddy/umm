@@ -25,12 +25,6 @@ class BubblePageTest {
     }
 
     @Test
-    fun edgeLabels() {
-        assertEquals("Left", BubbleEdge.LEFT.label())
-        assertEquals("Right", BubbleEdge.RIGHT.label())
-    }
-
-    @Test
     fun disclosureTextMatchesSpecVerbatim() {
         assertEquals(
             "Umm needs the Accessibility permission for the floating button.",
