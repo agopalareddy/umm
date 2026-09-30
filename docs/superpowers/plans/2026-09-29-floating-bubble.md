@@ -237,9 +237,9 @@
 **Interfaces:**
 - Produces: `BubblePage(settings: UmmSettings, onBack: () -> Unit, onChange: SettingsChange)`. Contents, top to bottom: the *Floating button* `SwitchRow`; when turning it on and `disclosureAcceptedAt == 0`, an `AlertDialog` with the spec §6 disclosure text and *Accept* / *Decline* (Accept stores `System.currentTimeMillis()` and `bubbleEnabled = true`, then starts `Settings.ACTION_ACCESSIBILITY_SETTINGS`; Decline leaves it off); a status line from `BubbleService.connected` ("Active" / "Turn Umm on in Accessibility settings"); collapsible help for "Can't turn it on?" with the steps Settings → Apps → Umm → ⋮ → Allow restricted settings; on `SDK_INT >= 36`, if `AdvancedProtectionManager.isAdvancedProtectionEnabled()`, a note that Android blocks the feature and the keyboard still works, with the switch disabled; *Visibility* radio rows; *Size* radio rows; *Edge* radio rows; a live preview box (a phone-shaped area with the orb at the chosen size and edge, draggable, updating `bubbleEdge` and `bubbleYPortrait`); *Reset position* (defaults `RIGHT`, 0.6, 0.5).
 
-- [ ] **Step 1:** Implement the page, route, row, and permission.
-- [ ] **Step 2:** Run `./gradlew :app:testDebugUnitTest installDebug`. On device from a state with the service off: switch on → disclosure appears; Decline keeps it off; Accept opens Accessibility settings; after the user enables the service the status reads "Active" and the bubble appears; size, edge, and visibility changes apply live; the preview drag and *Reset position* work.
-- [ ] **Step 3:** Commit `feat(bubble): add floating button settings page`.
+- [x] **Step 1:** Implement the page, route, row, and permission.
+- [x] **Step 2:** Run `./gradlew :app:testDebugUnitTest installDebug`. On device from a state with the service off: switch on → disclosure appears; Decline keeps it off; Accept opens Accessibility settings; after the user enables the service the status reads "Active" and the bubble appears; size, edge, and visibility changes apply live; the preview drag and *Reset position* work.
+- [x] **Step 3:** Commit `feat(bubble): add floating button settings page`.
 
 ### Task 12: Store and privacy documents
 
@@ -247,13 +247,13 @@
 - Create: `docs/play/accessibility-declaration.md`
 - Modify: `docs/play/listing.md`, `docs/privacy/index.html`, `README.md`
 
-- [ ] **Step 1:** Write the declaration: the API's core purpose (insert dictated text into the focused field, pick the cleanup level from the foreground app), why a keyboard alone is not enough, the data it touches (the focused field's text and cursor, the foreground app's package name, never passwords, nothing stored or sent except speech to OpenRouter), that `isAccessibilityTool` is not claimed, and a demo-video shot list (disclosure, consent, enabling with the restricted-setting step, hold, tap, and double-tap dictation, disabling).
-- [ ] **Step 2:** Update the Play listing description and Data safety rows and the privacy policy to mention the floating button and what the permission reads; add a short README section.
-- [ ] **Step 3:** Commit `docs: describe the floating button and permission`.
+- [x] **Step 1:** Write the declaration: the API's core purpose (insert dictated text into the focused field, pick the cleanup level from the foreground app), why a keyboard alone is not enough, the data it touches (the focused field's text and cursor, the foreground app's package name, never passwords, nothing stored or sent except speech to OpenRouter), that `isAccessibilityTool` is not claimed, and a demo-video shot list (disclosure, consent, enabling with the restricted-setting step, hold, tap, and double-tap dictation, disabling).
+- [x] **Step 2:** Update the Play listing description and Data safety rows and the privacy policy to mention the floating button and what the permission reads; add a short README section.
+- [x] **Step 3:** Commit `docs: describe the floating button and permission`.
 
 ### Task 13: Final verification
 
-- [ ] **Step 1:** Run `./gradlew :core:testDebugUnitTest :app:testDebugUnitTest assembleRelease`; expect all green. Confirm the manifest merges with the service and the new permission, and note the release APK size.
+- [x] **Step 1:** Run `./gradlew :core:testDebugUnitTest :app:testDebugUnitTest assembleRelease`; expect all green. Confirm the manifest merges with the service and the new permission, and note the release APK size.
 - [ ] **Step 2:** On device, full pass with the user enabling the service: each size, both edges, both orientations, all three visibility cases (field focused, no field, password), hold/tap/double-tap, drag from an in-progress press, focus change mid-recording, Advanced Protection note if available, and turning the switch off removes the bubble.
 - [ ] **Step 3:** Ask the user to turn the accessibility service off, confirm the phone's `enabled_accessibility_services` is empty again, and reinstall the normal debug build.
 - [ ] **Step 4:** Delete the local `spike/a11y-mic` branch after confirming with the user.
