@@ -36,6 +36,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -67,6 +68,13 @@ class BubbleService : AccessibilityService() {
     private val latch = PipelineLatch()
     private var startJob: Job? = null
     private var target: BubbleTarget? = null
+
+    /**
+     * The origin of the bubble's last start or retry while that dictation runs or waits for a retry. Unlike
+     * [target], which goes as soon as delivery is tried or the field changes, it says the bubble must stay on
+     * screen to control the dictation.
+     */
+    private var ownedOrigin: Long? = null
 
     /** Silence detection asked for while startJob still runs: a quick tap's release can come first. */
     private var silenceOn = false
@@ -183,9 +191,11 @@ class BubbleService : AccessibilityService() {
             pipeline.state.collect { state ->
                 bubble.state = state
                 active = BubbleAlpha.isActive(state)
-                latch.view(state, SystemClock.uptimeMillis()) // the expectation ends once the pipeline moves
+                val view = latch.view(state, SystemClock.uptimeMillis()) // the expectation ends once the pipeline moves
                 onPipelineState(bubble, state)
+                ownedOrigin = BubbleOwnership.keep(startJob?.isActive == true, ownedOrigin, view, state)
                 noteInteraction() // also undims, so the orb's frame clock runs to show the new state
+                applyVisibility() // a finished dictation no longer holds the bubble on screen
             }
         }
         readFocus()
@@ -203,6 +213,7 @@ class BubbleService : AccessibilityService() {
             pipeline.cancel()
         }
         releaseTarget()
+        ownedOrigin = null
         latch.clear()
         dragging = false
         dragArea = null
@@ -276,7 +287,7 @@ class BubbleService : AccessibilityService() {
         val bubble = bubble ?: return
         handler.removeCallbacks(recheckVisibility)
         val now = SystemClock.uptimeMillis()
-        val show = focus.shouldShow(settings.bubbleVisibility, now)
+        val show = focus.shouldShow(settings.bubbleVisibility, now, ownsDictation())
         focus.recheckIn(now)?.let { handler.postDelayed(recheckVisibility, it) }
         if (show == bubble.shown) return
         bubble.shown = show
@@ -288,6 +299,12 @@ class BubbleService : AccessibilityService() {
         }
         updateWindow(bubble)
         if (show) noteInteraction()
+    }
+
+    /** While true the bubble stays on screen whatever has focus, so its dictation can be stopped or retried. */
+    private fun ownsDictation(): Boolean {
+        val state = pipeline.state.value
+        return BubbleOwnership.owns(startJob?.isActive == true, ownedOrigin, latch.view(state, SystemClock.uptimeMillis()), state)
     }
 
     private fun applyAlpha() {
@@ -333,6 +350,7 @@ class BubbleService : AccessibilityService() {
             is BubbleCommand.DragBy -> dragBy(bubble, command.dx, command.dy)
             is BubbleCommand.DragEnd -> dragEnd(bubble, command.vx, command.vy)
         }
+        applyVisibility() // a start, retry or cancel changes whether the bubble owns a dictation
     }
 
     /**
@@ -351,6 +369,7 @@ class BubbleService : AccessibilityService() {
         }
         val packageName = node.packageName?.toString().orEmpty()
         val origin = attachTarget(node)
+        ownedOrigin = origin
         val settings = settings
         silenceOn = false
         bubble.doubleTap = false
@@ -363,10 +382,14 @@ class BubbleService : AccessibilityService() {
             } catch (e: Exception) {
                 null
             }
+            ensureActive() // aborted during a read that didn't notice: abortStart already cleaned up
             // Aborted, or another start or the keyboard took delivery over, while the category was read.
             if (config == null || !delivery.isCurrent(origin)) {
                 releaseTarget()
+                ownedOrigin = null
                 bubble.doubleTap = null
+                startJob = null // over: the visibility check below must not count it as starting
+                applyVisibility()
                 return@launch
             }
             val style = LevelResolver.resolve(null, config, settings.defaultLevel)
@@ -390,6 +413,7 @@ class BubbleService : AccessibilityService() {
         // Only the bubble's own recording; a refused Start left nothing to cancel.
         if (target != null) pipeline.cancel()
         releaseTarget()
+        ownedOrigin = null
         latch.clear()
         bubble.doubleTap = null
     }
@@ -398,6 +422,7 @@ class BubbleService : AccessibilityService() {
         startJob?.cancel()
         startJob = null
         releaseTarget()
+        ownedOrigin = null
         latch.clear()
         bubble?.doubleTap = null
     }
@@ -415,6 +440,7 @@ class BubbleService : AccessibilityService() {
             return
         }
         val origin = attachTarget(node)
+        ownedOrigin = origin
         pipeline.reset()
         pipeline.retry(failed.historyId, origin)
         latch.expect(PipelineView.BUSY, SystemClock.uptimeMillis())

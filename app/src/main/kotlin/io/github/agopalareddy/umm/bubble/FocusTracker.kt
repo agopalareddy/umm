@@ -28,8 +28,8 @@ class FocusTracker {
         }
     }
 
-    fun shouldShow(mode: BubbleShowMode, now: Long): Boolean =
-        BubbleVisibility.shouldShow(mode, editable, password, lostAt?.let { now - it })
+    fun shouldShow(mode: BubbleShowMode, now: Long, ownsDictation: Boolean = false): Boolean =
+        BubbleVisibility.shouldShow(mode, editable, password, lostAt?.let { now - it }, ownsDictation)
 
     /** Milliseconds until the hide grace period ends, when [shouldShow] may change with no new event. */
     fun recheckIn(now: Long): Long? =

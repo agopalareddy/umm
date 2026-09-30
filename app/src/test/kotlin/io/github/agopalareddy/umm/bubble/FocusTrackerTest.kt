@@ -17,6 +17,16 @@ class FocusTrackerTest {
         assertNull(tracker.recheckIn(0))
     }
 
+    @Test fun owningADictationKeepsItShownAfterFocusLeavesOrOnAPasswordField() {
+        tracker.update(editable = true, password = false, now = 0)
+        tracker.update(editable = false, password = false, now = 100)
+        assertFalse(tracker.shouldShow(WHEN_FOCUSED, 5_000))
+        assertTrue(tracker.shouldShow(WHEN_FOCUSED, 5_000, ownsDictation = true))
+        tracker.update(editable = true, password = true, now = 6_000)
+        assertFalse(tracker.shouldShow(ALWAYS, 6_000))
+        assertTrue(tracker.shouldShow(ALWAYS, 6_000, ownsDictation = true))
+    }
+
     @Test fun editableFieldShows() {
         tracker.update(editable = true, password = false, now = 0)
         assertTrue(tracker.shouldShow(WHEN_FOCUSED, 0))

@@ -25,6 +25,18 @@ object BubbleVisibility {
         }
     }
 
+    /**
+     * As above, but a bubble that owns a running dictation ([BubbleOwnership]) stays shown whatever has focus,
+     * a password field included, so the recording can always be stopped. It still can't start one there.
+     */
+    fun shouldShow(
+        mode: BubbleShowMode,
+        focusedEditable: Boolean,
+        isPassword: Boolean,
+        msSinceFocusLost: Long?,
+        ownsDictation: Boolean,
+    ): Boolean = ownsDictation || shouldShow(mode, focusedEditable, isPassword, msSinceFocusLost)
+
     /** Recording needs somewhere to put the text, so Always mode with no field focused can't record. */
     fun canRecord(focusedEditable: Boolean, isPassword: Boolean): Boolean = focusedEditable && !isPassword
 }
