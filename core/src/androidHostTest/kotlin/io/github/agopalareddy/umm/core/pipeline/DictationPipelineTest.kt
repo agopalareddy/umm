@@ -1,6 +1,8 @@
 package io.github.agopalareddy.umm.core.pipeline
 
 import android.content.Context
+import androidx.room.Room
+import androidx.sqlite.driver.AndroidSQLiteDriver
 import androidx.test.core.app.ApplicationProvider
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.cleanup.LanguageChoice
@@ -37,7 +39,9 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class DictationPipelineTest {
     @get:Rule val tmp = TemporaryFolder()
-    private val db = UmmDatabase.inMemory(ApplicationProvider.getApplicationContext<Context>())
+    private val db = Room.inMemoryDatabaseBuilder<UmmDatabase>(ApplicationProvider.getApplicationContext<Context>())
+        .setDriver(AndroidSQLiteDriver())
+        .build()
     private val history = HistoryRepository(db)
     private val audio = FakeAudioSource()
     private val api = FakeApi()

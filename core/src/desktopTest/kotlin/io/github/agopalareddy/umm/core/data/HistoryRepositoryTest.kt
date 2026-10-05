@@ -1,7 +1,5 @@
 package io.github.agopalareddy.umm.core.data
 
-import android.content.Context
-import androidx.test.core.app.ApplicationProvider
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
 import java.io.File
@@ -15,13 +13,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 
-@RunWith(RobolectricTestRunner::class)
 class HistoryRepositoryTest {
     @get:Rule val tmp = TemporaryFolder()
-    private val db = UmmDatabase.inMemory(ApplicationProvider.getApplicationContext<Context>())
+    private val db = inMemoryUmmDatabase()
     private var now = 1_000_000_000L
     private val repo = HistoryRepository(db) { now }
     private val day = 24L * 3600 * 1000

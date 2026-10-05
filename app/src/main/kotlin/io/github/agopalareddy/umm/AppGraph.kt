@@ -14,7 +14,7 @@ import io.github.agopalareddy.umm.core.data.CategoryRepository
 import io.github.agopalareddy.umm.core.data.HistoryRepository
 import io.github.agopalareddy.umm.core.data.ModelMode
 import io.github.agopalareddy.umm.core.data.SettingsRepository
-import io.github.agopalareddy.umm.core.data.UmmDatabase
+import io.github.agopalareddy.umm.core.data.buildUmmDatabase
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterApi
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterClient
 import io.github.agopalareddy.umm.core.pipeline.DictationPipeline
@@ -49,7 +49,7 @@ class AppGraph(private val app: Application) {
         OpenRouterClient(OpenRouterClient.DEFAULT_BASE_URL, http) { apiKeyStore.get() }
     }
 
-    val database by lazy { UmmDatabase.build(app) }
+    val database by lazy { buildUmmDatabase(app) }
     val categories by lazy { CategoryRepository(database) }
     val history by lazy { HistoryRepository(database, clock) }
     val settings by lazy { SettingsRepository(app.settingsStore) }

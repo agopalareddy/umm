@@ -21,4 +21,7 @@ internal interface StatsDao {
 
     @Query("DELETE FROM dictation_stats")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM dictation_stats WHERE historyId >= :firstId")
+    suspend fun deleteFromHistoryId(firstId: Long)
 }

@@ -1,9 +1,7 @@
 package io.github.agopalareddy.umm.core.stats
 
-import android.content.Context
-import androidx.test.core.app.ApplicationProvider
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
-import io.github.agopalareddy.umm.core.data.UmmDatabase
+import io.github.agopalareddy.umm.core.data.inMemoryUmmDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -15,12 +13,9 @@ import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 
-@RunWith(RobolectricTestRunner::class)
 class StatsRepositoryTest {
-    private val db = UmmDatabase.inMemory(ApplicationProvider.getApplicationContext<Context>())
+    private val db = inMemoryUmmDatabase()
     private val repo = StatsRepository(db)
 
     @After fun tearDown() = db.close()
@@ -49,6 +44,13 @@ class StatsRepositoryTest {
         repo.record(entry(2, ok = true))
         repo.deleteAll()
         assertEquals(emptyList<StatsEntry>(), repo.all())
+    }
+
+    @Test fun deleteFromHistoryId_keepsEarlierRows() = runTest {
+        repo.record(entry(5, ok = true))
+        repo.record(entry(1_000_000, ok = true))
+        repo.deleteFromHistoryId(1_000_000)
+        assertEquals(listOf(5L), repo.all().map { it.historyId })
     }
 
     @Test fun deleteAllWorksWhileDisabled() = runTest {

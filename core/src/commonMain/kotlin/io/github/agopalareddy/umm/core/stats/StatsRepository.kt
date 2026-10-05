@@ -21,6 +21,9 @@ class StatsRepository(db: UmmDatabase, private val enabled: suspend () -> Boolea
 
     suspend fun deleteAll() = dao.deleteAll()
 
+    /** Deletes the rows whose history ID is [firstId] or higher (the debug sample data). */
+    suspend fun deleteFromHistoryId(firstId: Long) = dao.deleteFromHistoryId(firstId)
+
     fun observeAll(): Flow<List<StatsEntry>> = dao.observeAll()
 
     /** Recomputed on every table change, off the main thread. */

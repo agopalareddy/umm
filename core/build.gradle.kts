@@ -8,6 +8,8 @@ plugins {
 
 kotlin {
     jvmToolchain(17)
+    // Room generates an `actual object` for UmmDatabaseConstructor on each target.
+    compilerOptions { freeCompilerArgs.add("-Xexpect-actual-classes") }
 
     android {
         namespace = "io.github.agopalareddy.umm.core"
@@ -20,14 +22,25 @@ kotlin {
     jvm("desktop")
 
     sourceSets {
+        commonMain.dependencies {
+            api(libs.room.runtime)
+            api(libs.datastore.preferences)
+            implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.kotlinx.serialization.json)
+        }
         androidMain.dependencies {
             implementation(libs.androidx.core.ktx)
             implementation(libs.kotlinx.coroutines.android)
-            implementation(libs.kotlinx.serialization.json)
             api(libs.okhttp)
-            implementation(libs.room.runtime)
             implementation(libs.room.ktx)
-            api(libs.datastore.preferences)
+        }
+        getByName("desktopMain").dependencies {
+            implementation(libs.sqlite.bundled)
+        }
+        getByName("desktopTest").dependencies {
+            implementation(libs.junit)
+            implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.turbine)
         }
         getByName("androidHostTest").dependencies {
             implementation(libs.junit)
@@ -42,6 +55,7 @@ kotlin {
 
 dependencies {
     add("kspAndroid", libs.room.compiler)
+    add("kspDesktop", libs.room.compiler)
 }
 
 room {

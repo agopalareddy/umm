@@ -1,7 +1,5 @@
 package io.github.agopalareddy.umm.core.data
 
-import android.content.Context
-import androidx.test.core.app.ApplicationProvider
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
 import kotlinx.coroutines.flow.first
@@ -11,12 +9,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 
-@RunWith(RobolectricTestRunner::class)
 class CategoryRepositoryTest {
-    private val db = UmmDatabase.inMemory(ApplicationProvider.getApplicationContext<Context>())
+    private val db = inMemoryUmmDatabase()
     private val repo = CategoryRepository(db)
 
     @After fun tearDown() = db.close()

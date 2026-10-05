@@ -59,7 +59,7 @@ internal fun StatsPage(settings: UmmSettings, onBack: () -> Unit, onChange: Sett
                     OutlinedButton(onClick = { scope.launch { SampleData.seed(graph.database, System.currentTimeMillis()) } }) {
                         Text("Load sample data")
                     }
-                    OutlinedButton(onClick = { scope.launch { SampleData.remove(graph.database) } }) { Text("Remove sample data") }
+                    OutlinedButton(onClick = { scope.launch { SampleData.remove(graph.stats) } }) { Text("Remove sample data") }
                 }
             }
         }
