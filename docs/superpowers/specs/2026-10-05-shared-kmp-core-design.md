@@ -78,7 +78,8 @@ umm/
 | Settings | `SettingsRepository` already takes a `DataStore<Preferences>` and moves unchanged. Android keeps `preferencesDataStore("settings")` in `AppGraph`. Desktop uses `PreferenceDataStoreFactory.createWithPath` at `$XDG_CONFIG_HOME/umm/settings.preferences_pb` (default `~/.config/umm/`). | Same Android file. |
 | API key store | `ApiKeyStore` moves to `commonMain`. `SharedPreferences` is replaced by a `KeyValueStore` interface (`getString`, `putString`, `remove`). `android.util.Base64` with `NO_WRAP` is replaced by `java.util.Base64`, which encodes identically. The Android implementation wraps the same `secure` prefs file and the keys `openrouter_key` and `openrouter_key_source`. | Same prefs file, keys, encoding, and Keystore cipher. |
 | Keystore cipher | `KeystoreCipher` moves to `androidMain` unchanged. `SecretCipher` stays common. | Same Keystore alias. |
-| Audio | `AudioSource` gains a `format` property (`"m4a"` for `MediaRecorderAudioSource`). `DictationPipeline` names the recording file and passes the transcription format from it instead of hardcoding `m4a`. `MediaRecorderAudioSource` moves to `androidMain`. | Not affected. |
+| Audio | `AudioSource` gains a `format` property (`"m4a"` for `MediaRecorderAudioSource`). `DictationPipeline` names new recordings with it and sends the transcription format from the audio file's extension instead of hardcoding `m4a`, so a retry of an older recording still sends its own format. `MediaRecorderAudioSource` moves to `androidMain`. | Retry audio already on disk (`.m4a`) still transcribes. |
+| Debug sample data | `SampleData.remove` deletes through `openHelper`, which driver-based Room does not offer. It calls a new `StatsRepository.deleteFromHistoryId(firstId)` backed by a `@Query` DELETE in `StatsDao`, so stats flows still refresh. | Real rows untouched, as today. |
 | Auth URL | `AuthUrl.build` returns a `String` built with `URLEncoder` instead of `android.net.Uri`. Callers in `app` parse it with `Uri.parse`. `AuthUrlTest` asserts the output is unchanged. | Not affected. |
 | Silence detection, policy, prompts, OpenRouter, stats | Move to `commonMain` unchanged. | Not affected. |
 
@@ -184,8 +185,9 @@ The workflow adds the desktop module build and its tests. Live OpenRouter calls 
 - **Material 3 version gap.** JetBrains Material 3 1.9.0 trails the AndroidX BOM 2026.09.00 that the app uses.
   On Android, Gradle keeps the newer AndroidX version. If a component used by a shared screen is missing on
   desktop, that screen gets a small desktop-only substitute.
-- **AGP 9 KMP plugin maturity.** `com.android.kotlin.multiplatform.library` is newer than the classic setup.
-  If Room's KSP or Compose misbehave with it, fall back to `kotlin("multiplatform")` with `com.android.library`,
-  provided AGP 9.4 still supports that combination. The implementation plan checks this before phase 1 starts.
+- **AGP 9 KMP plugin maturity.** `com.android.kotlin.multiplatform.library` is the only supported way to put an
+  Android target in a KMP module on AGP 9; `com.android.library` cannot be combined with `kotlin("multiplatform")`
+  any more. The only escape hatch is `android.builtInKotlin=false` and `android.newDsl=false` in
+  `gradle.properties`, which AGP 10 removes, so it may be used only to unblock a build temporarily, never merged.
 - **Room driver switch on Android.** Moving from the SupportSQLite path to `AndroidSQLiteDriver` must not change
   how the existing file opens. Phase 1 step 4 (upgrade over v1.2.0) is the gate for this.
