@@ -25,13 +25,13 @@ kotlin {
         commonMain.dependencies {
             api(libs.room.runtime)
             api(libs.datastore.preferences)
+            api(libs.okhttp)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
         }
         androidMain.dependencies {
             implementation(libs.androidx.core.ktx)
             implementation(libs.kotlinx.coroutines.android)
-            api(libs.okhttp)
             implementation(libs.room.ktx)
         }
         getByName("desktopMain").dependencies {
@@ -40,6 +40,7 @@ kotlin {
         getByName("desktopTest").dependencies {
             implementation(libs.junit)
             implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.okhttp.mockwebserver)
             implementation(libs.turbine)
         }
         getByName("androidHostTest").dependencies {
@@ -47,8 +48,6 @@ kotlin {
             implementation(libs.robolectric)
             implementation(libs.androidx.test.core)
             implementation(libs.kotlinx.coroutines.test)
-            implementation(libs.okhttp.mockwebserver)
-            implementation(libs.turbine)
         }
     }
 }

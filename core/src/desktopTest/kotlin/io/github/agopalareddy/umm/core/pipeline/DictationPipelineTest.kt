@@ -1,16 +1,12 @@
 package io.github.agopalareddy.umm.core.pipeline
 
-import android.content.Context
-import androidx.room.Room
-import androidx.sqlite.driver.AndroidSQLiteDriver
-import androidx.test.core.app.ApplicationProvider
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.cleanup.LanguageChoice
 import io.github.agopalareddy.umm.core.cleanup.PromptBuilder
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
 import io.github.agopalareddy.umm.core.data.HistoryRepository
 import io.github.agopalareddy.umm.core.data.HistoryStatus
-import io.github.agopalareddy.umm.core.data.UmmDatabase
+import io.github.agopalareddy.umm.core.data.inMemoryUmmDatabase
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterException
 import io.github.agopalareddy.umm.core.policy.ModelPlan
 import io.github.agopalareddy.umm.core.stats.StatsRepository
@@ -33,15 +29,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 
-@RunWith(RobolectricTestRunner::class)
 class DictationPipelineTest {
     @get:Rule val tmp = TemporaryFolder()
-    private val db = Room.inMemoryDatabaseBuilder<UmmDatabase>(ApplicationProvider.getApplicationContext<Context>())
-        .setDriver(AndroidSQLiteDriver())
-        .build()
+    private val db = inMemoryUmmDatabase()
     private val history = HistoryRepository(db)
     private val audio = FakeAudioSource()
     private val api = FakeApi()
@@ -254,6 +245,33 @@ class DictationPipelineTest {
         assertEquals("Back online.", done.text)
         assertFalse(audio.recordedFile!!.exists())
         assertNull(history.get(done.historyId)!!.audioPath)
+    }
+
+    @Test fun recording_usesTheSourceFormat() = runTest {
+        audio.format = "wav"
+        audio.amplitudes = speechThenSilence
+        api.transcribeResults += "hello"
+        api.completeResults += "Hello."
+        val p = backgroundScope.pipeline()
+        p.start(request())
+        p.awaitEnd() as DictationState.Done
+        assertTrue(audio.recordedFile!!.name.endsWith(".wav"))
+        assertEquals("wav", api.transcribeCalls.single().second)
+    }
+
+    @Test fun retry_usesTheStoredFileFormat() = runTest {
+        audio.amplitudes = speechThenSilence
+        api.transcribeResults += OpenRouterException.Network(IOException("offline"))
+        val p = backgroundScope.pipeline()
+        p.start(request())
+        val failed = p.awaitEnd() as DictationState.Failed
+        p.reset()
+        audio.format = "wav" // the source changed since the recording was made
+        api.transcribeResults += "back online"
+        api.completeResults += "Back online."
+        p.retry(failed.historyId)
+        p.awaitEnd() as DictationState.Done
+        assertEquals("m4a", api.transcribeCalls.last().second)
     }
 
     @Test fun interruptionAfterSpeechProcesses() = runTest {

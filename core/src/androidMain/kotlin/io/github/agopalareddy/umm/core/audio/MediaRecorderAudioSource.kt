@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.flowOn
 
 /** Records mono AAC (.m4a, 16 kHz, 32 kbps) and polls MediaRecorder's peak amplitude every 100 ms. */
 class MediaRecorderAudioSource(private val context: Context) : AudioSource {
+    override val format = "m4a"
+
     @Volatile private var stopRequested = false
 
     override fun record(file: File): Flow<Int> = flow {

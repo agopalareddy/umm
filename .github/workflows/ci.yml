@@ -67,4 +67,4 @@ jobs:
       - name: Live tests
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: ./gradlew :core:testAndroidHostTest -Plive --tests '*LiveOpenRouterTest*' --console=plain
+        run: ./gradlew :core:desktopTest -Plive --tests '*LiveOpenRouterTest*' --console=plain

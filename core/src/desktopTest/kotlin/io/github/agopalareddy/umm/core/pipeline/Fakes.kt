@@ -18,6 +18,7 @@ class FakeAudioSource(
     var amplitudes: List<Int> = emptyList(),
     var holdOpen: Boolean = false,
     var failAtEnd: Boolean = false,
+    override var format: String = "m4a",
 ) : AudioSource {
     private var stopSignal = CompletableDeferred<Unit>()
     var recordedFile: File? = null

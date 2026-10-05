@@ -131,7 +131,7 @@ class DictationPipeline(
 
     private suspend fun record(request: DictationRequest) {
         audioDir.mkdirs()
-        val file = File(audioDir, "${UUID.randomUUID()}.m4a")
+        val file = File(audioDir, "${UUID.randomUUID()}.${audio.format}")
         val config = SilenceConfig(silenceTimeoutMs = request.silenceTimeoutSec?.let { it * 1000L })
         val detector = SilenceDetector(config)
         var elapsedMs = 0L
@@ -198,7 +198,7 @@ class DictationPipeline(
             models = plan()
             val bytes = withContext(Dispatchers.IO) { file.readBytes() }
             val code = (language as? LanguageChoice.Fixed)?.iso639_1
-            val (model, transcription) = withFallback(models.stt) { model -> api.transcribe(model, bytes, AUDIO_FORMAT, code) }
+            val (model, transcription) = withFallback(models.stt) { model -> api.transcribe(model, bytes, file.extension, code) }
             sttModel = model
             costUsd = transcription.costUsd
             transcription.text.trim()
@@ -334,7 +334,6 @@ class DictationPipeline(
 
     private companion object {
         const val SAMPLE_MS = 100L
-        const val AUDIO_FORMAT = "m4a"
         const val TEMPERATURE = 0.2
     }
 }
