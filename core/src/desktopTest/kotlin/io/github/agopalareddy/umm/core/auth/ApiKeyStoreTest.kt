@@ -1,23 +1,25 @@
 package io.github.agopalareddy.umm.core.auth
 
-import android.content.Context
-import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 
-@RunWith(RobolectricTestRunner::class)
 class ApiKeyStoreTest {
-    /** Reversible stand-in for the Keystore cipher, which Robolectric cannot provide. */
+    /** Reversible stand-in for the Keystore cipher. */
     private val xor = object : SecretCipher {
         override fun encrypt(plain: ByteArray) = plain.map { (it.toInt() xor 0x5A).toByte() }.toByteArray()
         override fun decrypt(blob: ByteArray) = encrypt(blob)
     }
-    private val prefs = ApplicationProvider.getApplicationContext<Context>()
-        .getSharedPreferences("test_keys", Context.MODE_PRIVATE)
+
+    private class MapStore : KeyValueStore {
+        val all = mutableMapOf<String, String>()
+        override fun getString(key: String) = all[key]
+        override fun putString(key: String, value: String) { all[key] = value }
+        override fun remove(vararg keys: String) { keys.forEach(all::remove) }
+    }
+
+    private val prefs = MapStore()
 
     @Test fun persistsAcrossInstancesWithoutPlaintext() {
         ApiKeyStore(prefs, xor).set("sk-or-1", KeySource.SIGNED_IN)

@@ -1,7 +1,6 @@
 package io.github.agopalareddy.umm.core.auth
 
-import android.content.SharedPreferences
-import android.util.Base64
+import java.util.Base64
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -10,7 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 enum class KeySource { SIGNED_IN, PASTED, DEVELOPER }
 
 /** Holds the user's OpenRouter key, encrypted at rest. */
-class ApiKeyStore(private val prefs: SharedPreferences, private val cipher: SecretCipher) {
+class ApiKeyStore(private val store: KeyValueStore, private val cipher: SecretCipher) {
     private val _key = MutableStateFlow(load())
     val key: StateFlow<String?> = _key.asStateFlow()
 
@@ -21,27 +20,25 @@ class ApiKeyStore(private val prefs: SharedPreferences, private val cipher: Secr
 
     fun set(key: String, source: KeySource = KeySource.PASTED) {
         val blob = cipher.encrypt(key.toByteArray(Charsets.UTF_8))
-        prefs.edit()
-            .putString(PREF, Base64.encodeToString(blob, Base64.NO_WRAP))
-            .putString(SOURCE, source.name)
-            .apply()
+        store.putString(PREF, Base64.getEncoder().encodeToString(blob))
+        store.putString(SOURCE, source.name)
         _key.value = key
         _source.value = source
     }
 
     fun clear() {
-        prefs.edit().remove(PREF).remove(SOURCE).apply()
+        store.remove(PREF, SOURCE)
         _key.value = null
         _source.value = null
     }
 
     private fun loadSource(): KeySource =
-        prefs.getString(SOURCE, null)?.let { runCatching { KeySource.valueOf(it) }.getOrNull() } ?: KeySource.PASTED
+        store.getString(SOURCE)?.let { runCatching { KeySource.valueOf(it) }.getOrNull() } ?: KeySource.PASTED
 
     private fun load(): String? {
-        val stored = prefs.getString(PREF, null) ?: return null
+        val stored = store.getString(PREF) ?: return null
         return runCatching {
-            String(cipher.decrypt(Base64.decode(stored, Base64.NO_WRAP)), Charsets.UTF_8)
+            String(cipher.decrypt(Base64.getDecoder().decode(stored)), Charsets.UTF_8)
         }.getOrNull()
     }
 

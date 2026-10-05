@@ -10,6 +10,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import io.github.agopalareddy.umm.core.audio.MediaRecorderAudioSource
 import io.github.agopalareddy.umm.core.auth.ApiKeyStore
 import io.github.agopalareddy.umm.core.auth.KeystoreCipher
+import io.github.agopalareddy.umm.core.auth.SharedPreferencesKeyValueStore
 import io.github.agopalareddy.umm.core.data.CategoryRepository
 import io.github.agopalareddy.umm.core.data.HistoryRepository
 import io.github.agopalareddy.umm.core.data.ModelMode
@@ -42,7 +43,7 @@ class AppGraph(private val app: Application) {
     private val clock: () -> Long = System::currentTimeMillis
 
     val apiKeyStore: ApiKeyStore by lazy {
-        ApiKeyStore(app.getSharedPreferences("secure", Context.MODE_PRIVATE), KeystoreCipher())
+        ApiKeyStore(SharedPreferencesKeyValueStore(app.getSharedPreferences("secure", Context.MODE_PRIVATE)), KeystoreCipher())
     }
     val http by lazy { OpenRouterClient.defaultHttp() }
     val openRouter: OpenRouterApi by lazy {
