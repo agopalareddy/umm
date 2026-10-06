@@ -21,7 +21,11 @@ import io.github.agopalareddy.umm.core.policy.ModelPlan
 import io.github.agopalareddy.umm.core.policy.ModelSelector
 import io.github.agopalareddy.umm.core.policy.RecommendationRepository
 import io.github.agopalareddy.umm.core.stats.StatsRepository
+import io.github.agopalareddy.umm.ui.Platform
+import io.github.agopalareddy.umm.ui.UmmServices
 import java.io.File
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -81,10 +85,33 @@ class DesktopGraph(
         onDataPolicyBlocked = { dataPolicy.markEnforced() },
     )
 
+    /** The shared screens' services; History's retry and re-clean use a pipeline that never records. */
+    fun services(platform: Platform) = UmmServices(
+        settings = settings,
+        apiKeyStore = apiKeyStore,
+        history = history,
+        stats = stats,
+        categories = categories,
+        dataPolicy = dataPolicy,
+        modelCatalog = modelCatalog,
+        recommendations = recommendations,
+        openRouter = openRouter,
+        lazyPipeline = lazy { pipeline(NoMicrophone) },
+        modelPlan = ::modelPlan,
+        platform = platform,
+    )
+
     fun close() {
         scope.cancel()
         database.close()
     }
+}
+
+/** Desktop has no microphone until the dictation engine lands (sub-project 2). */
+private object NoMicrophone : AudioSource {
+    override val format = "wav"
+    override fun record(file: File): Flow<Int> = flow { throw IllegalStateException("No microphone on desktop yet") }
+    override fun stop() = Unit
 }
 
 private class InMemoryKeyValueStore : KeyValueStore {

@@ -1,14 +1,17 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
-    application
+    alias(libs.plugins.compose.multiplatform)
+    alias(libs.plugins.kotlin.compose)
 }
 
 kotlin {
     jvmToolchain(17)
 }
 
-application {
-    mainClass = "io.github.agopalareddy.umm.desktop.MainKt"
+compose.desktop {
+    application {
+        mainClass = "io.github.agopalareddy.umm.desktop.MainKt"
+    }
 }
 
 // Bundles models/recommended.json, the offline fallback for model recommendations.
@@ -17,8 +20,11 @@ sourceSets.main {
 }
 
 dependencies {
-    implementation(project(":core"))
+    implementation(project(":ui"))
+    implementation(compose.desktop.currentOs)
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.swing)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
