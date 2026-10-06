@@ -1,27 +1,60 @@
 plugins {
-    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
 }
 
-android {
-    namespace = "io.github.agopalareddy.umm.core"
-    compileSdk = 37
-    defaultConfig {
+kotlin {
+    jvmToolchain(17)
+    // Room generates an `actual object` for UmmDatabaseConstructor on each target.
+    compilerOptions { freeCompilerArgs.add("-Xexpect-actual-classes") }
+
+    android {
+        namespace = "io.github.agopalareddy.umm.core"
+        compileSdk = 37
         minSdk = 29
+        withHostTest {
+            isIncludeAndroidResources = true
+        }
     }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
+    jvm("desktop")
+
+    sourceSets {
+        commonMain.dependencies {
+            api(libs.room.runtime)
+            api(libs.datastore.preferences)
+            api(libs.okhttp)
+            implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.kotlinx.serialization.json)
+        }
+        androidMain.dependencies {
+            implementation(libs.androidx.core.ktx)
+            implementation(libs.kotlinx.coroutines.android)
+            implementation(libs.room.ktx)
+        }
+        getByName("desktopMain").dependencies {
+            implementation(libs.sqlite.bundled)
+        }
+        getByName("desktopTest").dependencies {
+            implementation(libs.junit)
+            implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.okhttp.mockwebserver)
+            implementation(libs.turbine)
+        }
+        getByName("androidHostTest").dependencies {
+            implementation(libs.junit)
+            implementation(libs.robolectric)
+            implementation(libs.androidx.test.core)
+            implementation(libs.kotlinx.coroutines.test)
+        }
     }
 }
 
-kotlin {
-    jvmToolchain(17)
+dependencies {
+    add("kspAndroid", libs.room.compiler)
+    add("kspDesktop", libs.room.compiler)
 }
 
 room {
@@ -34,22 +67,4 @@ tasks.withType<Test>().configureEach {
     listOf("sttModel", "cleanupModel").forEach { name ->
         project.findProperty(name)?.let { systemProperty(name, it) }
     }
-}
-
-dependencies {
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.kotlinx.serialization.json)
-    api(libs.okhttp)
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx)
-    ksp(libs.room.compiler)
-    api(libs.datastore.preferences)
-
-    testImplementation(libs.junit)
-    testImplementation(libs.robolectric)
-    testImplementation(libs.androidx.test.core)
-    testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.okhttp.mockwebserver)
-    testImplementation(libs.turbine)
 }

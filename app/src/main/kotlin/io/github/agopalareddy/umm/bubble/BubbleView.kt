@@ -28,6 +28,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import io.github.agopalareddy.umm.core.pipeline.DictationState
 import io.github.agopalareddy.umm.ime.moveIfAlive
+import io.github.agopalareddy.umm.ProvideUmm
 import io.github.agopalareddy.umm.ui.UmmTheme
 import io.github.agopalareddy.umm.ui.VoiceOrb
 
@@ -95,7 +96,7 @@ internal class BubbleView(
         lifecycleRegistry.moveIfAlive(Lifecycle.Event.ON_CREATE)
         compose = ComposeView(context).apply {
             setContent {
-                UmmTheme {
+                ProvideUmm { UmmTheme {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         val orbState = if (pending && state is DictationState.Listening) DictationState.Idle else state
                         // VoiceOrb has a fixed layout size, so scale its drawing until the disc is orbSizePx wide.
@@ -113,7 +114,7 @@ internal class BubbleView(
                             clickable = false,
                         )
                     }
-                }
+                } }
             }
         }
         view = TouchFrame(context, ::onTouch).apply {

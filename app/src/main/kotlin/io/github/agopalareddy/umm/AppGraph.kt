@@ -10,11 +10,12 @@ import androidx.datastore.preferences.preferencesDataStore
 import io.github.agopalareddy.umm.core.audio.MediaRecorderAudioSource
 import io.github.agopalareddy.umm.core.auth.ApiKeyStore
 import io.github.agopalareddy.umm.core.auth.KeystoreCipher
+import io.github.agopalareddy.umm.core.auth.SharedPreferencesKeyValueStore
 import io.github.agopalareddy.umm.core.data.CategoryRepository
 import io.github.agopalareddy.umm.core.data.HistoryRepository
 import io.github.agopalareddy.umm.core.data.ModelMode
 import io.github.agopalareddy.umm.core.data.SettingsRepository
-import io.github.agopalareddy.umm.core.data.UmmDatabase
+import io.github.agopalareddy.umm.core.data.buildUmmDatabase
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterApi
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterClient
 import io.github.agopalareddy.umm.core.pipeline.DictationPipeline
@@ -30,6 +31,8 @@ import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import io.github.agopalareddy.umm.ui.AndroidPlatform
+import io.github.agopalareddy.umm.ui.UmmServices
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -42,14 +45,14 @@ class AppGraph(private val app: Application) {
     private val clock: () -> Long = System::currentTimeMillis
 
     val apiKeyStore: ApiKeyStore by lazy {
-        ApiKeyStore(app.getSharedPreferences("secure", Context.MODE_PRIVATE), KeystoreCipher())
+        ApiKeyStore(SharedPreferencesKeyValueStore(app.getSharedPreferences("secure", Context.MODE_PRIVATE)), KeystoreCipher())
     }
     val http by lazy { OpenRouterClient.defaultHttp() }
     val openRouter: OpenRouterApi by lazy {
         OpenRouterClient(OpenRouterClient.DEFAULT_BASE_URL, http) { apiKeyStore.get() }
     }
 
-    val database by lazy { UmmDatabase.build(app) }
+    val database by lazy { buildUmmDatabase(app) }
     val categories by lazy { CategoryRepository(database) }
     val history by lazy { HistoryRepository(database, clock) }
     val settings by lazy { SettingsRepository(app.settingsStore) }
@@ -124,3 +127,19 @@ class AppGraph(private val app: Application) {
 }
 
 val Context.graph: AppGraph get() = (applicationContext as UmmApp).graph
+
+/** The shared screens' services, with platform calls made through [context]. */
+fun AppGraph.services(context: Context) = UmmServices(
+    settings = settings,
+    apiKeyStore = apiKeyStore,
+    history = history,
+    stats = stats,
+    categories = categories,
+    dataPolicy = dataPolicy,
+    modelCatalog = modelCatalog,
+    recommendations = recommendations,
+    openRouter = openRouter,
+    lazyPipeline = lazy { pipeline },
+    modelPlan = ::modelPlan,
+    platform = AndroidPlatform(context),
+)
