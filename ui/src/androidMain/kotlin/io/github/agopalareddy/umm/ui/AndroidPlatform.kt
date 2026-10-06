@@ -49,10 +49,9 @@ class AndroidPlatform(private val context: Context) : Platform {
         pm.getApplicationLabel(pm.getApplicationInfo(id, 0)).toString()
     }.getOrDefault(id)
 
-    override fun versionLine(): String {
-        val version = context.packageManager.getPackageInfo(context.packageName, 0).versionName
-        return "Umm $version · Android ${Build.VERSION.RELEASE}"
-    }
+    override fun appVersion(): String = context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
+
+    override fun versionLine(): String = "Umm ${appVersion()} · Android ${Build.VERSION.RELEASE}"
 
     override fun is24HourClock(): Boolean = DateFormat.is24HourFormat(context)
 

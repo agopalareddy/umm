@@ -168,3 +168,22 @@ fun SwitchRow(
         Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }
+
+@Composable
+fun PasteKeyField(onSave: (String) -> Unit) {
+    val (value, setValue) = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    androidx.compose.material3.OutlinedTextField(
+        value = value,
+        onValueChange = { setValue(it.trim()) },
+        label = { Text("Or paste an OpenRouter key") },
+        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+        // A real password field: keyboards must not learn the key, and Umm refuses to record here.
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+            keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
+            autoCorrectEnabled = false,
+        ),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    androidx.compose.material3.OutlinedButton(onClick = { onSave(value); setValue("") }, enabled = value.isNotEmpty()) { Text("Save key") }
+}

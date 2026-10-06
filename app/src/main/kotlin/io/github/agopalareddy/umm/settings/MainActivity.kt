@@ -23,7 +23,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.compose.NavHost
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SmartButton
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import io.github.agopalareddy.umm.auth.SignInLauncher
@@ -38,21 +39,6 @@ import io.github.agopalareddy.umm.ui.isUmmDark
 import androidx.activity.SystemBarStyle
 import android.graphics.Color
 import kotlinx.coroutines.launch
-
-internal object Routes {
-    const val ONBOARDING = "onboarding"
-    const val HOME = "home"
-    const val SETTINGS = "settings"
-    const val ACCOUNT = "settings/account"
-    const val DICTATION = "settings/dictation"
-    const val BUBBLE = "settings/bubble"
-    const val LANGUAGES = "settings/languages"
-    const val APPEARANCE = "settings/appearance"
-    const val CATEGORIES = "settings/categories"
-    const val MODELS = "settings/models"
-    const val STATS = "settings/stats"
-    const val HISTORY = "history"
-}
 
 class MainActivity : ComponentActivity() {
     private var keyboardEnabled by mutableStateOf(false)
@@ -121,7 +107,6 @@ class MainActivity : ComponentActivity() {
         val back: () -> Unit = { nav.popBackStack() }
         val change: SettingsChange = { transform -> scope.launch { graph.settings.update(transform) } }
         val connect = { SignInLauncher.start(this@MainActivity) }
-        val saveKey: (String) -> Unit = { graph.apiKeyStore.set(it) }
 
         LaunchedEffect(bubblePageRequested) {
             if (bubblePageRequested) {
@@ -130,7 +115,28 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        NavHost(nav, startDestination = if (status.complete) Routes.HOME else Routes.ONBOARDING) {
+        val sampleData = if (BuildConfig.DEBUG) {
+            SampleDataActions(
+                load = { SampleData.seed(graph.database, System.currentTimeMillis()) },
+                remove = { SampleData.remove(graph.stats) },
+            )
+        } else {
+            null
+        }
+        UmmNavHost(
+            startRoute = if (status.complete) Routes.HOME else Routes.ONBOARDING,
+            home = HomeSetup(
+                complete = status.complete,
+                onSetup = { nav.navigate(Routes.ONBOARDING) },
+                switchKeyboard = { getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
+            ),
+            onConnect = connect,
+            extraSettings = listOf(
+                SettingsEntry(Icons.Default.SmartButton, "Floating button", if (settings.bubbleEnabled) "On" else "Off", Routes.BUBBLE),
+            ),
+            sampleData = sampleData,
+            nav = nav,
+        ) {
             composable(Routes.ONBOARDING) {
                 LaunchedEffect(status.complete) {
                     if (status.complete) nav.navigate(Routes.HOME) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
@@ -140,36 +146,10 @@ class MainActivity : ComponentActivity() {
                     onEnableKeyboard = { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
                     onRequestMic = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) },
                     onConnect = connect,
-                    onPasteKey = saveKey,
+                    onPasteKey = { graph.apiKeyStore.set(it) },
                 )
             }
-            composable(Routes.HOME) {
-                HomeScreen(
-                    setupComplete = status.complete,
-                    onSetup = { nav.navigate(Routes.ONBOARDING) },
-                    onOpen = { nav.navigate(it) },
-                )
-            }
-            composable(Routes.SETTINGS) { SettingsHome(settings, key != null, back) { nav.navigate(it) } }
-            composable(Routes.ACCOUNT) { AccountPage(back, connect, saveKey) { graph.apiKeyStore.clear() } }
-            composable(Routes.DICTATION) { DictationPage(settings, back, change) }
             composable(Routes.BUBBLE) { BubblePage(settings, back, change) }
-            composable(Routes.LANGUAGES) { LanguagesPage(settings, back, change) }
-            composable(Routes.APPEARANCE) { AppearancePage(settings, back, change) }
-            composable(Routes.STATS) {
-                val sampleData = if (BuildConfig.DEBUG) {
-                    SampleDataActions(
-                        load = { SampleData.seed(graph.database, System.currentTimeMillis()) },
-                        remove = { SampleData.remove(graph.stats) },
-                    )
-                } else {
-                    null
-                }
-                StatsPage(settings, back, change, sampleData)
-            }
-            composable(Routes.CATEGORIES) { CategoriesScreen(back) }
-            composable(Routes.MODELS) { ModelsScreen(back) }
-            composable(Routes.HISTORY) { HistoryScreen(back) }
         }
     }
 }

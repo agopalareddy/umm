@@ -18,6 +18,9 @@ interface Platform {
 
     /** The display name of the app with [id], or [id] itself when unknown. */
     fun appLabel(id: String): String
+    /** Umm's version name, e.g. "1.2.0". */
+    fun appVersion(): String
+
     /** App and OS versions for support emails, e.g. "Umm 1.2.0 · Android 16". */
     fun versionLine(): String
     fun is24HourClock(): Boolean

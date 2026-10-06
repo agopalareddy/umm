@@ -1,6 +1,5 @@
 package io.github.agopalareddy.umm.settings
 
-import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,13 +34,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.agopalareddy.umm.core.policy.ModelPlan
-import io.github.agopalareddy.umm.graph
+import io.github.agopalareddy.umm.ui.LocalUmm
 import io.github.agopalareddy.umm.settings.dashboard.Dashboard
 import io.github.agopalareddy.umm.ui.UmmLogo
 import java.time.LocalDate
@@ -50,12 +48,13 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun HomeScreen(setupComplete: Boolean, onSetup: () -> Unit, onOpen: (String) -> Unit) {
-    val context = LocalContext.current
-    val graph = context.graph
+fun HomeScreen(home: HomeSetup, onOpen: (String) -> Unit) {
+    val setupComplete = home.complete
+    val onSetup = home.onSetup
+    val umm = LocalUmm.current
     val scope = rememberCoroutineScope()
-    val settings by remember { graph.settings.settings }.collectAsStateWithLifecycle(null)
-    val change: SettingsChange = { transform -> scope.launch { graph.settings.update(transform) } }
+    val settings by remember { umm.settings.settings }.collectAsStateWithLifecycle(null)
+    val change: SettingsChange = { transform -> scope.launch { umm.settings.update(transform) } }
     // The dashboard flow only re-emits when the table changes, so re-key it on the date to roll "today" over.
     var today by remember { mutableStateOf(LocalDate.now()) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { today = LocalDate.now() }
@@ -67,11 +66,11 @@ internal fun HomeScreen(setupComplete: Boolean, onSetup: () -> Unit, onOpen: (St
     }
     // No range while settings load or the dashboard is hidden, so nothing is computed.
     val range = settings?.takeIf { it.statsVisible }?.dashboardRange
-    val stats by remember(range, today) { range?.let { graph.stats.observeDashboard(it) } ?: emptyFlow() }
+    val stats by remember(range, today) { range?.let { umm.stats.observeDashboard(it) } ?: emptyFlow() }
         .collectAsStateWithLifecycle(null)
     var plan by remember { mutableStateOf<ModelPlan?>(null) }
-    val zdr by remember { graph.dataPolicy.observe() }.collectAsStateWithLifecycle(null)
-    LaunchedEffect(zdr) { plan = runCatching { graph.modelPlan() }.getOrNull() }
+    val zdr by remember { umm.dataPolicy.observe() }.collectAsStateWithLifecycle(null)
+    LaunchedEffect(zdr) { plan = runCatching { umm.modelPlan() }.getOrNull() }
     if (zdr?.noticePending == true) ZdrNotice(plan)
 
     Page(
@@ -88,7 +87,7 @@ internal fun HomeScreen(setupComplete: Boolean, onSetup: () -> Unit, onOpen: (St
             IconButton(onClick = { onOpen(Routes.SETTINGS) }) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
         },
     ) {
-        val connected = graph.apiKeyStore.key.collectAsStateWithLifecycle().value != null
+        val connected = umm.apiKeyStore.key.collectAsStateWithLifecycle().value != null
         AssistChip(
             onClick = { onOpen(Routes.ACCOUNT) },
             label = { Text(if (connected) "OpenRouter connected" else "OpenRouter not connected") },
@@ -128,9 +127,9 @@ internal fun HomeScreen(setupComplete: Boolean, onSetup: () -> Unit, onOpen: (St
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                    FilledTonalButton(
-                        onClick = { context.getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
-                    ) { Text("Choose keyboard") }
+                    home.switchKeyboard?.let { switch ->
+                        FilledTonalButton(onClick = switch) { Text("Choose keyboard") }
+                    }
                     if (tryText.isNotEmpty()) TextButton(onClick = { tryText = "" }) { Text("Clear") }
                 }
             }
@@ -155,10 +154,9 @@ internal fun HomeScreen(setupComplete: Boolean, onSetup: () -> Unit, onOpen: (St
 /** Shown once when Umm learns the account only allows zero data retention providers. */
 @Composable
 private fun ZdrNotice(plan: ModelPlan?) {
-    val context = LocalContext.current
-    val graph = context.graph
+    val umm = LocalUmm.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val acknowledge: () -> Unit = { scope.launch { graph.dataPolicy.acknowledgeNotice() } }
+    val acknowledge: () -> Unit = { scope.launch { umm.dataPolicy.acknowledgeNotice() } }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = acknowledge,
         title = { Text("Zero data retention is on") },
@@ -179,7 +177,7 @@ private fun ZdrNotice(plan: ModelPlan?) {
         dismissButton = {
             TextButton(onClick = {
                 acknowledge()
-                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(OPENROUTER_PRIVACY_URL)))
+                umm.platform.openUrl(OPENROUTER_PRIVACY_URL)
             }) { Text("Privacy settings") }
         },
     )
