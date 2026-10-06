@@ -31,6 +31,8 @@ import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import io.github.agopalareddy.umm.ui.AndroidPlatform
+import io.github.agopalareddy.umm.ui.UmmServices
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -125,3 +127,16 @@ class AppGraph(private val app: Application) {
 }
 
 val Context.graph: AppGraph get() = (applicationContext as UmmApp).graph
+
+/** The shared screens' services, with platform calls made through [context]. */
+fun AppGraph.services(context: Context) = UmmServices(
+    settings = settings,
+    apiKeyStore = apiKeyStore,
+    history = history,
+    stats = stats,
+    categories = categories,
+    dataPolicy = dataPolicy,
+    modelCatalog = modelCatalog,
+    recommendations = recommendations,
+    platform = AndroidPlatform(context),
+)

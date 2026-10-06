@@ -45,7 +45,7 @@ import kotlin.math.roundToInt
  * is not whole. [peakLabel] words the tallest bar's value (default: a bare number).
  */
 @Composable
-internal fun BarChart(
+fun BarChart(
     values: List<Float>,
     labels: List<String>,
     description: String,
@@ -125,14 +125,14 @@ internal fun BarChart(
     )
 }
 
-internal val CHART_HEIGHT = 160.dp
+val CHART_HEIGHT = 160.dp
 
 /**
  * Draw-in progress from 0 to 1, restarted whenever [key] (the drawn data) changes. It starts, and stays, at 1
  * when the system's animations are off.
  */
 @Composable
-internal fun rememberDrawIn(key: Any?): State<Float> {
+fun rememberDrawIn(key: Any?): State<Float> {
     val motion = rememberMotionEnabled()
     val progress = remember { Animatable(if (motion) 0f else 1f) }
     LaunchedEffect(key, motion) {
@@ -150,20 +150,20 @@ internal fun rememberDrawIn(key: Any?): State<Float> {
  * Top of the scale for [values] (already [plottable]): the largest one, so small amounts such as a few cents of
  * spend still fill the chart. With nothing above zero it falls back to [ChartText.scaleMax], so it is never zero.
  */
-internal fun scaleOf(values: List<Float>): Float {
+fun scaleOf(values: List<Float>): Float {
     val top = values.maxOrNull() ?: 0f
     return if (top > 0f) top else ChartText.scaleMax(values)
 }
 
 /** A value a chart can draw: finite and not below zero. */
-internal fun plottable(value: Float?): Float = if (value != null && value.isFinite() && value > 0f) value else 0f
+fun plottable(value: Float?): Float = if (value != null && value.isFinite() && value > 0f) value else 0f
 
 /** Per-item progress for a left-to-right wave: item [i] of [n] starts a little after the one before it. */
-internal fun stagger(p: Float, i: Int, n: Int): Float =
+fun stagger(p: Float, i: Int, n: Int): Float =
     if (n <= 1) p else ((p - 0.3f * i / (n - 1)) / 0.7f).coerceIn(0f, 1f)
 
 /** Short number for a label: `7`, `42`, `1.2k`, `15k`, `0.034`. */
-internal fun compact(value: Float): String {
+fun compact(value: Float): String {
     val v = plottable(value)
     return when {
         v >= 9_950f -> "${(v / 1000).roundToInt()}k"
@@ -181,11 +181,11 @@ private fun oneDecimal(v: Float): String {
 }
 
 /** The drawing area: [top] reserved above, a label row below, [side] on the left and right. */
-internal fun CacheDrawScope.plotArea(top: Float, labelHeight: Float, side: Float): Rect =
+fun CacheDrawScope.plotArea(top: Float, labelHeight: Float, side: Float): Rect =
     Rect(side, top, size.width - side, (size.height - labelHeight - 6.dp.toPx()).coerceAtLeast(top))
 
 /** Faint dashed lines at the top and middle of the scale, and a solid baseline, across the full width. */
-internal fun DrawScope.drawGrid(plot: Rect, color: Color) {
+fun DrawScope.drawGrid(plot: Rect, color: Color) {
     val stroke = 1.dp.toPx()
     val dash = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx()))
     val faint = color.copy(alpha = color.alpha * 0.6f)
@@ -200,7 +200,7 @@ internal fun DrawScope.drawGrid(plot: Rect, color: Color) {
  * between points, counting back from the last so the newest always shows, and drops any that would still overlap
  * (in practice only the oldest, when it is nudged in from the left edge).
  */
-internal fun CacheDrawScope.axisLabels(
+fun CacheDrawScope.axisLabels(
     measurer: TextMeasurer,
     labels: List<String>,
     count: Int,

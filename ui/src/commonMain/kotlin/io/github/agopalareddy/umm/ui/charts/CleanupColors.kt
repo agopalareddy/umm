@@ -11,7 +11,7 @@ import androidx.compose.ui.graphics.luminance
  * tertiary and error are near-identical pale tints, and error red would read the top level as bad. RAW is a
  * neutral grey; the others are blue, green and amber, spread in hue so no two are close in any theme.
  */
-internal object CleanupColors {
+object CleanupColors {
     private val onLight = listOf(Color(0xFF757575), Color(0xFF1E6FD9), Color(0xFF1E8E5A), Color(0xFFD98200))
     private val onDark = listOf(Color(0xFF8A8A8A), Color(0xFF64A8FF), Color(0xFF4DD08C), Color(0xFFFFB74D))
 

@@ -8,7 +8,7 @@ import kotlin.math.sqrt
  * Measured on a Pixel 9 Pro: a quiet room reads about 60-110 and speech about 250-550, so a linear scale would
  * barely move. Below [FLOOR] is treated as silence; the square root lifts normal speech into a visible range.
  */
-internal object VoiceLevel {
+object VoiceLevel {
     const val FLOOR = 120
     const val CEIL = 1600
 

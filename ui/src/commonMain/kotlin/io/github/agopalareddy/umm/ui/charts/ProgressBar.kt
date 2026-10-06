@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 
 /** A rounded track filled to [progress] (0 to 1; anything else is clamped, and not-a-number counts as 0). */
 @Composable
-internal fun ProgressBar(progress: Float, description: String, modifier: Modifier = Modifier) {
+fun ProgressBar(progress: Float, description: String, modifier: Modifier = Modifier) {
     val fraction = if (progress.isFinite()) progress.coerceIn(0f, 1f) else 0f
     val drawIn = rememberDrawIn(fraction)
     val scheme = MaterialTheme.colorScheme
@@ -42,7 +42,7 @@ internal fun ProgressBar(progress: Float, description: String, modifier: Modifie
  * A pill-shaped [track] across the whole area with a fill of [fraction] of its width. Any fraction above zero
  * shows at least a dot, so a small share is still visible.
  */
-internal fun DrawScope.drawTrack(fraction: Float, track: Color, fill: (width: Float) -> Brush) {
+fun DrawScope.drawTrack(fraction: Float, track: Color, fill: (width: Float) -> Brush) {
     val radius = CornerRadius(size.height / 2)
     drawRoundRect(track, cornerRadius = radius)
     if (fraction <= 0f) return

@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import io.github.agopalareddy.umm.ProvideUmm
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -65,7 +66,7 @@ class UmmInputMethodService : InputMethodService(), LifecycleOwner, SavedStateRe
         return ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@UmmInputMethodService)
             setViewTreeSavedStateRegistryOwner(this@UmmInputMethodService)
-            setContent { KeyboardPanel(this@UmmInputMethodService) }
+            setContent { ProvideUmm { KeyboardPanel(this@UmmInputMethodService) } }
         }
     }
 

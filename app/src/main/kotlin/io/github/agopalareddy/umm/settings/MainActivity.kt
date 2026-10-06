@@ -29,6 +29,7 @@ import androidx.navigation.compose.rememberNavController
 import io.github.agopalareddy.umm.auth.SignInLauncher
 import io.github.agopalareddy.umm.bubble.BubbleSetup
 import io.github.agopalareddy.umm.core.data.UmmSettings
+import io.github.agopalareddy.umm.ProvideUmm
 import io.github.agopalareddy.umm.graph
 import io.github.agopalareddy.umm.ui.UmmTheme
 import io.github.agopalareddy.umm.ui.isUmmDark
@@ -62,14 +63,16 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) consumeBubblePageRequest(intent)
         enableEdgeToEdge()
         setContent {
-            // Status and navigation bar icons follow the app's theme, not the phone's.
-            val dark = isUmmDark()
-            LaunchedEffect(dark) {
-                val style = if (dark) SystemBarStyle.dark(Color.TRANSPARENT) else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
-                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
-            }
-            UmmTheme {
-                Surface(Modifier.fillMaxSize()) { App() }
+            ProvideUmm {
+                // Status and navigation bar icons follow the app's theme, not the phone's.
+                val dark = isUmmDark()
+                LaunchedEffect(dark) {
+                    val style = if (dark) SystemBarStyle.dark(Color.TRANSPARENT) else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+                    enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                }
+                UmmTheme {
+                    Surface(Modifier.fillMaxSize()) { App() }
+                }
             }
         }
     }

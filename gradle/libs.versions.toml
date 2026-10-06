@@ -19,6 +19,11 @@ androidxTestCore = "1.7.0"
 turbine = "1.2.1"
 materialIcons = "1.7.8"
 sqlite = "2.7.1"
+composeMultiplatform = "1.12.1"
+jbNavigation = "2.9.2"
+jbLifecycle = "2.11.0"
+jbMaterial3 = "1.9.0"
+jbMaterialIcons = "1.7.3"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -48,6 +53,14 @@ junit = { module = "junit:junit", version.ref = "junit" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
 turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
+jb-compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "composeMultiplatform" }
+jb-compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "composeMultiplatform" }
+jb-compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
+jb-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "jbMaterial3" }
+jb-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "jbMaterialIcons" }
+jb-navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-compose", version.ref = "jbNavigation" }
+jb-lifecycle-runtime-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "jbLifecycle" }
+kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -59,3 +72,4 @@ kotlin-compose ={ id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kot
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 room = { id = "androidx.room", version.ref = "room" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }

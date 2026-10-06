@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-internal data class DonutSlice(val label: String, val value: Float)
+data class DonutSlice(val label: String, val value: Float)
 
 private class Arc(val label: String, val value: Float, val color: Color)
 
@@ -40,7 +40,7 @@ private class Arc(val label: String, val value: Float, val color: Color)
  * the empty ring is drawn.
  */
 @Composable
-internal fun Donut(slices: List<DonutSlice>, description: String, modifier: Modifier = Modifier) {
+fun Donut(slices: List<DonutSlice>, description: String, modifier: Modifier = Modifier) {
     val drawIn = rememberDrawIn(slices)
     val scheme = MaterialTheme.colorScheme
     val palette = CleanupColors.palette(scheme)

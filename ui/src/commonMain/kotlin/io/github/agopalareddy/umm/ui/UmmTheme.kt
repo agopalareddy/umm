@@ -1,20 +1,15 @@
 package io.github.agopalareddy.umm.ui
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.agopalareddy.umm.core.data.ThemeMode
 import io.github.agopalareddy.umm.core.data.UmmSettings
-import io.github.agopalareddy.umm.graph
 
 // Brand colors, used when wallpaper colors are off or unavailable (before Android 12). Matches the launcher icon.
 private val LightBrand = lightColorScheme(
@@ -46,14 +41,14 @@ private val DarkBrand = darkColorScheme(
 /** The app and keyboard theme, following the user's Appearance settings. */
 @Composable
 fun UmmTheme(content: @Composable () -> Unit) {
-    val settings by LocalContext.current.graph.settings.settings.collectAsStateWithLifecycle(UmmSettings())
+    val settings by LocalUmm.current.settings.settings.collectAsStateWithLifecycle(UmmSettings())
     UmmTheme(settings.themeMode, settings.dynamicColor, content)
 }
 
 /** Whether the app is dark, which can differ from the phone when the user picks Light or Dark. */
 @Composable
 fun isUmmDark(): Boolean {
-    val settings by LocalContext.current.graph.settings.settings.collectAsStateWithLifecycle(UmmSettings())
+    val settings by LocalUmm.current.settings.settings.collectAsStateWithLifecycle(UmmSettings())
     return isDark(settings.themeMode)
 }
 
@@ -67,12 +62,7 @@ private fun isDark(mode: ThemeMode) = when (mode) {
 @Composable
 fun UmmTheme(mode: ThemeMode, dynamicColor: Boolean, content: @Composable () -> Unit) {
     val dark = isDark(mode)
-    val context = LocalContext.current
-    val colors = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-            if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        dark -> DarkBrand
-        else -> LightBrand
-    }
+    val dynamic = if (dynamicColor) LocalUmm.current.platform.dynamicColors(dark) else null
+    val colors = dynamic ?: if (dark) DarkBrand else LightBrand
     MaterialTheme(colorScheme = colors, content = content)
 }

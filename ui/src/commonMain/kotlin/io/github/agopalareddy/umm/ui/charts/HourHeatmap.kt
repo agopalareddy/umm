@@ -1,6 +1,5 @@
 package io.github.agopalareddy.umm.ui.charts
 
-import android.text.format.DateFormat
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -11,7 +10,6 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.drawText
@@ -19,6 +17,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import java.time.DayOfWeek
 import java.time.format.TextStyle
+import io.github.agopalareddy.umm.ui.LocalUmm
 import java.util.Locale
 import kotlin.math.min
 
@@ -28,12 +27,12 @@ import kotlin.math.min
  * busiest hour's. A missing weekday or hour counts as zero, so a short or empty grid still draws an empty week.
  */
 @Composable
-internal fun HourHeatmap(grid: List<List<Int>>, description: String, modifier: Modifier = Modifier) {
+fun HourHeatmap(grid: List<List<Int>>, description: String, modifier: Modifier = Modifier) {
     val progress = rememberDrawIn(grid)
     val scheme = MaterialTheme.colorScheme
     val measurer = rememberTextMeasurer()
     val labelStyle = MaterialTheme.typography.labelSmall.copy(color = scheme.onSurfaceVariant)
-    val clock24 = DateFormat.is24HourFormat(LocalContext.current)
+    val clock24 = LocalUmm.current.platform.is24HourClock()
 
     Spacer(
         modifier.fillMaxWidth().height(HOUR_HEATMAP_HEIGHT)

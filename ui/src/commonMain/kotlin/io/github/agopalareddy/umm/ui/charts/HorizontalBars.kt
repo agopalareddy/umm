@@ -21,11 +21,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /** One labelled row with an optional [sublabel] and its [valueText]; the bar under it is the value's share. */
-internal data class BarItem(val label: String, val value: Float, val valueText: String, val sublabel: String? = null)
+data class BarItem(val label: String, val value: Float, val valueText: String, val sublabel: String? = null)
 
 /** A ranked list: each item's label and value, with a bar scaled to the largest value. */
 @Composable
-internal fun HorizontalBars(items: List<BarItem>, description: String, modifier: Modifier = Modifier) {
+fun HorizontalBars(items: List<BarItem>, description: String, modifier: Modifier = Modifier) {
     val drawIn = rememberDrawIn(items)
     val scheme = MaterialTheme.colorScheme
     val max = scaleOf(items.map { plottable(it.value) })

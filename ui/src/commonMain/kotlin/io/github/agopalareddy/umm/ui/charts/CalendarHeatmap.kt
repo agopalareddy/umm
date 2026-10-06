@@ -37,7 +37,7 @@ import kotlin.math.roundToInt
  * ringed. With no days it draws 12 empty weeks.
  */
 @Composable
-internal fun CalendarHeatmap(days: List<CalendarDay>, description: String, modifier: Modifier = Modifier) {
+fun CalendarHeatmap(days: List<CalendarDay>, description: String, modifier: Modifier = Modifier) {
     val progress = rememberDrawIn(days)
     val scheme = MaterialTheme.colorScheme
     val measurer = rememberTextMeasurer()
@@ -137,7 +137,7 @@ private val MAX_PITCH = 32.dp
  * One heatmap cell: a faint rounded [track] over the whole cell and, for a [level] above zero (up to 1), a centered
  * block of [color] whose size and strength both grow with the level, so levels differ by more than color alone.
  */
-internal fun DrawScope.drawHeatCell(topLeft: Offset, size: Size, level: Float, color: Color, track: Color, corner: CornerRadius) {
+fun DrawScope.drawHeatCell(topLeft: Offset, size: Size, level: Float, color: Color, track: Color, corner: CornerRadius) {
     drawRoundRect(track, topLeft, size, corner)
     if (level <= 0f) return
     val l = level.coerceAtMost(1f)

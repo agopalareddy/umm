@@ -1,8 +1,7 @@
 package io.github.agopalareddy.umm.ui.charts
 
-import android.provider.Settings
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import io.github.agopalareddy.umm.ui.LocalUmm
 
 /**
  * False when the system animation scale is 0 ("remove animations"), so charts
@@ -10,7 +9,4 @@ import androidx.compose.ui.platform.LocalContext
  * a change made while the screen is open shows up on the next recomposition.
  */
 @Composable
-fun rememberMotionEnabled(): Boolean {
-    val resolver = LocalContext.current.contentResolver
-    return Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
-}
+fun rememberMotionEnabled(): Boolean = LocalUmm.current.platform.animationsEnabled()

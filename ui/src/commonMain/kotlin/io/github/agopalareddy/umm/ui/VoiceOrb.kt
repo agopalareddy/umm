@@ -53,7 +53,7 @@ import io.github.agopalareddy.umm.core.pipeline.DictationState
  * "Record until I finish" action still call [onClick] and [onDoubleClick].
  */
 @Composable
-internal fun VoiceOrb(
+fun VoiceOrb(
     state: DictationState,
     onClick: () -> Unit,
     onDoubleClick: () -> Unit,

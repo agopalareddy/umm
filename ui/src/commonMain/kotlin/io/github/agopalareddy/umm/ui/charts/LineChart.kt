@@ -29,7 +29,7 @@ import kotlin.math.sqrt
  * has no value axis.
  */
 @Composable
-internal fun LineChart(
+fun LineChart(
     values: List<Float?>,
     labels: List<String>,
     description: String,
