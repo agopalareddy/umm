@@ -26,7 +26,7 @@ import java.util.Locale
 
 /** Dollars per day, then the range's total, the cost of one dictation, and the projected month. */
 @Composable
-internal fun SpendPerDayCard(ctx: CardContext) {
+fun SpendPerDayCard(ctx: CardContext) {
     val costs = ctx.stats.costs
     if (costs.totalUsd <= 0.0) return NothingHere("No spend in this range.")
     val days = ctx.stats.period.days
@@ -50,7 +50,7 @@ internal fun SpendPerDayCard(ctx: CardContext) {
 
 /** Spend under each speech model and each cleanup model, biggest first. */
 @Composable
-internal fun SpendByModelCard(ctx: CardContext) {
+fun SpendByModelCard(ctx: CardContext) {
     val costs = ctx.stats.costs
     if (costs.totalUsd <= 0.0) return NothingHere("No spend in this range.")
     ModelList("Speech models", costs.bySttModel)
@@ -84,7 +84,7 @@ private fun ModelList(title: String, models: List<ModelSpend>) {
  * so a hidden card costs no network call.
  */
 @Composable
-internal fun BudgetCard(ctx: CardContext) {
+fun BudgetCard(ctx: CardContext) {
     val check = rememberKeyCheck(ctx.key)
     when {
         ctx.key == null -> NothingHere("Connect your OpenRouter account in Settings to see its spending limit.")

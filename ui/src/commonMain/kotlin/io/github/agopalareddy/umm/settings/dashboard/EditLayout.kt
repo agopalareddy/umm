@@ -26,7 +26,7 @@ import io.github.agopalareddy.umm.core.stats.Layout as CardLayout
 import io.github.agopalareddy.umm.settings.SwitchRow
 
 /** The changes Edit mode makes to a layout, apart from how they are drawn. */
-internal object LayoutEdit {
+object LayoutEdit {
     /** What *Reset layout* saves: nothing, which reads back as the default order with every card shown. */
     val RESET_ORDER: List<String> = emptyList()
     val RESET_HIDDEN: Set<String> = emptySet()
@@ -64,7 +64,7 @@ internal object LayoutEdit {
  * sends both empty.
  */
 @Composable
-internal fun EditLayout(layout: CardLayout, onEdit: ((CardLayout) -> CardLayout) -> Unit, onDone: () -> Unit) {
+fun EditLayout(layout: CardLayout, onEdit: ((CardLayout) -> CardLayout) -> Unit, onDone: () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
         layout.order.forEach { id ->
             val title = Cards.byId[id]?.title ?: id

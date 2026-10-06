@@ -16,22 +16,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.github.agopalareddy.umm.BuildConfig
 import io.github.agopalareddy.umm.core.data.UmmSettings
-import io.github.agopalareddy.umm.graph
-import io.github.agopalareddy.umm.settings.dashboard.SampleData
+import io.github.agopalareddy.umm.ui.LocalUmm
 import kotlinx.coroutines.launch
 
 /** Summary shown on the Settings row. */
-internal fun UmmSettings.statsSummary() =
+fun UmmSettings.statsSummary() =
     (if (statsVisible) "Shown" else "Hidden") + " · " + (if (statsRecording) "Recording" else "Paused")
 
+/** Debug-build tools for filling the dashboard with made-up dictations and removing them again. */
+class SampleDataActions(val load: suspend () -> Unit, val remove: suspend () -> Unit)
+
+/** [sampleData] is null in release builds, which hides the row count and the sample-data buttons. */
 @Composable
-internal fun StatsPage(settings: UmmSettings, onBack: () -> Unit, onChange: SettingsChange) {
-    val graph = LocalContext.current.graph
+fun StatsPage(settings: UmmSettings, onBack: () -> Unit, onChange: SettingsChange, sampleData: SampleDataActions? = null) {
+    val stats = LocalUmm.current.stats
     val scope = rememberCoroutineScope()
     var confirmDelete by remember { mutableStateOf(false) }
     Page("Stats", onBack) {
@@ -48,18 +49,18 @@ internal fun StatsPage(settings: UmmSettings, onBack: () -> Unit, onChange: Sett
             Text("Off stops new rows being saved. Existing stats stay. History is not affected.", style = MaterialTheme.typography.bodySmall)
         }
         Section("Data") {
-            if (BuildConfig.DEBUG) {
-                val count by graph.stats.observeAll().collectAsStateWithLifecycle(emptyList())
+            if (sampleData != null) {
+                val count by stats.observeAll().collectAsStateWithLifecycle(emptyList())
                 Text("${count.size} dictations recorded", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(8.dp))
             }
             OutlinedButton(onClick = { confirmDelete = true }) { Text("Delete stats data") }
-            if (BuildConfig.DEBUG) {
+            if (sampleData != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { scope.launch { SampleData.seed(graph.database, System.currentTimeMillis()) } }) {
+                    OutlinedButton(onClick = { scope.launch { sampleData.load() } }) {
                         Text("Load sample data")
                     }
-                    OutlinedButton(onClick = { scope.launch { SampleData.remove(graph.stats) } }) { Text("Remove sample data") }
+                    OutlinedButton(onClick = { scope.launch { sampleData.remove() } }) { Text("Remove sample data") }
                 }
             }
         }
@@ -69,7 +70,7 @@ internal fun StatsPage(settings: UmmSettings, onBack: () -> Unit, onChange: Sett
             onDismissRequest = { confirmDelete = false },
             title = { Text("Delete stats data?") },
             text = { Text("This removes every recorded dictation from Stats. Your History is not affected.") },
-            confirmButton = { TextButton(onClick = { confirmDelete = false; scope.launch { graph.stats.deleteAll() } }) { Text("Delete") } },
+            confirmButton = { TextButton(onClick = { confirmDelete = false; scope.launch { stats.deleteAll() } }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
         )
     }

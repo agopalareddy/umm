@@ -9,12 +9,12 @@ import io.github.agopalareddy.umm.core.stats.DashboardStats
 import java.util.Locale
 
 /** What a card draws from: the stats for [range], and the OpenRouter [key] for cards that look up the account. */
-internal class CardContext(val stats: DashboardStats, val range: DashboardRange, val key: String?)
+class CardContext(val stats: DashboardStats, val range: DashboardRange, val key: String?)
 
-internal class CardSpec(val id: String, val title: String, val content: @Composable (CardContext) -> Unit)
+class CardSpec(val id: String, val title: String, val content: @Composable (CardContext) -> Unit)
 
 /** Every dashboard card by ID; the IDs match `DashboardLayout.DEFAULT_ORDER`. */
-internal object Cards {
+object Cards {
     val byId: Map<String, CardSpec> = listOf(
         CardSpec("summary", "Summary") { SummaryCard(it) },
         CardSpec("streak_calendar", "Streak") { StreakCard(it) },
@@ -35,18 +35,18 @@ internal object Cards {
 
 /** Shown in place of a chart that has too little data to be worth drawing; the card keeps its title. */
 @Composable
-internal fun NeedsMoreDays() {
+fun NeedsMoreDays() {
     Text("Needs a few more days", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 /** A small explanatory line under a card's figures. */
 @Composable
-internal fun Footnote(text: String, modifier: Modifier = Modifier) {
+fun Footnote(text: String, modifier: Modifier = Modifier) {
     Text(text, modifier, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 /** Number, time and comparison wording shared by the cards. */
-internal object DashboardText {
+object DashboardText {
     fun count(n: Int): String = String.format(Locale.US, "%,d", n)
 
     fun days(n: Int): String = if (n == 1) "1 day" else "${count(n)} days"

@@ -32,7 +32,7 @@ import io.github.agopalareddy.umm.ui.charts.ProgressBar
 
 /** Words, time saved and dictations for the range, each against the period before it (none for all time). */
 @Composable
-internal fun SummaryCard(ctx: CardContext) {
+fun SummaryCard(ctx: CardContext) {
     val now = ctx.stats.period.current
     val before = ctx.stats.period.previous
     val compared = before != null
@@ -60,7 +60,7 @@ internal fun SummaryCard(ctx: CardContext) {
 
 /** Current and best streak, then the last 12 weeks as a calendar. Ignores the range. */
 @Composable
-internal fun StreakCard(ctx: CardContext) {
+fun StreakCard(ctx: CardContext) {
     val e = ctx.stats.engagement
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Figure("Current streak", DashboardText.days(e.currentStreak), modifier = Modifier.weight(1f))
@@ -73,7 +73,7 @@ internal fun StreakCard(ctx: CardContext) {
 
 /** Earned badges as chips, then progress toward the closest one not yet earned. Lifetime. */
 @Composable
-internal fun MilestonesCard(ctx: CardContext) {
+fun MilestonesCard(ctx: CardContext) {
     val e = ctx.stats.engagement
     val earned = e.badges.filter { it.earned }
     Text("${earned.size} of ${e.badges.size} earned", style = MaterialTheme.typography.bodyMedium)
@@ -118,7 +118,7 @@ private fun BadgeChip(label: String) {
 
 /** Umms removed, words as a share of a novel, and typing time avoided. Lifetime. */
 @Composable
-internal fun FunFactsCard(ctx: CardContext) {
+fun FunFactsCard(ctx: CardContext) {
     val e = ctx.stats.engagement
     Fact("Umms removed", DashboardText.count(e.fillersRemoved))
     Fact("Words dictated", DashboardText.novelShare(e.novelShare))
@@ -128,7 +128,7 @@ internal fun FunFactsCard(ctx: CardContext) {
 
 /** A label with its value at the end of the row; TalkBack reads the pair as one item. */
 @Composable
-internal fun Fact(label: String, value: String) {
+fun Fact(label: String, value: String) {
     Row(
         Modifier.fillMaxWidth().padding(vertical = 6.dp).semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically,

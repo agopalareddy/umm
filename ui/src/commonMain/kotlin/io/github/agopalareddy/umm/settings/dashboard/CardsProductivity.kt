@@ -22,13 +22,13 @@ private const val MIN_LINE_DAYS = 3
 
 /** Shown in place of a chart when the range holds nothing to draw; the card keeps its title. */
 @Composable
-internal fun NothingHere(text: String) {
+fun NothingHere(text: String) {
     Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 /** Words per day (per Monday-start week for 90 days and All), with the previous period faint behind. */
 @Composable
-internal fun WordsPerDayCard(ctx: CardContext) {
+fun WordsPerDayCard(ctx: CardContext) {
     val period = ctx.stats.period
     if (period.current.words == 0) return NothingHere("No words in this range.")
     val weekly = ctx.range == DashboardRange.D90 || ctx.range == DashboardRange.ALL
@@ -58,7 +58,7 @@ internal fun WordsPerDayCard(ctx: CardContext) {
 
 /** Time saved, adding up day by day across the range. */
 @Composable
-internal fun TimeSavedCard(ctx: CardContext) {
+fun TimeSavedCard(ctx: CardContext) {
     val period = ctx.stats.period
     if (period.days.size < MIN_LINE_DAYS) return NeedsMoreDays()
     if (period.current.timeSavedMs == 0L) return NothingHere("No time saved in this range.")
@@ -77,7 +77,7 @@ internal fun TimeSavedCard(ctx: CardContext) {
 
 /** Words per minute over time, with the average. Only dictations with 2 s or more of audio count. */
 @Composable
-internal fun SpeakingPaceCard(ctx: CardContext) {
+fun SpeakingPaceCard(ctx: CardContext) {
     val period = ctx.stats.period
     val average = period.averageWpm
     if (average == null || Series.paceDays(period.days) < MIN_LINE_DAYS) return NeedsMoreDays()

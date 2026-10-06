@@ -21,7 +21,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -30,7 +29,7 @@ import io.github.agopalareddy.umm.core.data.UmmSettings
 import io.github.agopalareddy.umm.core.stats.DashboardLayout
 import io.github.agopalareddy.umm.core.stats.DashboardRange
 import io.github.agopalareddy.umm.core.stats.DashboardStats
-import io.github.agopalareddy.umm.graph
+import io.github.agopalareddy.umm.ui.LocalUmm
 import io.github.agopalareddy.umm.settings.SettingsChange
 
 /**
@@ -39,7 +38,7 @@ import io.github.agopalareddy.umm.settings.SettingsChange
  * succeeds.
  */
 @Composable
-internal fun Dashboard(stats: DashboardStats?, settings: UmmSettings, onChange: SettingsChange) {
+fun Dashboard(stats: DashboardStats?, settings: UmmSettings, onChange: SettingsChange) {
     // Kept above the early returns, so a stats reload does not close Edit mode.
     var editing by rememberSaveable { mutableStateOf(false) }
     if (stats == null) return
@@ -48,7 +47,7 @@ internal fun Dashboard(stats: DashboardStats?, settings: UmmSettings, onChange: 
         Text(message, style = MaterialTheme.typography.bodyLarge)
         return
     }
-    val apiKey = LocalContext.current.graph.apiKeyStore.key.collectAsStateWithLifecycle().value
+    val apiKey = LocalUmm.current.apiKeyStore.key.collectAsStateWithLifecycle().value
     val layout = remember(settings.dashboardOrder, settings.dashboardHidden) {
         DashboardLayout.merge(settings.dashboardOrder, settings.dashboardHidden)
     }

@@ -1,6 +1,5 @@
 package io.github.agopalareddy.umm.settings.dashboard
 
-import android.text.format.DateFormat
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -10,15 +9,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.data.Category
 import io.github.agopalareddy.umm.core.stats.DashboardRange
-import io.github.agopalareddy.umm.graph
-import io.github.agopalareddy.umm.settings.appLabel
+import io.github.agopalareddy.umm.ui.LocalUmm
 import io.github.agopalareddy.umm.settings.title
 import io.github.agopalareddy.umm.ui.charts.BarItem
 import io.github.agopalareddy.umm.ui.charts.Donut
@@ -34,26 +31,26 @@ private const val MIN_TREND_DAYS = 3
 
 /** The week as an hour grid: bolder cells are hours with more dictations. */
 @Composable
-internal fun WhenYouDictateCard(ctx: CardContext) {
+fun WhenYouDictateCard(ctx: CardContext) {
     val grid = ctx.stats.habits.hourGrid
     if (grid.none { day -> day.any { it > 0 } }) return NothingHere("No dictations in this range.")
-    val clock24 = DateFormat.is24HourFormat(LocalContext.current)
+    val clock24 = LocalUmm.current.platform.is24HourClock()
     HourHeatmap(grid, remember(grid, ctx.range, clock24) { Series.hourDescription(grid, ctx.range, clock24) })
     Footnote("Dictations by hour and weekday, in your local time. Bolder cells are busier.", Modifier.padding(top = 8.dp))
 }
 
 /** The apps dictated into most, each with the category it is filed under. */
 @Composable
-internal fun WhereYouDictateCard(ctx: CardContext) {
+fun WhereYouDictateCard(ctx: CardContext) {
     val apps = ctx.stats.habits.topApps
     if (apps.isEmpty()) return NothingHere("No dictations in this range.")
-    val context = LocalContext.current
-    val categories = context.graph.categories
+    val umm = LocalUmm.current
+    val categories = umm.categories
     // The lookup is a database read, so the rows show without a category until it lands.
     val categoryOf by produceState(emptyMap<String, Category>(), apps) {
         value = apps.associate { it.packageName to categories.configFor(it.packageName).category }
     }
-    val labels = remember(apps) { apps.map { appLabel(context, it.packageName) } }
+    val labels = remember(apps) { apps.map { umm.platform.appLabel(it.packageName) } }
     val items = apps.mapIndexed { i, app ->
         BarItem(
             label = labels[i],
@@ -75,7 +72,7 @@ internal fun WhereYouDictateCard(ctx: CardContext) {
 
 /** How many dictations used each cleanup level. */
 @Composable
-internal fun CleanupLevelsCard(ctx: CardContext) {
+fun CleanupLevelsCard(ctx: CardContext) {
     val counts = ctx.stats.habits.levelCounts
     if (counts.values.all { it <= 0 }) return NothingHere("No dictations in this range.")
     // All four levels go in, so each keeps its color; the donut leaves out the ones with none.
@@ -90,7 +87,7 @@ internal fun CleanupLevelsCard(ctx: CardContext) {
 
 /** The share of attempts that succeeded, then how long each dictation waited, day by day. */
 @Composable
-internal fun ReliabilityCard(ctx: CardContext) {
+fun ReliabilityCard(ctx: CardContext) {
     val habits = ctx.stats.habits
     val rate = habits.successRate ?: return NothingHere("No dictations in this range.")
     Fact("Success rate", Series.percent(rate))

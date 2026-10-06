@@ -21,7 +21,7 @@ import kotlin.math.roundToInt
  * [starts] holds each bar's day, or the Monday of its week. [partial] marks the weeks the range cuts short (the
  * first, and the latest while it is still under way); it is all false for daily bars.
  */
-internal class WordBars(
+class WordBars(
     val starts: List<LocalDate>,
     val words: List<Int>,
     val previous: List<Int>?,
@@ -30,10 +30,10 @@ internal class WordBars(
 )
 
 /** An app in the top-apps list: its label, the title of its category when known, and its dictation count. */
-internal class AppUse(val label: String, val category: String?, val dictations: Int)
+class AppUse(val label: String, val category: String?, val dictations: Int)
 
 /** The numbers and TalkBack sentences behind the productivity and cost cards. */
-internal object Series {
+object Series {
     /** Index ranges of [days] grouped into weeks that start on Monday; the first and last week may be partial. */
     fun weeks(days: List<DayStat>): List<IntRange> {
         val weeks = mutableListOf<IntRange>()
@@ -184,7 +184,7 @@ internal object Series {
 }
 
 /** A key's spending limit and how much of it is used, from what OpenRouter reports. */
-internal class BudgetUse private constructor(val limit: Double, val used: Double?, val reset: String?) {
+class BudgetUse private constructor(val limit: Double, val used: Double?, val reset: String?) {
     /** Share of the limit used, clamped to 0..1; null when the use is unknown. */
     val fraction: Float? get() = used?.let { (it / limit).toFloat().coerceIn(0f, 1f) }
 

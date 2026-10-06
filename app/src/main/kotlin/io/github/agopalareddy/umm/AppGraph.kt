@@ -138,5 +138,8 @@ fun AppGraph.services(context: Context) = UmmServices(
     dataPolicy = dataPolicy,
     modelCatalog = modelCatalog,
     recommendations = recommendations,
+    openRouter = openRouter,
+    lazyPipeline = lazy { pipeline },
+    modelPlan = ::modelPlan,
     platform = AndroidPlatform(context),
 )

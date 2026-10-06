@@ -139,5 +139,4 @@ internal fun appLabel(context: android.content.Context, pkg: String): String = r
     pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
 }.getOrDefault(pkg)
 
-internal fun Category.title() = name.lowercase().replaceFirstChar { it.uppercase() }
 internal fun ScriptPreference.title() = name.lowercase().replaceFirstChar { it.uppercase() }

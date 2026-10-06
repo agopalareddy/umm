@@ -59,8 +59,6 @@ import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.data.ThemeMode
 import io.github.agopalareddy.umm.core.data.UmmSettings
 
-internal typealias SettingsChange = ((UmmSettings) -> UmmSettings) -> Unit
-
 @Composable
 internal fun SettingsHome(settings: UmmSettings, keyConnected: Boolean, onBack: () -> Unit, onOpen: (String) -> Unit) {
     Page("Settings", onBack) {
@@ -130,32 +128,6 @@ internal fun AccountPage(onBack: () -> Unit, onConnect: () -> Unit, onPasteKey: 
 internal const val OPENROUTER_KEYS_URL = "https://openrouter.ai/settings/keys"
 internal const val PRIVACY_POLICY_URL = "https://agopalareddy.github.io/umm/privacy/"
 
-internal sealed interface KeyCheck {
-    data object Checking : KeyCheck
-    data class Ok(val info: KeyInfo) : KeyCheck
-    data object Rejected : KeyCheck
-    data object Unreachable : KeyCheck
-}
-
-/** What OpenRouter says about [key] right now. */
-@Composable
-internal fun rememberKeyCheck(key: String?): KeyCheck {
-    val graph = LocalContext.current.graph
-    val check by produceState<KeyCheck>(KeyCheck.Checking, key) {
-        value = KeyCheck.Checking
-        if (key != null) {
-            value = try {
-                KeyCheck.Ok(graph.openRouter.keyInfo())
-            } catch (e: OpenRouterException.Unauthorized) {
-                KeyCheck.Rejected
-            } catch (e: OpenRouterException) {
-                KeyCheck.Unreachable
-            }
-        }
-    }
-    return check
-}
-
 /** Whether a key is set, how it was added, and what OpenRouter says about it. */
 @Composable
 internal fun ConnectionCard(key: String?, check: KeyCheck) {
@@ -224,9 +196,6 @@ private fun KeySource.label() = when (this) {
     KeySource.PASTED -> "API key you pasted"
     KeySource.DEVELOPER -> "Developer key (.env)"
 }
-
-internal fun usd(value: Double): String =
-    if (value != 0.0 && value < 0.01) "$%.4f".format(java.util.Locale.US, value) else "$%.2f".format(java.util.Locale.US, value)
 
 @Composable
 internal fun DictationPage(settings: UmmSettings, onBack: () -> Unit, onChange: SettingsChange) {

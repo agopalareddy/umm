@@ -15,6 +15,9 @@ interface Platform {
 
     /** Apps the user can assign to categories, excluding Umm itself. */
     fun installedApps(): List<AppEntry>
+
+    /** The display name of the app with [id], or [id] itself when unknown. */
+    fun appLabel(id: String): String
     fun is24HourClock(): Boolean
 
     /** False when the system asks for no animations, so charts draw their final state. */

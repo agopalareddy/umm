@@ -44,6 +44,11 @@ class AndroidPlatform(private val context: Context) : Platform {
             .sortedBy { it.label.lowercase() }
     }
 
+    override fun appLabel(id: String): String = runCatching {
+        val pm = context.packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(id, 0)).toString()
+    }.getOrDefault(id)
+
     override fun is24HourClock(): Boolean = DateFormat.is24HourFormat(context)
 
     override fun animationsEnabled(): Boolean =

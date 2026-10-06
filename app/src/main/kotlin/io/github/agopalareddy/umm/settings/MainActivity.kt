@@ -30,7 +30,9 @@ import io.github.agopalareddy.umm.auth.SignInLauncher
 import io.github.agopalareddy.umm.bubble.BubbleSetup
 import io.github.agopalareddy.umm.core.data.UmmSettings
 import io.github.agopalareddy.umm.ProvideUmm
+import io.github.agopalareddy.umm.BuildConfig
 import io.github.agopalareddy.umm.graph
+import io.github.agopalareddy.umm.settings.dashboard.SampleData
 import io.github.agopalareddy.umm.ui.UmmTheme
 import io.github.agopalareddy.umm.ui.isUmmDark
 import androidx.activity.SystemBarStyle
@@ -154,7 +156,17 @@ class MainActivity : ComponentActivity() {
             composable(Routes.BUBBLE) { BubblePage(settings, back, change) }
             composable(Routes.LANGUAGES) { LanguagesPage(settings, back, change) }
             composable(Routes.APPEARANCE) { AppearancePage(settings, back, change) }
-            composable(Routes.STATS) { StatsPage(settings, back, change) }
+            composable(Routes.STATS) {
+                val sampleData = if (BuildConfig.DEBUG) {
+                    SampleDataActions(
+                        load = { SampleData.seed(graph.database, System.currentTimeMillis()) },
+                        remove = { SampleData.remove(graph.stats) },
+                    )
+                } else {
+                    null
+                }
+                StatsPage(settings, back, change, sampleData)
+            }
             composable(Routes.CATEGORIES) { CategoriesScreen(back) }
             composable(Routes.MODELS) { ModelsScreen(back) }
             composable(Routes.HISTORY) { HistoryScreen(back) }

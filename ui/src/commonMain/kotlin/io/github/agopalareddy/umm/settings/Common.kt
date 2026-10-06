@@ -35,12 +35,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
+import io.github.agopalareddy.umm.core.data.Category
+import io.github.agopalareddy.umm.core.data.UmmSettings
 
-internal const val SUPPORT_EMAIL = "agr@agreddy.com"
-internal const val OPENROUTER_PRIVACY_URL = "https://openrouter.ai/settings/privacy"
+typealias SettingsChange = ((UmmSettings) -> UmmSettings) -> Unit
+
+fun usd(value: Double): String =
+    if (value != 0.0 && value < 0.01) "$%.4f".format(java.util.Locale.US, value) else "$%.2f".format(java.util.Locale.US, value)
+
+fun Category.title() = name.lowercase().replaceFirstChar { it.uppercase() }
+
+const val SUPPORT_EMAIL = "agr@agreddy.com"
+const val OPENROUTER_PRIVACY_URL = "https://openrouter.ai/settings/privacy"
 
 /** Languages offered for the default and the keyboard's language chip. */
-internal val LANGUAGES = linkedMapOf(
+val LANGUAGES = linkedMapOf(
     "auto" to "Auto-detect",
     "en" to "English",
     "hi" to "Hindi",
@@ -54,9 +63,9 @@ internal val LANGUAGES = linkedMapOf(
     "de" to "German",
 )
 
-internal fun CleanupLevel.title() = name.lowercase().replaceFirstChar { it.uppercase() }
+fun CleanupLevel.title() = name.lowercase().replaceFirstChar { it.uppercase() }
 
-internal fun CleanupLevel.description() = when (this) {
+fun CleanupLevel.description() = when (this) {
     CleanupLevel.RAW -> "Exactly what the transcription model heard"
     CleanupLevel.LIGHT -> "Removes filler and self-corrections, fixes punctuation"
     CleanupLevel.FORMATTED -> "Light, plus lists and paragraphs"
@@ -66,7 +75,7 @@ internal fun CleanupLevel.description() = when (this) {
 /** A full-screen page with a title bar and an optional back arrow. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun Page(
+fun Page(
     title: @Composable () -> Unit,
     onBack: (() -> Unit)?,
     actions: @Composable () -> Unit = {},
@@ -92,11 +101,11 @@ internal fun Page(
 }
 
 @Composable
-internal fun Page(title: String, onBack: (() -> Unit)?, scrollable: Boolean = true, content: @Composable ColumnScope.() -> Unit) =
+fun Page(title: String, onBack: (() -> Unit)?, scrollable: Boolean = true, content: @Composable ColumnScope.() -> Unit) =
     Page(title = { Text(title) }, onBack = onBack, scrollable = scrollable, content = content)
 
 @Composable
-internal fun Section(title: String, content: @Composable () -> Unit) {
+fun Section(title: String, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         content()
@@ -104,7 +113,7 @@ internal fun Section(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-internal fun NavRow(icon: ImageVector, title: String, summary: String?, onClick: () -> Unit) {
+fun NavRow(icon: ImageVector, title: String, summary: String?, onClick: () -> Unit) {
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = summary?.let { { Text(it) } },
@@ -117,7 +126,7 @@ internal fun NavRow(icon: ImageVector, title: String, summary: String?, onClick:
 
 /** [dimmed] grays the row out but keeps it tappable, so the caller can explain why the option won't work. */
 @Composable
-internal fun RadioRow(selected: Boolean, onClick: () -> Unit, dimmed: Boolean = false, content: @Composable RowScope.() -> Unit) {
+fun RadioRow(selected: Boolean, onClick: () -> Unit, dimmed: Boolean = false, content: @Composable RowScope.() -> Unit) {
     Row(
         Modifier.fillMaxWidth().selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
             .alpha(if (dimmed) 0.45f else 1f).padding(vertical = 4.dp),
@@ -130,7 +139,7 @@ internal fun RadioRow(selected: Boolean, onClick: () -> Unit, dimmed: Boolean = 
 }
 
 @Composable
-internal fun CheckRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit, content: @Composable RowScope.() -> Unit) {
+fun CheckRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit, content: @Composable RowScope.() -> Unit) {
     Row(
         Modifier.fillMaxWidth().toggleable(value = checked, onValueChange = onCheckedChange, role = Role.Checkbox).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -143,7 +152,7 @@ internal fun CheckRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit, cont
 
 /** [content] sits before the switch; give it Modifier.weight(1f). */
 @Composable
-internal fun SwitchRow(
+fun SwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean = true,
