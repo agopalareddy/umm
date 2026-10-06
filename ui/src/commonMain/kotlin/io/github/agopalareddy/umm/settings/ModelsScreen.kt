@@ -29,7 +29,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -41,25 +40,25 @@ import io.github.agopalareddy.umm.core.policy.ModelPlan
 import io.github.agopalareddy.umm.core.policy.Recommendation
 import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.draw.alpha
-import io.github.agopalareddy.umm.graph
+import io.github.agopalareddy.umm.ui.LocalUmm
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun ModelsScreen(onBack: () -> Unit) {
-    val graph = LocalContext.current.graph
+fun ModelsScreen(onBack: () -> Unit) {
+    val umm = LocalUmm.current
     val scope = rememberCoroutineScope()
-    val settings by graph.settings.settings.collectAsStateWithLifecycle(UmmSettings())
-    val zdr by remember { graph.dataPolicy.observe() }.collectAsStateWithLifecycle(null)
+    val settings by umm.settings.settings.collectAsStateWithLifecycle(UmmSettings())
+    val zdr by remember { umm.dataPolicy.observe() }.collectAsStateWithLifecycle(null)
     var plan by remember { mutableStateOf<ModelPlan?>(null) }
     var policy by remember { mutableStateOf<DataPolicy?>(null) }
     var rec by remember { mutableStateOf<Recommendation?>(null) }
     var newestStt by remember { mutableStateOf<String?>(null) }
     var warning by remember { mutableStateOf<ZdrWarning?>(null) }
     LaunchedEffect(settings, zdr) {
-        plan = runCatching { graph.modelPlan() }.getOrNull()
-        policy = runCatching { graph.dataPolicy.current() }.getOrNull()
-        rec = runCatching { graph.recommendations.current() }.getOrNull()
-        newestStt = graph.modelCatalog.sttModels()?.maxByOrNull { it.createdEpochSec }?.id
+        plan = runCatching { umm.modelPlan() }.getOrNull()
+        policy = runCatching { umm.dataPolicy.current() }.getOrNull()
+        rec = runCatching { umm.recommendations.current() }.getOrNull()
+        newestStt = umm.modelCatalog.sttModels()?.maxByOrNull { it.createdEpochSec }?.id
     }
     val account = policy
     val p = account?.withAppChoice(settings.zdrOnly)
@@ -69,8 +68,8 @@ internal fun ModelsScreen(onBack: () -> Unit) {
     fun turnZdrOff() {
         checking = true
         scope.launch {
-            val stillRequired = rec?.let { graph.dataPolicy.recheck(it) }
-            graph.settings.update { it.copy(zdrOnly = false) }
+            val stillRequired = rec?.let { umm.dataPolicy.recheck(it) }
+            umm.settings.update { it.copy(zdrOnly = false) }
             checking = false
             zdrDialog = when (stillRequired) {
                 true -> ZdrCheck.STILL_REQUIRED
@@ -92,7 +91,7 @@ internal fun ModelsScreen(onBack: () -> Unit) {
             checked = settings.zdrOnly || accountRequires,
             enabled = !checking,
             onCheckedChange = { on ->
-                if (on) scope.launch { graph.settings.update { it.copy(zdrOnly = true) } } else turnZdrOff()
+                if (on) scope.launch { umm.settings.update { it.copy(zdrOnly = true) } } else turnZdrOff()
             },
         ) {
             Column(Modifier.weight(1f)) {
@@ -113,7 +112,7 @@ internal fun ModelsScreen(onBack: () -> Unit) {
         )
         modes.forEach { (mode, label) ->
             val blocked = blockedModel(mode)
-            val choose = { scope.launch { graph.settings.update { it.copy(modelMode = mode) } }; Unit }
+            val choose = { scope.launch { umm.settings.update { it.copy(modelMode = mode) } }; Unit }
             RadioRow(
                 selected = settings.modelMode == mode,
                 dimmed = blocked != null,
@@ -131,12 +130,12 @@ internal fun ModelsScreen(onBack: () -> Unit) {
         }
         if (settings.modelMode == ModelMode.MANUAL) {
             val allows: (String) -> Boolean = { id -> p?.allows(id) ?: true }
-            ModelPicker("Speech-to-text model", settings.manualSttModel, allows, { graph.modelCatalog.sttModels() }) { id ->
-                val pick = { scope.launch { graph.settings.update { it.copy(manualSttModel = id) } }; Unit }
+            ModelPicker("Speech-to-text model", settings.manualSttModel, allows, { umm.modelCatalog.sttModels() }) { id ->
+                val pick = { scope.launch { umm.settings.update { it.copy(manualSttModel = id) } }; Unit }
                 if (allows(id)) pick() else warning = ZdrWarning(id, pick)
             }
-            ModelPicker("Cleanup model", settings.manualCleanupModel, allows, { graph.modelCatalog.chatModels() }) { id ->
-                val pick = { scope.launch { graph.settings.update { it.copy(manualCleanupModel = id) } }; Unit }
+            ModelPicker("Cleanup model", settings.manualCleanupModel, allows, { umm.modelCatalog.chatModels() }) { id ->
+                val pick = { scope.launch { umm.settings.update { it.copy(manualCleanupModel = id) } }; Unit }
                 if (allows(id)) pick() else warning = ZdrWarning(id, pick)
             }
         }
@@ -164,7 +163,7 @@ private enum class ZdrCheck { STILL_REQUIRED, UNREACHABLE }
 
 @Composable
 private fun ZdrStillRequired(check: ZdrCheck, onDismiss: () -> Unit) {
-    val context = LocalContext.current
+    val platform = LocalUmm.current.platform
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (check == ZdrCheck.STILL_REQUIRED) "Zero data retention is still on" else "Couldn't check") },
@@ -193,7 +192,7 @@ private fun ZdrStillRequired(check: ZdrCheck, onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(onClick = {
                 onDismiss()
-                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(OPENROUTER_PRIVACY_URL)))
+                platform.openUrl(OPENROUTER_PRIVACY_URL)
             }) { Text("Open OpenRouter settings") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("OK") } },

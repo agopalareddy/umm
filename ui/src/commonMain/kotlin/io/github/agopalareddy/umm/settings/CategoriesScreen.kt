@@ -1,6 +1,5 @@
 package io.github.agopalareddy.umm.settings
 
-import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,20 +27,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
 import io.github.agopalareddy.umm.core.data.Category
 import io.github.agopalareddy.umm.core.data.CategoryConfig
-import io.github.agopalareddy.umm.graph
+import io.github.agopalareddy.umm.ui.LocalUmm
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun CategoriesScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val repo = context.graph.categories
+fun CategoriesScreen(onBack: () -> Unit) {
+    val repo = LocalUmm.current.categories
     val configs by repo.observeAll().collectAsStateWithLifecycle(emptyList())
     var selected by remember { mutableStateOf<Category?>(null) }
 
@@ -61,8 +58,8 @@ internal fun CategoriesScreen(onBack: () -> Unit) {
 
 @Composable
 private fun CategoryDetail(config: CategoryConfig) {
-    val context = LocalContext.current
-    val repo = context.graph.categories
+    val umm = LocalUmm.current
+    val repo = umm.categories
     val scope = rememberCoroutineScope()
     var apps by remember { mutableStateOf(emptyList<String>()) }
     var refresh by remember { mutableStateOf(0) }
@@ -90,7 +87,7 @@ private fun CategoryDetail(config: CategoryConfig) {
             Text("Apps", style = MaterialTheme.typography.labelLarge)
             apps.forEach { pkg ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(appLabel(context, pkg), Modifier.weight(1f))
+                    Text(umm.platform.appLabel(pkg), Modifier.weight(1f))
                     TextButton(onClick = { scope.launch { repo.assign(pkg, Category.OTHER); refresh++ } }) { Text("Remove") }
                 }
             }
@@ -107,16 +104,9 @@ private fun CategoryDetail(config: CategoryConfig) {
 
 @Composable
 private fun AppPicker(onDismiss: () -> Unit, onPick: (String) -> Unit) {
-    val context = LocalContext.current
+    val platform = LocalUmm.current.platform
     var query by remember { mutableStateOf("") }
-    val apps = remember {
-        val pm = context.packageManager
-        pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
-            .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
-            .distinctBy { it.first }
-            .filter { it.first != context.packageName }
-            .sortedBy { it.second.lowercase() }
-    }
+    val apps = remember { platform.installedApps() }
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
@@ -125,7 +115,7 @@ private fun AppPicker(onDismiss: () -> Unit, onPick: (String) -> Unit) {
             Column {
                 OutlinedTextField(query, { query = it }, label = { Text("Search") }, singleLine = true)
                 LazyColumn(Modifier.heightIn(max = 400.dp)) {
-                    items(apps.filter { it.second.contains(query, ignoreCase = true) }, key = { it.first }) { (pkg, label) ->
+                    items(apps.filter { it.label.contains(query, ignoreCase = true) }, key = { it.id }) { (pkg, label) ->
                         Text(label, Modifier.fillMaxWidth().clickable { onPick(pkg) }.padding(vertical = 12.dp))
                     }
                 }
@@ -134,9 +124,4 @@ private fun AppPicker(onDismiss: () -> Unit, onPick: (String) -> Unit) {
     )
 }
 
-internal fun appLabel(context: android.content.Context, pkg: String): String = runCatching {
-    val pm = context.packageManager
-    pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
-}.getOrDefault(pkg)
-
-internal fun ScriptPreference.title() = name.lowercase().replaceFirstChar { it.uppercase() }
+fun ScriptPreference.title() = name.lowercase().replaceFirstChar { it.uppercase() }

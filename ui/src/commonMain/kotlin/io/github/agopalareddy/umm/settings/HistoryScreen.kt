@@ -1,9 +1,5 @@
 package io.github.agopalareddy.umm.settings
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.text.format.DateUtils
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,19 +23,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.data.HistoryItem
 import io.github.agopalareddy.umm.core.data.HistoryStatus
-import io.github.agopalareddy.umm.graph
+import io.github.agopalareddy.umm.ui.LocalUmm
+import io.github.agopalareddy.umm.ui.relativeTime
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun HistoryScreen(onBack: () -> Unit) {
-    val graph = LocalContext.current.graph
-    val items by graph.history.observeRecent().collectAsStateWithLifecycle(emptyList())
+fun HistoryScreen(onBack: () -> Unit) {
+    val history = LocalUmm.current.history
+    val items by history.observeRecent().collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
     var confirmClear by remember { mutableStateOf(false) }
 
@@ -57,7 +53,7 @@ internal fun HistoryScreen(onBack: () -> Unit) {
             onDismissRequest = { confirmClear = false },
             title = { Text("Clear all history?") },
             text = { Text("This deletes every saved dictation, including audio kept for retries.") },
-            confirmButton = { TextButton(onClick = { confirmClear = false; scope.launch { graph.history.clearAll() } }) { Text("Clear") } },
+            confirmButton = { TextButton(onClick = { confirmClear = false; scope.launch { history.clearAll() } }) { Text("Clear") } },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
         )
     }
@@ -65,8 +61,7 @@ internal fun HistoryScreen(onBack: () -> Unit) {
 
 @Composable
 private fun HistoryCard(item: HistoryItem) {
-    val context = LocalContext.current
-    val graph = context.graph
+    val umm = LocalUmm.current
     val scope = rememberCoroutineScope()
     var levelMenu by remember { mutableStateOf(false) }
     var reporting by remember { mutableStateOf(false) }
@@ -74,13 +69,13 @@ private fun HistoryCard(item: HistoryItem) {
     val text = item.cleanText ?: item.rawText
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
-            val time = DateUtils.getRelativeTimeSpanString(item.createdAt).toString()
-            Text("$time · ${appLabel(context, item.packageName)} · ${item.level.title()} · ${item.status.label()}", style = MaterialTheme.typography.bodySmall)
+            val time = relativeTime(item.createdAt, System.currentTimeMillis())
+            Text("$time · ${umm.platform.appLabel(item.packageName)} · ${item.level.title()} · ${item.status.label()}", style = MaterialTheme.typography.bodySmall)
             Text(text ?: "(not transcribed)", style = MaterialTheme.typography.bodyLarge)
             Row {
                 if (text != null) TextButton(onClick = {
-                    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Umm", text))
-                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                    umm.platform.copyText(text)
+                    umm.platform.showMessage("Copied")
                 }) { Text("Copy") }
                 if (item.rawText != null) Box {
                     TextButton(onClick = { levelMenu = true }) { Text("Re-clean") }
@@ -89,18 +84,18 @@ private fun HistoryCard(item: HistoryItem) {
                             DropdownMenuItem(text = { Text(level.title()) }, onClick = {
                                 levelMenu = false
                                 scope.launch {
-                                    runCatching { graph.pipeline.reclean(item.id, level, item.script) }
-                                        .onFailure { Toast.makeText(context, "Couldn't reach OpenRouter", Toast.LENGTH_SHORT).show() }
+                                    runCatching { umm.pipeline.reclean(item.id, level, item.script) }
+                                        .onFailure { umm.platform.showMessage("Couldn't reach OpenRouter") }
                                 }
                             })
                         }
                     }
                 }
                 if (item.status == HistoryStatus.FAILED && item.audioPath != null) {
-                    TextButton(onClick = { graph.pipeline.reset(); graph.pipeline.retry(item.id) }) { Text("Retry") }
+                    TextButton(onClick = { umm.pipeline.reset(); umm.pipeline.retry(item.id) }) { Text("Retry") }
                 }
                 if (item.cleanText != null) TextButton(onClick = { reporting = true }) { Text("Report") }
-                TextButton(onClick = { scope.launch { graph.history.delete(item.id) } }) { Text("Delete") }
+                TextButton(onClick = { scope.launch { umm.history.delete(item.id) } }) { Text("Delete") }
             }
         }
     }
@@ -118,8 +113,7 @@ private val REPORT_REASONS = listOf("Offensive or harmful", "Made-up or wrong co
 /** Lets people flag AI-written output to the developer. There is no Umm server, so it goes by email. */
 @Composable
 private fun ReportDialog(item: HistoryItem, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    val graph = context.graph
+    val umm = LocalUmm.current
     var reason by remember { mutableStateOf(REPORT_REASONS.first()) }
     var comment by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -145,7 +139,7 @@ private fun ReportDialog(item: HistoryItem, onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(onClick = {
                 scope.launch {
-                    val stats = graph.stats.get(item.id)
+                    val stats = umm.stats.get(item.id)
                     val body = buildString {
                         appendLine("Reason: $reason")
                         if (comment.isNotBlank()) appendLine("Details: $comment")
@@ -154,14 +148,11 @@ private fun ReportDialog(item: HistoryItem, onDismiss: () -> Unit) {
                         appendLine("What Umm wrote: ${item.cleanText.orEmpty()}")
                         appendLine()
                         appendLine("Level: ${item.level.title()} · Speech model: ${stats?.sttModel ?: "?"} · Cleanup model: ${stats?.cleanupModel ?: "?"}")
-                        appendLine("Umm ${io.github.agopalareddy.umm.BuildConfig.VERSION_NAME} · Android ${android.os.Build.VERSION.RELEASE}")
+                        appendLine(umm.platform.versionLine())
                     }
-                    val mail = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:"))
-                        .putExtra(android.content.Intent.EXTRA_EMAIL, arrayOf(SUPPORT_EMAIL))
-                        .putExtra(android.content.Intent.EXTRA_SUBJECT, "Umm: reported output ($reason)")
-                        .putExtra(android.content.Intent.EXTRA_TEXT, body)
-                    runCatching { context.startActivity(mail) }
-                        .onFailure { Toast.makeText(context, "No email app found. Write to $SUPPORT_EMAIL.", Toast.LENGTH_LONG).show() }
+                    if (!umm.platform.composeEmail(SUPPORT_EMAIL, "Umm: reported output ($reason)", body)) {
+                        umm.platform.showMessage("No email app found. Write to $SUPPORT_EMAIL.")
+                    }
                     onDismiss()
                 }
             }) { Text("Send report") }
