@@ -2,10 +2,10 @@ package io.github.agopalareddy.umm.auth
 
 import android.app.Activity
 import android.content.Context
-import android.net.Uri
 import android.os.Build
 import java.time.LocalDate
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.core.net.toUri
 import io.github.agopalareddy.umm.core.auth.AuthUrl
 import io.github.agopalareddy.umm.core.auth.Pkce
 
@@ -18,7 +18,7 @@ object SignInLauncher {
         val verifier = Pkce.newVerifier()
         // Plain prefs so the verifier survives process death while the browser is open.
         activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(VERIFIER, verifier).apply()
-        CustomTabsIntent.Builder().build().launchUrl(activity, Uri.parse(AuthUrl.build(Pkce.challengeFor(verifier), keyLabel = keyLabel())))
+        CustomTabsIntent.Builder().build().launchUrl(activity, AuthUrl.build(Pkce.challengeFor(verifier), keyLabel = keyLabel()).toUri())
     }
 
     /** Each sign-in creates a new key on OpenRouter, so name it clearly enough to find and delete later. */
