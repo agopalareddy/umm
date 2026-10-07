@@ -439,6 +439,39 @@ class DictationControllerTest {
         eventually("hotkey back on") { controller.hotkeyEnabled }
     }
 
+    // KDE types key events, which only native-Wayland apps accept: X11 apps drop every non-ASCII character
+    // (measured with Qt, é and क and emoji all vanished). Paste reaches both, except in terminals.
+    @Test fun kde_pastesNonAsciiIntoOrdinaryApps() {
+        api.cleaned = "Sounds good 👍 é"
+        focus.app = "org.kde.kate"
+        dictateFromOrb()
+        assertEquals(listOf<InsertPart>(InsertPart.Type("Sounds good "), InsertPart.Paste("👍 é")), inserter.inserted.single())
+        assertEquals(DesktopState.Inserted(pastedOnAsciiDesktop = true), controller.state.value)
+    }
+
+    @Test fun kde_pastesWhenTheFocusedAppIsUnknown() {
+        api.cleaned = "Sounds good 👍"
+        focus.app = null
+        dictateFromOrb()
+        assertEquals(listOf<InsertPart>(InsertPart.Type("Sounds good "), InsertPart.Paste("👍")), inserter.inserted.single())
+    }
+
+    @Test fun kde_typesNonAsciiIntoTerminals() {
+        api.cleaned = "Sounds good 👍"
+        focus.app = "org.kde.konsole"
+        dictateFromOrb()
+        assertEquals(listOf<InsertPart>(InsertPart.Type("Sounds good 👍")), inserter.inserted.single())
+        assertEquals(DesktopState.Inserted(pastedOnAsciiDesktop = false), controller.state.value)
+    }
+
+    @Test fun kde_plainAsciiIsAlwaysTyped() {
+        api.cleaned = "Sounds good"
+        focus.app = "org.kde.kate"
+        dictateFromOrb()
+        assertEquals(listOf<InsertPart>(InsertPart.Type("Sounds good")), inserter.inserted.single())
+        assertEquals(null, clipboard.copied)
+    }
+
     @Test fun typedTextLeavesTheClipboardAlone() {
         dictateFromOrb()
         assertEquals(null, clipboard.copied)

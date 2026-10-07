@@ -106,6 +106,8 @@ class PortalTextInserter(
             key(path, Keysyms.CONTROL_L, down = false)
             // The target asks for the clipboard after the chord; the session must stay open until we have served it.
             served.await(TRANSFER_WAIT_MS, TimeUnit.MILLISECONDS)
+            // Toolkits like GTK apply a paste a moment after reading it; keys typed straight away would land first.
+            Thread.sleep(AFTER_PASTE_MS)
         }
 
         private fun tap(path: DBusPath, keysym: Int) {
@@ -138,6 +140,7 @@ class PortalTextInserter(
         const val CANCELLED = 1
         const val PASTE_SETTLE_MS = 150L
         const val TRANSFER_WAIT_MS = 1500L
+        const val AFTER_PASTE_MS = 250L
         val SOCKETS = JUnixSocketSocketProvider()
     }
 }

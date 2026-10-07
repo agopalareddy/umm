@@ -11,6 +11,7 @@ import io.github.agopalareddy.umm.linux.HotkeySource
 import io.github.agopalareddy.umm.linux.InsertPart
 import io.github.agopalareddy.umm.linux.Notifier
 import io.github.agopalareddy.umm.linux.TextInserter
+import io.github.agopalareddy.umm.linux.TypingCapability
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -215,7 +216,7 @@ class DictationController(
                 copyInstead(done.text, "Release the shortcut first")
                 return
             }
-            val parts = InsertionPlanner.plan(done.text, inserter.capability)
+            val parts = InsertionPlanner.plan(done.text, typingCapability())
             try {
                 inserter.insert(parts)
                 val pasted = parts.any { it is InsertPart.Paste }
@@ -232,6 +233,15 @@ class DictationController(
             finish(done)
         }
     }
+
+    /**
+     * Typed key events carry non-ASCII only into native-Wayland apps: X11 apps (Java, many Electron apps, Umm's own
+     * window) drop it all. A desktop that can type everything therefore still pastes non-ASCII, except into a terminal,
+     * where Ctrl+V is not paste and typing works.
+     */
+    private fun typingCapability(): TypingCapability =
+        if (inserter.capability == TypingCapability.ALL && !TerminalApps.isTerminal(focus.focusedAppId())) TypingCapability.ASCII
+        else inserter.capability
 
     private fun copyInstead(text: String, reason: String) {
         clipboard.setText(text)
