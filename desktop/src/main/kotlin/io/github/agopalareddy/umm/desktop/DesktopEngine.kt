@@ -43,7 +43,7 @@ class DesktopEngine(
 
     @Volatile private var prefs = DesktopPrefs()
 
-    val hotkey = GlobalShortcutsHotkey(portal)
+    val hotkey = GlobalShortcutsHotkey(portal, GlobalShortcutsHotkey.defaultTriggerFor(env))
     val notifier = DbusNotifier(portal)
     private val tray = SniTrayIcon(portal)
     private val sounds = Sounds { prefs.sounds }

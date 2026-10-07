@@ -18,6 +18,13 @@ class TriggerLabelTest {
         assertEquals("Meta+Alt+Space", TriggerLabel.format("Meta+Alt+Space"))
     }
 
+    // GNOME 50's portal never fires a shortcut that includes Super (measured), so GNOME gets a Ctrl+Alt default.
+    @Test fun defaultTriggerDependsOnTheDesktop() {
+        assertEquals("LOGO+ALT+space", GlobalShortcutsHotkey.defaultTriggerFor(mapOf("XDG_CURRENT_DESKTOP" to "KDE")))
+        assertEquals("CTRL+ALT+space", GlobalShortcutsHotkey.defaultTriggerFor(mapOf("XDG_CURRENT_DESKTOP" to "GNOME")))
+        assertEquals("CTRL+ALT+space", GlobalShortcutsHotkey.defaultTriggerFor(emptyMap()))
+    }
+
     @Test fun blankFallsBackToTheDefault() {
         assertEquals("Super+Alt+Space", TriggerLabel.format("  "))
     }

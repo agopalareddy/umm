@@ -87,6 +87,15 @@ class GlobalShortcutsHotkey(
         /** "LOGO" is the shortcuts spec's name for the Super key. */
         const val DEFAULT_TRIGGER = "LOGO+ALT+space"
         const val DEFAULT_TRIGGER_LABEL = "Super+Alt+Space"
+        private const val GNOME_TRIGGER = "CTRL+ALT+space"
+
+        /**
+         * The trigger to suggest on this desktop. GNOME 50's portal never fires a shortcut that includes Super
+         * (measured: Super+Alt+Space and Super+Alt+D stay silent while Ctrl+Alt+U fires), so elsewhere than KDE the
+         * default is Ctrl+Alt+Space.
+         */
+        fun defaultTriggerFor(env: Map<String, String>): String =
+            if (env["XDG_CURRENT_DESKTOP"].orEmpty().contains("KDE", ignoreCase = true)) DEFAULT_TRIGGER else GNOME_TRIGGER
         const val SHORTCUT_ID = "dictate"
         private const val INTERFACE = "org.freedesktop.portal.GlobalShortcuts"
         private const val CONFIGURE_SINCE_VERSION = 2
