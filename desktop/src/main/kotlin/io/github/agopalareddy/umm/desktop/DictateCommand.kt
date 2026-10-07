@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.first
 
 data class DictateArgs(val file: File, val level: CleanupLevel?)
 
-const val USAGE = "Usage: umm --dictate <file.wav> [--level raw|light|formatted|polished]"
+const val USAGE = "Usage: umm [--background] | umm --dictate <file.wav> [--level raw|light|formatted|polished]"
 
 /** Parses `--dictate <file> [--level <level>]`; null when `--dictate` is absent or an argument is invalid. */
 fun parseArgs(args: Array<String>): DictateArgs? {

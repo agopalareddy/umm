@@ -24,6 +24,7 @@ jbNavigation = "2.9.2"
 jbLifecycle = "2.11.0"
 jbMaterial3 = "1.9.0"
 jbMaterialIcons = "1.7.3"
+dbusJava = "5.2.2"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -61,6 +62,8 @@ jb-material-icons-extended = { module = "org.jetbrains.compose.material:material
 jb-navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-compose", version.ref = "jbNavigation" }
 jb-lifecycle-runtime-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "jbLifecycle" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
+dbus-java-core = { module = "com.github.hypfvieh:dbus-java-core", version.ref = "dbusJava" }
+dbus-java-transport-junixsocket = { module = "com.github.hypfvieh:dbus-java-transport-junixsocket", version.ref = "dbusJava" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
