@@ -66,6 +66,8 @@ class PortalTextInserter(
             } finally {
                 transfers?.close()
                 session?.let { runCatching { portal.sessionObject(it).Close() } }
+                // The token only saves a dialog next time; the keyring being slow or refusing must not fail this insert.
+                restoreToken?.let { runCatching { tokenStore.putString(TOKEN_KEY, it) } }
             }
         }
 
@@ -83,13 +85,14 @@ class PortalTextInserter(
             tokenStore.getString(TOKEN_KEY)?.let { select["restore_token"] = Variant(it) }
             portal.request(select) { remote.SelectDevices(path, it) }
             val started = portal.request { remote.Start(path, "", it) }
-            // The token only saves a dialog next time; the keyring being slow or refusing must not fail this insert.
-            started["restore_token"]?.value?.toString()?.let { runCatching { tokenStore.putString(TOKEN_KEY, it) } }
+            // Saved once the text is in (see run): the keyring may show a prompt, and it must not hold up typing.
+            restoreToken = started["restore_token"]?.value?.toString()
             clipboardEnabled = started["clipboard_enabled"]?.value == true
             return path
         }
 
         private var clipboardEnabled = false
+        private var restoreToken: String? = null
 
         private fun type(path: DBusPath, text: String) {
             text.codePoints().forEach { tap(path, Keysyms.forChar(it)) }

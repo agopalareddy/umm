@@ -20,6 +20,14 @@ fun main(args: Array<String>) {
         graph.close()
         exitProcess(code)
     }
+    if ("--type-test" in args) {
+        val typeArgs = parseTypeTestArgs(args)
+        if (typeArgs == null) {
+            System.err.println(TYPE_TEST_USAGE)
+            exitProcess(2)
+        }
+        exitProcess(typeTest(typeArgs, System.out))
+    }
     if (args.any { it.startsWith("--") && it != "--background" }) {
         System.err.println(USAGE)
         exitProcess(2)

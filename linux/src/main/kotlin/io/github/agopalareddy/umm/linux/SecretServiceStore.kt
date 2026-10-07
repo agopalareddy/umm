@@ -5,6 +5,7 @@ import io.github.agopalareddy.umm.linux.portal.Portal
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import org.freedesktop.dbus.DBusPath
 import org.freedesktop.dbus.Struct
 import org.freedesktop.dbus.Tuple
@@ -40,6 +41,11 @@ internal class CreateItemResult(
     @Position(1) @JvmField val prompt: DBusPath,
 ) : Tuple()
 
+internal class CreateCollectionResult(
+    @Position(0) @JvmField val collection: DBusPath,
+    @Position(1) @JvmField val prompt: DBusPath,
+) : Tuple()
+
 @JvmSuppressWildcards
 @DBusInterfaceName("org.freedesktop.Secret.Service")
 internal interface SecretService : DBusInterface {
@@ -47,6 +53,7 @@ internal interface SecretService : DBusInterface {
     fun SearchItems(attributes: Map<String, String>): SearchResult
     fun Unlock(objects: List<DBusPath>): UnlockResult
     fun ReadAlias(name: String): DBusPath
+    fun CreateCollection(properties: Map<String, Variant<*>>, alias: String): CreateCollectionResult
 }
 
 @JvmSuppressWildcards
@@ -86,9 +93,7 @@ class SecretServiceStore private constructor(
     }
 
     override fun putString(key: String, value: String) {
-        // On a fresh session (autologin GNOME) no default collection exists yet and ReadAlias answers "/". Writing
-        // through the alias path, as libsecret does, lets the keyring create it.
-        val collection = service.ReadAlias(DEFAULT_ALIAS).takeUnless { it.path == NO_PROMPT }?.also(::unlock) ?: DBusPath(DEFAULT_ALIAS_PATH)
+        val collection = writableCollection()
         val properties = mapOf<String, Variant<*>>(
             "org.freedesktop.Secret.Item.Label" to Variant("Umm $key"),
             "org.freedesktop.Secret.Item.Attributes" to Variant(attributes(key), "a{ss}"),
@@ -109,6 +114,25 @@ class SecretServiceStore private constructor(
         }
     }
 
+    /**
+     * The collection to save into. Normally the default keyring, unlocked. A fresh autologin session or a live image
+     * has none (ReadAlias answers "/"), so ask the keyring to create one, as libsecret does; if that is refused, use
+     * the session collection, which lasts until logout but keeps things like the typing permission for that long.
+     */
+    private fun writableCollection(): DBusPath {
+        service.ReadAlias(DEFAULT_ALIAS).takeUnless { it.path == NO_PROMPT }?.let {
+            unlock(it)
+            return it
+        }
+        return runCatching { createDefaultCollection() }.getOrNull() ?: DBusPath(SESSION_COLLECTION_PATH)
+    }
+
+    private fun createDefaultCollection(): DBusPath {
+        val created = service.CreateCollection(mapOf("org.freedesktop.Secret.Collection.Label" to Variant("Default keyring")), DEFAULT_ALIAS)
+        val path = if (created.collection.path != NO_PROMPT) created.collection.path else awaitPrompt(created.prompt)
+        return DBusPath(checkNotNull(path?.takeUnless { it == NO_PROMPT }) { "the keyring created no collection" })
+    }
+
     private fun item(path: DBusPath) = portal.conn.getRemoteObject(BUS_NAME, path.path, SecretItem::class.java)
 
     private fun attributes(key: String) = mapOf("application" to Autostart.APP_ID, "key" to key)
@@ -117,15 +141,20 @@ class SecretServiceStore private constructor(
         awaitPrompt(service.Unlock(listOf(path)).prompt)
     }
 
-    /** Runs the keyring's own dialog (for example an unlock password prompt) when the call needs one. */
-    private fun awaitPrompt(prompt: DBusPath) {
-        if (prompt.path == NO_PROMPT) return
+    /**
+     * Runs the keyring's own dialog (for example an unlock password prompt) when the call needs one, and returns what
+     * the prompt produced (such as a new collection's path); null when there was no prompt.
+     */
+    private fun awaitPrompt(prompt: DBusPath): String? {
+        if (prompt.path == NO_PROMPT) return null
         val done = CountDownLatch(1)
         val dismissed = AtomicBoolean(false)
+        val produced = AtomicReference<String?>(null)
         val handler = portal.conn.addGenericSigHandler(
             org.freedesktop.dbus.DBusMatchRule("signal", "org.freedesktop.Secret.Prompt", "Completed", prompt.path),
         ) { signal ->
             dismissed.set(signal.parameters.firstOrNull() == true)
+            produced.set((signal.parameters.getOrNull(1) as? Variant<*>)?.value?.toString())
             done.countDown()
         }
         try {
@@ -133,6 +162,7 @@ class SecretServiceStore private constructor(
             check(done.await(PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) { "keyring prompt timed out" }
             // A dismissed prompt did not do what it was for: the item was not saved or the keyring not unlocked.
             check(!dismissed.get()) { "keyring prompt dismissed" }
+            return produced.get()
         } finally {
             handler.close()
         }
@@ -142,7 +172,7 @@ class SecretServiceStore private constructor(
         private const val BUS_NAME = "org.freedesktop.secrets"
         private const val SERVICE_PATH = "/org/freedesktop/secrets"
         private const val DEFAULT_ALIAS = "default"
-        private const val DEFAULT_ALIAS_PATH = "/org/freedesktop/secrets/aliases/default"
+        private const val SESSION_COLLECTION_PATH = "/org/freedesktop/secrets/collection/session"
         private const val NO_PROMPT = "/"
         private const val PROMPT_TIMEOUT_SECONDS = 120L
 

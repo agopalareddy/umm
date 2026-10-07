@@ -60,12 +60,15 @@ class Portal internal constructor(internal val conn: DBusConnection) : AutoClose
         null
     }
 
-    /** Portals identify an app by its `.desktop` id; unsandboxed apps must register one. Failure is not fatal. */
-    fun register(appId: String): Boolean = try {
+    /**
+     * Portals identify an app by its `.desktop` id; unsandboxed apps must register one (KDE has no registry and
+     * works without). Returns the portal's complaint, or null when registered. Failure is not fatal.
+     */
+    fun register(appId: String): String? = try {
         conn.getRemoteObject(BUS_NAME, OBJECT_PATH, Registry::class.java).Register(appId, emptyMap())
-        true
+        null
     } catch (e: Exception) {
-        false
+        e.message ?: e.javaClass.simpleName
     }
 
     override fun close() {
