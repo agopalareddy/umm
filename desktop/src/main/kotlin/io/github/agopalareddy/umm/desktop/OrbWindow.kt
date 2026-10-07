@@ -9,6 +9,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -98,7 +101,8 @@ private fun ListeningOrb(level: Int, onStop: () -> Unit, onCancel: () -> Unit) {
             color = MaterialTheme.colorScheme.surfaceVariant,
             modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(24.dp),
         ) {
-            Box(contentAlignment = Alignment.Center) { Text("✕", style = MaterialTheme.typography.labelMedium) }
+            // An icon, not a "✕" glyph: fonts on some desktops lack it and fall back to a plain X.
+            Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Close, contentDescription = "Cancel", modifier = Modifier.size(16.dp)) }
         }
     }
 }
