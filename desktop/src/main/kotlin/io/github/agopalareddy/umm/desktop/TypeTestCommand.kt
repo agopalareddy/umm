@@ -28,13 +28,12 @@ fun parseTypeTestArgs(args: Array<String>): TypeTestArgs? {
  */
 fun typeTest(args: TypeTestArgs, out: PrintStream): Int {
     val portal = try {
-        Portal.connect()
+        Portal.connect(DesktopEngine.APP_ID)
     } catch (e: Exception) {
         out.println("No D-Bus session bus: ${e.message}")
         return 2
     }
     portal.use {
-        it.register(DesktopEngine.APP_ID)
         val secrets = SecretServiceStore.openOrNull(it)
         out.println(if (secrets != null) "Keyring: found" else "Keyring: none (restore token kept in memory)")
         val inserter = PortalTextInserter(it, secrets ?: InMemoryKeyValueStore(), capabilityFor(System.getenv()))

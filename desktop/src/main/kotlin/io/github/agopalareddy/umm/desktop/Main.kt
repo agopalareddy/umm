@@ -37,11 +37,12 @@ fun main(args: Array<String>) {
 
 private fun runApp(args: Array<String>) {
     val portal = try {
-        Portal.connect()
+        Portal.connect(DesktopEngine.APP_ID)
     } catch (e: Exception) {
         System.err.println("Umm needs a D-Bus session bus: ${e.message}")
         exitProcess(1)
     }
+    portal.registrationError?.let { System.err.println("Portal app registration: $it") }
 
     val engine = AtomicReference<DesktopEngine?>()
     val single = SingleInstance(portal)

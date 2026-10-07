@@ -108,7 +108,6 @@ class DesktopEngine(
     )
 
     init {
-        portal.register(APP_ID)?.let { System.err.println("Portal app registration: $it") }
         graph.scope.launch { graph.desktopSettings.prefs.collect { prefs = it } }
     }
 
