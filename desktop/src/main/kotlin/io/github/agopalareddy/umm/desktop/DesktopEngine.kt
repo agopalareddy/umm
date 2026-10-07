@@ -57,7 +57,18 @@ class DesktopEngine(
     /** How binding the shortcut went; null until the first attempt finishes. */
     val bindResult: StateFlow<BindResult?> = _bindResult.asStateFlow()
 
-    val signIn = SignIn(graph.openRouter, graph.apiKeyStore, openUrl = ::openInBrowser, keyLabel = ::keyLabel)
+    val signIn = SignIn(
+        openRouter = graph.openRouter,
+        apiKeyStore = graph.apiKeyStore,
+        openUrl = ::openInBrowser,
+        keyLabel = ::keyLabel,
+        scope = graph.scope,
+        onResult = { signedIn ->
+            if (signedIn) notifier.notify("Signed in", "Umm is connected to OpenRouter.")
+            else notifier.notify("Couldn't sign in", "The sign-in was cancelled or failed. Connect again from Umm.")
+            onOpenWindow()
+        },
+    )
 
     val inserter = PortalTextInserter(portal, secretStore ?: InMemoryKeyValueStore(), capabilityFor(env))
 
@@ -125,17 +136,8 @@ class DesktopEngine(
         graph.desktopSettings.update { it.copy(startAtLogin = on && launcher != null) }
     }
 
-    /** A `umm://` link: finishes a pending sign-in and brings the window forward. */
-    fun onLink(url: String) {
-        graph.scope.launch {
-            if (signIn.finish(url)) {
-                notifier.notify("Signed in", "Umm is connected to OpenRouter.")
-            } else {
-                notifier.notify("Couldn't sign in", "The sign-in expired or was cancelled. Connect again from Umm.")
-            }
-            onOpenWindow()
-        }
-    }
+    /** A `umm://` link. Sign-in no longer uses these (it listens on localhost), so all one can do is show the window. */
+    fun onLink(@Suppress("UNUSED_PARAMETER") url: String) = onOpenWindow()
 
     fun close() {
         tray.hide()
