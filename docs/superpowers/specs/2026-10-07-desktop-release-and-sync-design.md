@@ -90,15 +90,16 @@ three phases, each its own branch and PR to `main`, in this order: parity (§3),
 - `includeAllModules` is replaced by an explicit `modules(...)` list found with `jdeps` plus reflection-loaded modules
   (`java.desktop` sound, `jdk.crypto.ec`, `java.net.http` if used, `jdk.unsupported`), pinned in
   `desktop/build.gradle.kts`.
-- A CI step runs the packaged launcher with `--type-test` (headless smoke check that exits 0) so a missing module
-  fails the release build.
+- A CI step runs the packaged launcher with a new headless `--self-check` flag (exercises sound, database, crypto,
+  TLS, D-Bus and Compose classes, exits 0) so a missing module fails the release build. `--type-test` needs a portal,
+  so it stays a manual check.
 
 ### Formats
 
 | Asset | Built by | Installs |
 |---|---|---|
 | `umm-X.Y.Z-linux-x86_64.tar.gz` | jpackage app image + `install.sh`/`uninstall.sh` | `~/.local` (default) or `/opt/umm` + `/usr/local/bin` with `--system`; desktop file, icon |
-| `umm_X.Y.Z_amd64.deb`, `umm-X.Y.Z-1.x86_64.rpm` | jpackage | `/opt/umm`, desktop file and icon in system dirs |
+| `umm_X.Y.Z_amd64.deb`, `umm-X.Y.Z-1.x86_64.rpm` | nfpm from the jpackage app image (jpackage's own installers can't name the desktop file by app ID, which the portals need) | `/opt/umm`, desktop file and icon in system dirs |
 | `io.github.agopalareddy.Umm.flatpak` | `flatpak-builder` from `packaging/flatpak/` | per-user or system Flatpak |
 | `packaging/aur/umm-bin/` | `scripts/bump-aur.sh X.Y.Z` | `/opt/umm`, `/usr/bin/umm`, desktop file, icon, license |
 
