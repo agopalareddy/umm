@@ -21,6 +21,7 @@ sourceSets.main {
 
 dependencies {
     implementation(project(":ui"))
+    implementation(project(":linux"))
     implementation(compose.desktop.currentOs)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.swing)

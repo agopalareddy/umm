@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "umm"
-include(":core", ":ui", ":app", ":desktop")
+include(":core", ":ui", ":app", ":desktop", ":linux")

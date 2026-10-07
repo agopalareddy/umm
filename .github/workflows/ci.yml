@@ -31,7 +31,7 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
       - name: Unit tests
-        run: ./gradlew :core:testAndroidHostTest :core:desktopTest :ui:desktopTest :desktop:test :app:testDebugUnitTest --console=plain
+        run: ./gradlew :core:testAndroidHostTest :core:desktopTest :ui:desktopTest :desktop:test :linux:test :app:testDebugUnitTest --console=plain
       - name: Build debug APK
         run: ./gradlew assembleDebug --console=plain
       - name: Upload test reports
