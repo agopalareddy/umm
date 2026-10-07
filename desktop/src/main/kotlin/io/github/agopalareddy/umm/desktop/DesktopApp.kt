@@ -66,7 +66,7 @@ fun runDesktopApp(engine: DesktopEngine, startVisible: Boolean) = application {
     val dictation by engine.controller.state.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val services = remember { engine.graph.services(DesktopPlatform(snackbar, scope, engine.appearance)) }
+    val services = remember { engine.graph.services(DesktopPlatform(snackbar, scope, engine.appearance, engine.apps)) }
 
     // Both windows are themed from the shared settings, so both need the services.
     CompositionLocalProvider(LocalUmm provides services) {

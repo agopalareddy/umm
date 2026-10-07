@@ -37,6 +37,9 @@ interface Platform {
      * (Android). The theme recomposes when it changes.
      */
     fun systemAppearance(): StateFlow<SystemAppearance>? = null
+
+    /** A line for the Categories page when per-app levels don't apply here, or null when they do. */
+    fun perAppLevelsNote(): String? = null
 }
 
 /** [dark] null means no preference; [accentArgb] null means no accent color. */

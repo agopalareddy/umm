@@ -22,4 +22,10 @@ class SeedTest {
         }
         Seeds.apps.forEach { (pkg, category) -> assertEquals(pkg, category, repo.categoryFor(pkg)) }
     }
+
+    @Test fun desktopAppsAreSeeded() = runTest {
+        assertEquals(Category.NOTES, repo.categoryFor("org.kde.kate"))
+        assertEquals(Category.EMAIL, repo.categoryFor("org.mozilla.Thunderbird"))
+        assertEquals(Category.MESSAGING, repo.categoryFor("signal-desktop"))
+    }
 }

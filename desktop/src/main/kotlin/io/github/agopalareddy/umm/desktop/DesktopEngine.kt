@@ -10,6 +10,7 @@ import io.github.agopalareddy.umm.linux.Autostart
 import io.github.agopalareddy.umm.linux.AwtClipboard
 import io.github.agopalareddy.umm.linux.BindResult
 import io.github.agopalareddy.umm.linux.DbusNotifier
+import io.github.agopalareddy.umm.linux.DesktopEntries
 import io.github.agopalareddy.umm.linux.FocusTracker
 import io.github.agopalareddy.umm.linux.GlobalShortcutsHotkey
 import io.github.agopalareddy.umm.linux.JavaSoundMicrophone
@@ -76,6 +77,9 @@ class DesktopEngine(
     )
 
     val inserter = PortalTextInserter(portal, secretStore ?: InMemoryKeyValueStore(), capabilityFor(env))
+
+    /** Installed apps, for the category picker and app names in History. */
+    val apps = DesktopEntries.forEnvironment(env, File(System.getProperty("user.home")))
 
     private val portalAppearance = PortalAppearance(portal)
 

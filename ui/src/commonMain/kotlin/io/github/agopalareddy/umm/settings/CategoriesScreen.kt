@@ -44,6 +44,9 @@ fun CategoriesScreen(onBack: () -> Unit) {
 
     Page("App categories", onBack) {
         Text("Each category has its own cleanup level. Apps not listed anywhere use Other.", style = MaterialTheme.typography.bodySmall)
+        LocalUmm.current.platform.perAppLevelsNote()?.let { note ->
+            Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
         configs.forEach { config ->
             Card(Modifier.fillMaxWidth().padding(top = 12.dp).clickable { selected = if (selected == config.category) null else config.category }) {
                 Column(Modifier.padding(16.dp)) {
