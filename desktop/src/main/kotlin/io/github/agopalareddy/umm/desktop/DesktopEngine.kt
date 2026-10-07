@@ -6,6 +6,7 @@ import io.github.agopalareddy.umm.core.pipeline.DictationRequest
 import io.github.agopalareddy.umm.core.policy.LevelResolver
 import io.github.agopalareddy.umm.desktop.engine.DesktopState
 import io.github.agopalareddy.umm.desktop.engine.DictationController
+import io.github.agopalareddy.umm.linux.Autostart
 import io.github.agopalareddy.umm.linux.AwtClipboard
 import io.github.agopalareddy.umm.linux.BindResult
 import io.github.agopalareddy.umm.linux.DbusNotifier
@@ -58,11 +59,18 @@ class DesktopEngine(
 
     val signIn = SignIn(graph.openRouter, graph.apiKeyStore, openUrl = ::openInBrowser, keyLabel = ::keyLabel)
 
+    val inserter = PortalTextInserter(portal, secretStore ?: InMemoryKeyValueStore(), capabilityFor(env))
+
+    private val autostart = Autostart.forEnvironment(env, File(System.getProperty("user.home")))
+
+    /** The installed launcher's path; null when running from Gradle, where there is nothing to start at login. */
+    val launcher: String? = System.getProperty("jpackage.app-path")
+
     val controller = DictationController(
         scope = graph.scope,
         hotkey = hotkey,
         pipeline = graph.pipeline(microphone),
-        inserter = PortalTextInserter(portal, secretStore ?: InMemoryKeyValueStore(), capabilityFor(env)),
+        inserter = inserter,
         clipboard = AwtClipboard(),
         notifier = notifier,
         focus = focus,
@@ -108,6 +116,12 @@ class DesktopEngine(
 
     fun bindHotkey() {
         graph.scope.launch { _bindResult.value = hotkey.bind() }
+    }
+
+    /** Turns "start at login" on or off (the autostart entry, and the setting that shows it). */
+    suspend fun setStartAtLogin(on: Boolean) {
+        launcher?.let { if (on) autostart.enable(it) else autostart.disable() }
+        graph.desktopSettings.update { it.copy(startAtLogin = on && launcher != null) }
     }
 
     /** A `umm://` link: finishes a pending sign-in and brings the window forward. */

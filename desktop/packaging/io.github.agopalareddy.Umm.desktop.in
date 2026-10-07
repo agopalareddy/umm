@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Umm
+Comment=Voice dictation with your own OpenRouter key
+Exec=@EXEC@ %u
+Icon=io.github.agopalareddy.Umm
+Terminal=false
+Categories=Utility;Accessibility;
+MimeType=x-scheme-handler/umm;
+StartupWMClass=io-github-agopalareddy-umm-desktop-MainKt

@@ -82,8 +82,14 @@ class JavaSoundMicrophone(private val mixerName: () -> String? = { null }) : Aud
         close()
     }
 
-    private companion object {
-        const val SAMPLE_RATE = 16000
-        const val CHUNK_BYTES = SAMPLE_RATE / 10 * 2
+    companion object {
+        private const val SAMPLE_RATE = 16000
+        private const val CHUNK_BYTES = SAMPLE_RATE / 10 * 2
+
+        /** Names of the input devices that can record in our format, for the microphone setting. */
+        fun inputDevices(): List<String> {
+            val wanted = DataLine.Info(TargetDataLine::class.java, AudioFormat(SAMPLE_RATE.toFloat(), 16, 1, true, false))
+            return AudioSystem.getMixerInfo().filter { AudioSystem.getMixer(it).isLineSupported(wanted) }.map { it.name }.distinct()
+        }
     }
 }

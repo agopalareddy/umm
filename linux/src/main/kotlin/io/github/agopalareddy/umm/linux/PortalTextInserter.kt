@@ -31,6 +31,11 @@ class PortalTextInserter(
         withContext(Dispatchers.IO) { Session(parts).run() }
     }
 
+    /** Opens and closes a session without typing, so setup can show the permission dialog; throws [InsertException] if refused. */
+    suspend fun grantPermission() {
+        withContext(Dispatchers.IO) { Session(emptyList()).run() }
+    }
+
     private inner class Session(private val parts: List<InsertPart>) {
         private val remote = portal.portalObject<RemoteDesktop>()
         private val clipboard = portal.portalObject<ClipboardPortal>()

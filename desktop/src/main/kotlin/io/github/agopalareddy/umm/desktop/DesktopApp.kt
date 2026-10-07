@@ -1,5 +1,7 @@
 package io.github.agopalareddy.umm.desktop
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -15,12 +17,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import io.github.agopalareddy.umm.settings.HomeSetup
 import io.github.agopalareddy.umm.settings.Routes
+import io.github.agopalareddy.umm.settings.SettingsEntry
 import io.github.agopalareddy.umm.settings.UmmNavHost
 import io.github.agopalareddy.umm.ui.LocalUmm
 import io.github.agopalareddy.umm.ui.UmmTheme
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
 /**
  * The Compose side of the app: the orb, and the settings window, which is hidden rather than closed so the app
@@ -63,14 +69,33 @@ fun runDesktopApp(engine: DesktopEngine, startVisible: Boolean) = application {
             }
             val key by engine.graph.apiKeyStore.key.collectAsState()
             val nav = rememberNavController()
+            // First launch opens setup; read once so the screen doesn't flip when the settings load.
+            val startRoute = remember { if (runBlocking { engine.graph.desktopSettings.prefs.first().setupDone }) Routes.HOME else DesktopRoutes.SETUP }
             UmmTheme {
                 // Every page draws its own Scaffold and bars; this one only hosts the snackbar.
                 Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { _ ->
                     UmmNavHost(
-                        startRoute = Routes.HOME,
-                        home = HomeSetup(complete = key != null, onSetup = { nav.navigate(Routes.ACCOUNT) }, switchKeyboard = null),
+                        startRoute = startRoute,
+                        home = HomeSetup(
+                            complete = key != null && prefs.setupDone,
+                            onSetup = { nav.navigate(DesktopRoutes.SETUP) },
+                            switchKeyboard = null,
+                        ),
                         onConnect = engine.signIn::start,
+                        extraSettings = listOf(
+                            SettingsEntry(Icons.Rounded.Computer, "Desktop", "Shortcut, orb, startup, microphone", DesktopRoutes.SETTINGS),
+                        ),
                         nav = nav,
+                        platformRoutes = { controller ->
+                            composable(DesktopRoutes.SETUP) {
+                                SetupScreen(engine) {
+                                    controller.navigate(Routes.HOME) { popUpTo(controller.graph.startDestinationId) { inclusive = true } }
+                                }
+                            }
+                            composable(DesktopRoutes.SETTINGS) {
+                                DesktopSettingsPage(engine, onBack = { controller.popBackStack() }, onSetup = { controller.navigate(DesktopRoutes.SETUP) })
+                            }
+                        },
                     )
                 }
             }

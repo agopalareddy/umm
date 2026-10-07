@@ -45,6 +45,9 @@ class DictationController(
     private val _state = MutableStateFlow<DesktopState>(DesktopState.Idle)
     val state: StateFlow<DesktopState> = _state.asStateFlow()
 
+    /** False while setup tests the shortcut: presses are seen but start nothing. */
+    @Volatile var hotkeyEnabled = true
+
     private val lock = Any()
     @Volatile private var phase = Phase.IDLE
     private var startJob: Job? = null
@@ -106,7 +109,9 @@ class DictationController(
     private fun onHotkey(event: HotkeyEvent) {
         keyHeld.value = event == HotkeyEvent.Down
         // Every event reaches the gesture so it keeps track of the key; busy dictations then ignore its commands.
-        when (gesture.onEvent(event, clock(), recording = phase == Phase.RECORDING)) {
+        val command = gesture.onEvent(event, clock(), recording = phase == Phase.RECORDING)
+        if (!hotkeyEnabled) return
+        when (command) {
             GestureCommand.START -> start()
             GestureCommand.STOP -> stop()
             GestureCommand.NONE -> Unit

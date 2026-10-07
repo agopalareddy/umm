@@ -320,6 +320,20 @@ class DictationControllerTest {
         assertEquals("the dictated text stays on the clipboard for a manual paste", "Sounds good 👍", clipboard.copied)
     }
 
+    @Test fun disabledHotkey_startsNothingUntilEnabledAgain() {
+        controller.hotkeyEnabled = false
+        press(HotkeyEvent.Down, 0)
+        press(HotkeyEvent.Up, 600)
+        Thread.sleep(300)
+        assertEquals(0, audio.recordings.get())
+        assertEquals(DesktopState.Idle, controller.state.value)
+
+        controller.hotkeyEnabled = true
+        press(HotkeyEvent.Down, 1000)
+        eventually("listening") { isListening() }
+        assertEquals(1, audio.recordings.get())
+    }
+
     @Test fun typedTextLeavesTheClipboardAlone() {
         dictateFromOrb()
         assertEquals(null, clipboard.copied)
