@@ -41,7 +41,7 @@ class GlobalShortcutsHotkey(
             )
             val bound = portal.request { shortcuts.BindShortcuts(sessionPath, listOf(shortcut), "", it) }
             session = sessionPath
-            BindResult.Bound(findTriggerDescription(bound["shortcuts"]) ?: DEFAULT_TRIGGER_LABEL)
+            BindResult.Bound(TriggerLabel.format(findTriggerDescription(bound["shortcuts"]).orEmpty()))
         } catch (e: PortalException) {
             BindResult.Failed(if (e.code == CANCELLED) "The shortcut was not approved" else "The desktop refused the shortcut")
         } catch (e: Exception) {
