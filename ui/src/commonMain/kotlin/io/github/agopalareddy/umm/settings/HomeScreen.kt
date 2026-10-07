@@ -142,11 +142,14 @@ fun HomeScreen(home: HomeSetup, onOpen: (String) -> Unit) {
         }
 
         Spacer(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FilledTonalButton(onClick = { onOpen(Routes.HISTORY) }, modifier = Modifier.weight(1f)) { Text("History") }
-            FilledTonalButton(onClick = { onOpen(Routes.SETTINGS) }, modifier = Modifier.weight(1f)) { Text("Settings") }
+        // The desktop sidebar already links both.
+        if (LocalShowBack.current) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FilledTonalButton(onClick = { onOpen(Routes.HISTORY) }, modifier = Modifier.weight(1f)) { Text("History") }
+                FilledTonalButton(onClick = { onOpen(Routes.SETTINGS) }, modifier = Modifier.weight(1f)) { Text("Settings") }
+            }
+            Spacer(Modifier.height(16.dp))
         }
-        Spacer(Modifier.height(16.dp))
     }
 }
 

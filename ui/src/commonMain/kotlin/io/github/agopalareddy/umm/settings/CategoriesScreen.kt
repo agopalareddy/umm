@@ -59,6 +59,12 @@ fun CategoriesScreen(onBack: () -> Unit) {
     }
 }
 
+/**
+ * The assigned apps this device has. Assignments are shared (seeds cover Android and Linux apps), so the rest would
+ * show as raw IDs of apps that can't be dictated into here.
+ */
+fun installedOnly(assigned: List<String>, installed: Set<String>): List<String> = assigned.filter { it in installed }
+
 @Composable
 private fun CategoryDetail(config: CategoryConfig) {
     val umm = LocalUmm.current
@@ -67,7 +73,8 @@ private fun CategoryDetail(config: CategoryConfig) {
     var apps by remember { mutableStateOf(emptyList<String>()) }
     var refresh by remember { mutableStateOf(0) }
     var picking by remember { mutableStateOf(false) }
-    LaunchedEffect(config.category, refresh) { apps = repo.appsIn(config.category) }
+    val installed = remember { umm.platform.installedApps().map { it.id }.toSet() }
+    LaunchedEffect(config.category, refresh) { apps = installedOnly(repo.appsIn(config.category), installed) }
 
     Column(Modifier.padding(top = 8.dp)) {
         Text("Level", style = MaterialTheme.typography.labelLarge)
