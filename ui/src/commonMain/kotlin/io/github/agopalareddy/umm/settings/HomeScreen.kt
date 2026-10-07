@@ -83,8 +83,11 @@ fun HomeScreen(home: HomeSetup, onOpen: (String) -> Unit) {
         },
         onBack = null,
         actions = {
-            IconButton(onClick = { onOpen(Routes.HISTORY) }) { Icon(Icons.Default.History, contentDescription = "History") }
-            IconButton(onClick = { onOpen(Routes.SETTINGS) }) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
+            // The desktop sidebar already links both.
+            if (LocalShowBack.current) {
+                IconButton(onClick = { onOpen(Routes.HISTORY) }) { Icon(Icons.Default.History, contentDescription = "History") }
+                IconButton(onClick = { onOpen(Routes.SETTINGS) }) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
+            }
         },
     ) {
         val connected = umm.apiKeyStore.key.collectAsStateWithLifecycle().value != null
@@ -112,17 +115,13 @@ fun HomeScreen(home: HomeSetup, onOpen: (String) -> Unit) {
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
             Column(Modifier.padding(16.dp)) {
                 Text("Talk instead of typing", style = MaterialTheme.typography.titleLarge)
-                Text(
-                    "Switch to Umm in any text field and start talking. It stops when you do. " +
-                        "Double-tap the mic to whisper or pause as long as you like.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Text(home.intro, style = MaterialTheme.typography.bodyMedium)
                 var tryText by rememberSaveable { mutableStateOf("") }
                 OutlinedTextField(
                     value = tryText,
                     onValueChange = { tryText = it },
                     label = { Text("Try it here") },
-                    placeholder = { Text("Tap here, switch to Umm, and talk") },
+                    placeholder = { Text(home.tryPlaceholder) },
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )

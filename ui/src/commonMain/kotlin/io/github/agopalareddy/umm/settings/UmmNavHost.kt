@@ -28,13 +28,27 @@ object Routes {
     const val MODELS = "settings/models"
     const val STATS = "settings/stats"
     const val HISTORY = "history"
+    const val ABOUT = "about"
 }
 
 /** A platform-only Settings row, shown after Dictation. */
 data class SettingsEntry(val icon: ImageVector, val title: String, val subtitle: String, val route: String)
 
-/** Home's setup banner state; [switchKeyboard] adds a "Choose keyboard" button where the platform has one. */
-data class HomeSetup(val complete: Boolean, val onSetup: () -> Unit, val switchKeyboard: (() -> Unit)?)
+const val ANDROID_INTRO = "Switch to Umm in any text field and start talking. It stops when you do. " +
+    "Double-tap the mic to whisper or pause as long as you like."
+const val ANDROID_TRY_PLACEHOLDER = "Tap here, switch to Umm, and talk"
+
+/**
+ * Home's setup banner state; [switchKeyboard] adds a "Choose keyboard" button where the platform has one. [intro] and
+ * [tryPlaceholder] explain how to dictate on this platform.
+ */
+data class HomeSetup(
+    val complete: Boolean,
+    val onSetup: () -> Unit,
+    val switchKeyboard: (() -> Unit)?,
+    val intro: String = ANDROID_INTRO,
+    val tryPlaceholder: String = ANDROID_TRY_PLACEHOLDER,
+)
 
 /** The shared screens. Platforms add their own destinations through [platformRoutes]. */
 @Composable
@@ -67,5 +81,6 @@ fun UmmNavHost(
         composable(Routes.CATEGORIES) { CategoriesScreen(back) }
         composable(Routes.MODELS) { ModelsScreen(back) }
         composable(Routes.HISTORY) { HistoryScreen(back) }
+        composable(Routes.ABOUT) { AboutPage(back) }
     }
 }
