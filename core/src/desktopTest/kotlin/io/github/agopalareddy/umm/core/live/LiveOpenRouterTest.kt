@@ -79,6 +79,27 @@ class LiveOpenRouterTest {
         assertTrue(out, out.split(Regex("\\s+")).size < 40)
     }
 
+    private val emoji = Regex("[\\u2764\\x{1F300}-\\x{1FAFF}]")
+
+    @Test fun spokenEmojiRequestBecomesTheEmoji() {
+        val out = clean("sounds good thumbs up emoji", CleanupLevel.LIGHT)
+        assertTrue(out, out.contains("👍"))
+        assertFalse("kept the word: $out", out.lowercase().contains("emoji"))
+    }
+
+    @Test fun talkingAboutAnEmojiKeepsTheWords() {
+        val out = clean("I love that emoji you sent", CleanupLevel.LIGHT)
+        assertTrue(out, out.lowercase().contains("emoji"))
+        assertFalse("added an emoji: $out", emoji.containsMatchIn(out))
+    }
+
+    @Test fun hinglishEmojiStaysRomanizedAndGetsTheEmoji() {
+        val out = clean("kal milte hain heart emoji", CleanupLevel.LIGHT, ScriptPreference.LATIN)
+        assertTrue(out, out.contains("❤"))
+        assertFalse("not romanized: $out", Regex("[\\u0900-\\u097F]").containsMatchIn(out))
+        assertFalse("kept the words: $out", out.lowercase().contains("emoji"))
+    }
+
     @Test fun nothingToTypeProducesEmptyOutput() {
         for (raw in listOf("Um. Uh.", "[inaudible]", "[music]", "Thank you for watching!")) {
             assertEquals("for '$raw'", "", clean(raw, CleanupLevel.LIGHT))
