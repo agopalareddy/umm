@@ -4,6 +4,8 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.SnackbarHostState
 import io.github.agopalareddy.umm.ui.AppEntry
 import io.github.agopalareddy.umm.ui.Platform
+import io.github.agopalareddy.umm.ui.SystemAppearance
+import kotlinx.coroutines.flow.StateFlow
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.net.URLEncoder
@@ -13,10 +15,11 @@ import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-/** Linux desktop platform calls. Per-app categories, the system accent color and the keyring come in later sub-projects. */
+/** Linux desktop platform calls. */
 class DesktopPlatform(
     private val snackbar: SnackbarHostState,
     private val scope: CoroutineScope,
+    private val appearance: StateFlow<SystemAppearance>,
     private val launcher: (List<String>) -> Unit = { ProcessBuilder(it).start() },
 ) : Platform {
     override fun openUrl(url: String) {
@@ -49,7 +52,9 @@ class DesktopPlatform(
 
     override fun animationsEnabled(): Boolean = true
 
-    override fun dynamicColors(dark: Boolean): ColorScheme? = null
+    override fun dynamicColors(dark: Boolean): ColorScheme? = appearance.value.accentArgb?.let { accentColorScheme(it, dark) }
+
+    override fun systemAppearance(): StateFlow<SystemAppearance> = appearance
 
     /** mailto: wants %20 for spaces, not URLEncoder's +. */
     private fun encode(value: String) = URLEncoder.encode(value, Charsets.UTF_8).replace("+", "%20")

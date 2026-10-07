@@ -45,6 +45,14 @@ internal interface ClipboardPortal : DBusInterface {
     fun SelectionWriteDone(session: DBusPath, serial: UInt32, success: Boolean)
 }
 
+@DBusInterfaceName("org.freedesktop.portal.Settings")
+internal interface SettingsPortal : DBusInterface {
+    fun ReadOne(namespace: String, key: String): Variant<*>
+
+    /** Before version 2: the value comes wrapped in a second variant. */
+    fun Read(namespace: String, key: String): Variant<*>
+}
+
 @DBusInterfaceName("org.freedesktop.portal.Session")
 internal interface Session : DBusInterface {
     fun Close()

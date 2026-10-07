@@ -54,14 +54,23 @@ fun isUmmDark(): Boolean {
 
 @Composable
 private fun isDark(mode: ThemeMode) = when (mode) {
-    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    ThemeMode.SYSTEM -> systemAppearance()?.dark ?: isSystemInDarkTheme()
     ThemeMode.LIGHT -> false
     ThemeMode.DARK -> true
+}
+
+/** The desktop's live appearance, or null on platforms without one. */
+@Composable
+private fun systemAppearance(): SystemAppearance? {
+    val flow = LocalUmm.current.platform.systemAppearance() ?: return null
+    return flow.collectAsStateWithLifecycle().value
 }
 
 @Composable
 fun UmmTheme(mode: ThemeMode, dynamicColor: Boolean, content: @Composable () -> Unit) {
     val dark = isDark(mode)
+    // Read here too so an accent change recomposes the theme; dynamicColors() reads the same value.
+    systemAppearance()
     val dynamic = if (dynamicColor) LocalUmm.current.platform.dynamicColors(dark) else null
     val colors = dynamic ?: if (dark) DarkBrand else LightBrand
     MaterialTheme(colorScheme = colors, content = content)

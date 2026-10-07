@@ -74,6 +74,7 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.swing)
+    implementation(libs.material.color.utilities)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

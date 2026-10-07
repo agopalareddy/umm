@@ -1,6 +1,7 @@
 package io.github.agopalareddy.umm.ui
 
 import androidx.compose.material3.ColorScheme
+import kotlinx.coroutines.flow.StateFlow
 
 /** The platform calls the shared screens make. */
 interface Platform {
@@ -30,7 +31,16 @@ interface Platform {
 
     /** The system's dynamic color scheme, or null where there is none. */
     fun dynamicColors(dark: Boolean): ColorScheme?
+
+    /**
+     * The desktop's live light/dark and accent preferences, or null where the platform's own theming APIs apply
+     * (Android). The theme recomposes when it changes.
+     */
+    fun systemAppearance(): StateFlow<SystemAppearance>? = null
 }
+
+/** [dark] null means no preference; [accentArgb] null means no accent color. */
+data class SystemAppearance(val dark: Boolean?, val accentArgb: Int?)
 
 /** An app on this device; [id] is the package name on Android, so stored assignments keep working. */
 data class AppEntry(val id: String, val label: String)
