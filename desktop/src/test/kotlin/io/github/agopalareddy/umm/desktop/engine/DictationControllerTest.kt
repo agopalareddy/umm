@@ -317,6 +317,12 @@ class DictationControllerTest {
             listOf<InsertPart>(InsertPart.Type("Sounds good "), InsertPart.Paste("👍")),
             inserter.inserted.single(),
         )
+        assertEquals("the dictated text stays on the clipboard for a manual paste", "Sounds good 👍", clipboard.copied)
+    }
+
+    @Test fun typedTextLeavesTheClipboardAlone() {
+        dictateFromOrb()
+        assertEquals(null, clipboard.copied)
     }
 
     private companion object {

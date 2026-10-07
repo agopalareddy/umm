@@ -13,8 +13,11 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.Dispatchers
 
-/** Records 16 kHz mono 16-bit WAV from the default input (or the mixer called [mixerName]). */
-class JavaSoundMicrophone(private val mixerName: String? = null) : AudioSource {
+/**
+ * Records 16 kHz mono 16-bit WAV from the default input, or from the mixer [mixerName] names. It is asked each time
+ * a recording starts, so a changed setting applies to the next dictation.
+ */
+class JavaSoundMicrophone(private val mixerName: () -> String? = { null }) : AudioSource {
     override val format = "wav"
 
     @Volatile private var stopped = false
@@ -68,7 +71,7 @@ class JavaSoundMicrophone(private val mixerName: String? = null) : AudioSource {
     }
 
     private fun openLine(): TargetDataLine {
-        val mixer = mixerName?.let { name -> AudioSystem.getMixerInfo().firstOrNull { it.name == name } }
+        val mixer = mixerName()?.let { name -> AudioSystem.getMixerInfo().firstOrNull { it.name == name } }
         val line = if (mixer != null) AudioSystem.getMixer(mixer).getLine(lineInfo) else AudioSystem.getLine(lineInfo)
         return (line as TargetDataLine).also { it.open(audioFormat) }
     }

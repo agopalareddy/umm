@@ -33,18 +33,27 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import okhttp3.HttpUrl
 
-/** Desktop counterpart of the Android AppGraph. The key comes from OPENROUTER_API_KEY and stays in memory. */
+/**
+ * Desktop counterpart of the Android AppGraph. The key lives in [secretStore] (the system keyring), or in memory
+ * when there is none; OPENROUTER_API_KEY, when set, wins and is never saved.
+ */
 class DesktopGraph(
     private val paths: XdgPaths,
     env: Map<String, String>,
     api: OpenRouterApi? = null,
     recommendationsUrl: HttpUrl = RecommendationRepository.DEFAULT_URL,
+    secretStore: KeyValueStore? = null,
 ) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val clock: () -> Long = System::currentTimeMillis
 
-    val apiKeyStore = ApiKeyStore(InMemoryKeyValueStore(), PassThroughCipher).apply {
-        env["OPENROUTER_API_KEY"]?.takeIf { it.isNotBlank() }?.let { set(it, KeySource.DEVELOPER) }
+    /** False when there is no keyring: the key then only lasts until Umm quits. */
+    val keyringAvailable = secretStore != null
+
+    val apiKeyStore = run {
+        val envKey = env["OPENROUTER_API_KEY"]?.takeIf { it.isNotBlank() }
+        val store = if (envKey == null) secretStore ?: InMemoryKeyValueStore() else InMemoryKeyValueStore()
+        ApiKeyStore(store, PassThroughCipher).apply { envKey?.let { set(it, KeySource.DEVELOPER) } }
     }
     val http by lazy { OpenRouterClient.defaultHttp() }
     val openRouter: OpenRouterApi = api ?: OpenRouterClient(OpenRouterClient.DEFAULT_BASE_URL, http) { apiKeyStore.get() }
@@ -53,6 +62,7 @@ class DesktopGraph(
     val categories by lazy { CategoryRepository(database) }
     val history by lazy { HistoryRepository(database, clock) }
     val settings by lazy { SettingsRepository(buildSettingsStore(File(paths.configDir, "settings.preferences_pb"))) }
+    val desktopSettings by lazy { DesktopSettings(buildSettingsStore(File(paths.configDir, "desktop.preferences_pb"))) }
     val stats by lazy { StatsRepository(database) { settings.settings.first().statsRecording } }
 
     val recommendations by lazy {
@@ -114,15 +124,15 @@ private object NoMicrophone : AudioSource {
     override fun stop() = Unit
 }
 
-private class InMemoryKeyValueStore : KeyValueStore {
+internal class InMemoryKeyValueStore : KeyValueStore {
     private val values = mutableMapOf<String, String>()
     override fun getString(key: String) = values[key]
     override fun putString(key: String, value: String) { values[key] = value }
     override fun remove(vararg keys: String) { keys.forEach(values::remove) }
 }
 
-/** The key never leaves memory on desktop, so there is nothing to encrypt. */
-private object PassThroughCipher : SecretCipher {
+/** The keyring (or memory) holds the key, and the keyring encrypts at rest, so there is nothing to encrypt here. */
+internal object PassThroughCipher : SecretCipher {
     override fun encrypt(plain: ByteArray) = plain
     override fun decrypt(blob: ByteArray) = blob
 }

@@ -144,8 +144,11 @@ class DictationController(
             val parts = InsertionPlanner.plan(done.text, inserter.capability)
             try {
                 inserter.insert(parts)
+                val pasted = parts.any { it is InsertPart.Paste }
+                // Where text is pasted (GNOME) it may miss, for example in a terminal; leave it on the clipboard.
+                if (pasted) clipboard.setText(done.text)
                 if (done.cleanupFailed) notifier.notify("Cleanup failed", "Inserted the raw transcript instead.")
-                _state.value = DesktopState.Inserted(pastedOnAsciiDesktop = parts.any { it is InsertPart.Paste })
+                _state.value = DesktopState.Inserted(pastedOnAsciiDesktop = pasted)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
