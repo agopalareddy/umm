@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -33,8 +34,11 @@ import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
 import io.github.agopalareddy.umm.core.data.Category
 import io.github.agopalareddy.umm.core.data.CategoryConfig
+import io.github.agopalareddy.umm.ui.AppEntry
 import io.github.agopalareddy.umm.ui.LocalUmm
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun CategoriesScreen(onBack: () -> Unit) {
@@ -60,10 +64,12 @@ fun CategoriesScreen(onBack: () -> Unit) {
 }
 
 /**
- * The assigned apps this device has. Assignments are shared (seeds cover Android and Linux apps), so the rest would
- * show as raw IDs of apps that can't be dictated into here.
+ * The assignments to list: all but [seeds] for apps this device doesn't have. Seeds name both Android and Linux apps,
+ * which would show as raw IDs; anything the user assigned stays, even an app with no launcher entry (the keyboard can
+ * assign those), so it can still be removed.
  */
-fun installedOnly(assigned: List<String>, installed: Set<String>): List<String> = assigned.filter { it in installed }
+fun visibleAssignments(assigned: List<String>, installed: Set<String>, seeds: Set<String>): List<String> =
+    assigned.filter { it in installed || it !in seeds }
 
 @Composable
 private fun CategoryDetail(config: CategoryConfig) {
@@ -73,8 +79,10 @@ private fun CategoryDetail(config: CategoryConfig) {
     var apps by remember { mutableStateOf(emptyList<String>()) }
     var refresh by remember { mutableStateOf(0) }
     var picking by remember { mutableStateOf(false) }
-    val installed = remember { umm.platform.installedApps().map { it.id }.toSet() }
-    LaunchedEffect(config.category, refresh) { apps = installedOnly(repo.appsIn(config.category), installed) }
+    LaunchedEffect(config.category, refresh) {
+        val installed = withContext(Dispatchers.IO) { umm.platform.installedApps() }.map { it.id }.toSet()
+        apps = visibleAssignments(repo.appsIn(config.category), installed, repo.seededApps)
+    }
 
     Column(Modifier.padding(top = 8.dp)) {
         Text("Level", style = MaterialTheme.typography.labelLarge)
@@ -116,7 +124,7 @@ private fun CategoryDetail(config: CategoryConfig) {
 private fun AppPicker(onDismiss: () -> Unit, onPick: (String) -> Unit) {
     val platform = LocalUmm.current.platform
     var query by remember { mutableStateOf("") }
-    val apps = remember { platform.installedApps() }
+    val apps by produceState(emptyList<AppEntry>()) { value = withContext(Dispatchers.IO) { platform.installedApps() } }
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

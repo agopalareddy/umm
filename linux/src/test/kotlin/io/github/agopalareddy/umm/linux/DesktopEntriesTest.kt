@@ -81,6 +81,26 @@ class DesktopEntriesTest {
         assertEquals(listOf("Alpha", "beta", "Gamma"), entries().all().map { it.name })
     }
 
+    @Test fun allRescansSoNewAppsAppear() {
+        write(system, "a.desktop", "Name=A")
+        val entries = entries()
+        assertEquals(listOf("a"), entries.all().map { it.id })
+        write(system, "b.desktop", "Name=B")
+        assertEquals(listOf("a", "b"), entries.all().map { it.id })
+        assertEquals("B", entries.label("b"))
+    }
+
+    @Test fun labelRescansForAnUnknownIdAtMostEvery30Seconds() {
+        var now = 0L
+        val entries = DesktopEntries(listOf(user, system), Locale.US) { now }
+        assertNull(entries.label("late"))
+        write(system, "late.desktop", "Name=Late")
+        now = 29_000
+        assertNull(entries.label("late"))
+        now = 31_000
+        assertEquals("Late", entries.label("late"))
+    }
+
     @Test fun environmentDirectories() {
         val home = tmp.newFolder("home")
         val found = DesktopEntries.directoriesFor(mapOf("XDG_DATA_DIRS" to "/opt/share:/usr/share"), home)

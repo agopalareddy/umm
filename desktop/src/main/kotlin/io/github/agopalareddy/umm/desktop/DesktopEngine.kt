@@ -25,6 +25,7 @@ import io.github.agopalareddy.umm.linux.portal.Portal
 import java.io.File
 import java.time.LocalDate
 import io.github.agopalareddy.umm.ui.SystemAppearance
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -108,6 +109,8 @@ class DesktopEngine(
     )
 
     init {
+        // Scan the app folders now, off the UI thread, so the first History or Categories render doesn't.
+        graph.scope.launch(Dispatchers.IO) { apps.all() }
         graph.scope.launch { graph.desktopSettings.prefs.collect { prefs = it } }
     }
 

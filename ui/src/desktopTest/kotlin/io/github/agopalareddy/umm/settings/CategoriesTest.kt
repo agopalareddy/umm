@@ -4,12 +4,16 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class CategoriesTest {
-    @Test fun listsOnlyAppsInstalledHere() {
+    private val seeds = setOf("com.google.android.keep", "org.kde.kate", "org.gnome.TextEditor")
+
+    @Test fun hidesSeedsForAppsNotInstalledHere() {
         val assigned = listOf("com.google.android.keep", "org.kde.kate", "org.gnome.TextEditor")
-        assertEquals(listOf("org.kde.kate"), installedOnly(assigned, setOf("org.kde.kate", "firefox")))
+        assertEquals(listOf("org.kde.kate"), visibleAssignments(assigned, setOf("org.kde.kate", "firefox"), seeds))
     }
 
-    @Test fun nothingInstalledListsNothing() {
-        assertEquals(emptyList<String>(), installedOnly(listOf("notion.id"), emptySet()))
+    @Test fun keepsAssignmentsTheUserMadeEvenWithoutALauncherEntry() {
+        // The keyboard can assign packages with no launcher icon, such as notification replies in System UI.
+        val assigned = listOf("com.android.systemui", "com.google.android.keep")
+        assertEquals(listOf("com.android.systemui"), visibleAssignments(assigned, emptySet(), seeds))
     }
 }
