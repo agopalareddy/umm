@@ -73,7 +73,9 @@ class PortalTextInserter(
             val created = portal.request(mapOf("session_handle_token" to Variant(portal.token()))) { remote.CreateSession(it) }
             val path = Portal.sessionPath(created)
             session = path
-            clipboard.RequestClipboard(path, emptyMap())
+            // Typing works without the clipboard (KDE never pastes), so a missing Clipboard portal is not fatal;
+            // paste() checks clipboard_enabled from Start.
+            runCatching { clipboard.RequestClipboard(path, emptyMap()) }
             val select = mutableMapOf<String, Variant<*>>(
                 "types" to Variant(UInt32(KEYBOARD)),
                 "persist_mode" to Variant(UInt32(PERSIST_UNTIL_REVOKED)),
@@ -81,7 +83,8 @@ class PortalTextInserter(
             tokenStore.getString(TOKEN_KEY)?.let { select["restore_token"] = Variant(it) }
             portal.request(select) { remote.SelectDevices(path, it) }
             val started = portal.request { remote.Start(path, "", it) }
-            started["restore_token"]?.value?.toString()?.let { tokenStore.putString(TOKEN_KEY, it) }
+            // The token only saves a dialog next time; the keyring being slow or refusing must not fail this insert.
+            started["restore_token"]?.value?.toString()?.let { runCatching { tokenStore.putString(TOKEN_KEY, it) } }
             clipboardEnabled = started["clipboard_enabled"]?.value == true
             return path
         }

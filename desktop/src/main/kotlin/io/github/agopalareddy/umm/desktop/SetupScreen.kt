@@ -24,17 +24,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.agopalareddy.umm.core.auth.KeySource
 import io.github.agopalareddy.umm.linux.BindResult
-import io.github.agopalareddy.umm.linux.HotkeyEvent
 import io.github.agopalareddy.umm.linux.InsertException
 import io.github.agopalareddy.umm.settings.Page
 import io.github.agopalareddy.umm.settings.PasteKeyField
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 
 private enum class Step { TODO, WORKING, DONE, FAILED }
-
-private const val SHORTCUT_TEST_MS = 10_000L
 
 /** First-run setup: connect OpenRouter, approve the shortcut and typing, then try it. */
 @Composable
@@ -42,6 +38,7 @@ fun SetupScreen(engine: DesktopEngine, onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
     val key by engine.graph.apiKeyStore.key.collectAsState()
     val bind by engine.bindResult.collectAsState()
+    val keyringFailed by engine.graph.keyringFailed.collectAsState()
 
     var typing by remember { mutableStateOf(Step.TODO) }
     var typingError by remember { mutableStateOf<String?>(null) }
@@ -50,9 +47,12 @@ fun SetupScreen(engine: DesktopEngine, onDone: () -> Unit) {
 
     Page("Set up Umm", onBack = null) {
         StepCard("1", "Connect OpenRouter", done = key != null) {
+            if (!engine.graph.keyringAvailable) KeyringWarning(failed = false)
+            else if (keyringFailed) KeyringWarning(failed = true)
             if (key == null) {
                 Button(onClick = engine.signIn::start) { Text("Connect with OpenRouter") }
-                PasteKeyField { engine.graph.apiKeyStore.set(it, KeySource.PASTED) }
+                // The keyring may show an unlock prompt; keep that off the UI thread.
+                PasteKeyField { pasted -> scope.launch(Dispatchers.IO) { engine.graph.apiKeyStore.set(pasted, KeySource.PASTED) } }
             } else {
                 Text("Connected")
             }
@@ -92,10 +92,7 @@ fun SetupScreen(engine: DesktopEngine, onDone: () -> Unit) {
                 onClick = {
                     scope.launch {
                         test = Step.WORKING
-                        engine.controller.hotkeyEnabled = false
-                        val pressed = withTimeoutOrNull(SHORTCUT_TEST_MS) { engine.hotkey.events.first { it == HotkeyEvent.Down } }
-                        engine.controller.hotkeyEnabled = true
-                        test = if (pressed != null) Step.DONE else Step.FAILED
+                        test = if (engine.controller.testHotkey()) Step.DONE else Step.FAILED
                     }
                 },
             ) { Text(if (test == Step.WORKING) "Press the shortcut now…" else "Test the shortcut") }

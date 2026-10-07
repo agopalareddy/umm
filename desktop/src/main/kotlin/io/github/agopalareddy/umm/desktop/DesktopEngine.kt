@@ -77,6 +77,7 @@ class DesktopEngine(
         hasKey = { graph.apiKeyStore.get() != null },
         micAvailable = { microphone.available() },
         request = ::request,
+        onOpenApp = { onOpenWindow() },
     )
 
     init {

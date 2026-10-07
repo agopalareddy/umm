@@ -4,6 +4,7 @@ import io.github.agopalareddy.umm.core.auth.KeyValueStore
 import io.github.agopalareddy.umm.linux.portal.Portal
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import org.freedesktop.dbus.DBusPath
 import org.freedesktop.dbus.Struct
 import org.freedesktop.dbus.Tuple
@@ -85,8 +86,9 @@ class SecretServiceStore private constructor(
     }
 
     override fun putString(key: String, value: String) {
-        val collection = service.ReadAlias(DEFAULT_ALIAS)
-        unlock(collection)
+        // On a fresh session (autologin GNOME) no default collection exists yet and ReadAlias answers "/". Writing
+        // through the alias path, as libsecret does, lets the keyring create it.
+        val collection = service.ReadAlias(DEFAULT_ALIAS).takeUnless { it.path == NO_PROMPT }?.also(::unlock) ?: DBusPath(DEFAULT_ALIAS_PATH)
         val properties = mapOf<String, Variant<*>>(
             "org.freedesktop.Secret.Item.Label" to Variant("Umm $key"),
             "org.freedesktop.Secret.Item.Attributes" to Variant(attributes(key), "a{ss}"),
@@ -119,12 +121,18 @@ class SecretServiceStore private constructor(
     private fun awaitPrompt(prompt: DBusPath) {
         if (prompt.path == NO_PROMPT) return
         val done = CountDownLatch(1)
+        val dismissed = AtomicBoolean(false)
         val handler = portal.conn.addGenericSigHandler(
             org.freedesktop.dbus.DBusMatchRule("signal", "org.freedesktop.Secret.Prompt", "Completed", prompt.path),
-        ) { done.countDown() }
+        ) { signal ->
+            dismissed.set(signal.parameters.firstOrNull() == true)
+            done.countDown()
+        }
         try {
             portal.conn.getRemoteObject(BUS_NAME, prompt.path, SecretPrompt::class.java).Prompt("")
             check(done.await(PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) { "keyring prompt timed out" }
+            // A dismissed prompt did not do what it was for: the item was not saved or the keyring not unlocked.
+            check(!dismissed.get()) { "keyring prompt dismissed" }
         } finally {
             handler.close()
         }
@@ -134,6 +142,7 @@ class SecretServiceStore private constructor(
         private const val BUS_NAME = "org.freedesktop.secrets"
         private const val SERVICE_PATH = "/org/freedesktop/secrets"
         private const val DEFAULT_ALIAS = "default"
+        private const val DEFAULT_ALIAS_PATH = "/org/freedesktop/secrets/aliases/default"
         private const val NO_PROMPT = "/"
         private const val PROMPT_TIMEOUT_SECONDS = 120L
 

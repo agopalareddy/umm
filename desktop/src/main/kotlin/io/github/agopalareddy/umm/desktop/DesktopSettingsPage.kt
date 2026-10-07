@@ -42,11 +42,13 @@ fun DesktopSettingsPage(engine: DesktopEngine, onBack: () -> Unit, onSetup: () -
     val platform = LocalUmm.current.platform
     val prefs by engine.graph.desktopSettings.prefs.collectAsState(DesktopPrefs())
     val bind by engine.bindResult.collectAsState()
+    val keyringFailed by engine.graph.keyringFailed.collectAsState()
     val change: ((DesktopPrefs) -> DesktopPrefs) -> Unit = { transform -> scope.launch { engine.graph.desktopSettings.update(transform) } }
     val microphones = remember { JavaSoundMicrophone.inputDevices() }
 
     Page("Desktop", onBack) {
-        if (!engine.graph.keyringAvailable) KeyringWarning()
+        if (!engine.graph.keyringAvailable) KeyringWarning(failed = false)
+        else if (keyringFailed) KeyringWarning(failed = true)
 
         Section("Shortcut") {
             ShortcutCard(
@@ -96,14 +98,15 @@ fun DesktopSettingsPage(engine: DesktopEngine, onBack: () -> Unit, onSetup: () -
     }
 }
 
+/** [failed] is a keyring that exists but refused the key; otherwise there is none. */
 @Composable
-internal fun KeyringWarning() {
+internal fun KeyringWarning(failed: Boolean) {
     Card(
         Modifier.fillMaxWidth().padding(vertical = 8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
     ) {
         Text(
-            "No keyring found: your key won't be saved",
+            if (failed) "The keyring didn't accept your key: it won't be saved" else "No keyring found: your key won't be saved",
             Modifier.padding(16.dp),
             color = MaterialTheme.colorScheme.onErrorContainer,
         )

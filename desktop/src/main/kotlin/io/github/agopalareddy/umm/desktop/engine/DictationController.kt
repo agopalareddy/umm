@@ -14,12 +14,16 @@ import io.github.agopalareddy.umm.linux.TextInserter
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -29,7 +33,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 class DictationController(
     private val scope: CoroutineScope,
-    hotkey: HotkeySource,
+    private val hotkey: HotkeySource,
     private val pipeline: DictationPipeline,
     private val inserter: TextInserter,
     private val clipboard: Clipboard,
@@ -39,6 +43,9 @@ class DictationController(
     private val micAvailable: () -> Boolean,
     private val request: suspend (packageName: String) -> DictationRequest,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val holdMs: Long = 500,
+    private val releaseWaitMs: Long = 3000,
+    private val onOpenApp: () -> Unit = {},
 ) {
     private enum class Phase { IDLE, RECORDING, PROCESSING, INSERTING }
 
@@ -50,8 +57,8 @@ class DictationController(
 
     private val lock = Any()
     @Volatile private var phase = Phase.IDLE
-    private var startJob: Job? = null
-    private val gesture = HotkeyGesture()
+    @Volatile private var startJob: Job? = null
+    private val gesture = HotkeyGesture(holdMs)
     private val keyHeld = MutableStateFlow(false)
 
     init {
@@ -67,7 +74,7 @@ class DictationController(
         startJob = scope.launch {
             when {
                 !hasKey() -> {
-                    notifier.notify("Connect OpenRouter", "Umm needs an OpenRouter key before it can dictate.", openAction = true)
+                    notifier.notify("Connect OpenRouter", "Umm needs an OpenRouter key before it can dictate.", openAction = true, onOpen = onOpenApp)
                     _state.value = DesktopState.NeedsKey
                     phase = Phase.IDLE
                 }
@@ -80,10 +87,28 @@ class DictationController(
                     val packageName = focus.focusedAppId() ?: "desktop"
                     val dictation = request(packageName)
                     ensureActive()
-                    pipeline.start(dictation)
+                    if (!startPipeline(dictation)) {
+                        notifier.notify(START_FAILED, "Try the shortcut again.")
+                        _state.value = DesktopState.Failed(START_FAILED)
+                        phase = Phase.IDLE
+                    }
                 }
             }
         }
+    }
+
+    /**
+     * Starts the pipeline once it is free. A recording that was just cancelled is still winding down for up to one
+     * audio chunk, and the pipeline silently ignores a start until it ends, so wait for that and check it took.
+     */
+    private suspend fun startPipeline(dictation: DictationRequest): Boolean {
+        repeat(START_ATTEMPTS) {
+            withTimeoutOrNull(START_ATTEMPT_MS) { pipeline.state.first { it !is DictationState.Listening } }
+            pipeline.start(dictation)
+            if (withTimeoutOrNull(START_ATTEMPT_MS) { pipeline.state.first { it is DictationState.Listening } } != null) return true
+            currentCoroutineContext().ensureActive()
+        }
+        return false
     }
 
     /** Ends the recording and processes it. */
@@ -92,6 +117,30 @@ class DictationController(
         scope.launch {
             startJob?.join()
             pipeline.stop()
+        }
+    }
+
+    /**
+     * Setup's "press the shortcut" check: true when a full press and release arrives within [timeoutMs]. Presses are
+     * seen but start no dictation, and the hotkey is back on when this returns or is cancelled.
+     */
+    suspend fun testHotkey(timeoutMs: Long = 10_000): Boolean {
+        hotkeyEnabled = false
+        var pressed = false
+        try {
+            withTimeoutOrNull(timeoutMs) {
+                hotkey.events.first { event ->
+                    if (event == HotkeyEvent.Down) pressed = true
+                    pressed && event == HotkeyEvent.Up
+                }
+            }
+            return pressed
+        } finally {
+            // Let the controller's own collector see the release before presses count again.
+            withContext(NonCancellable) {
+                delay(REENABLE_DELAY_MS)
+                hotkeyEnabled = true
+            }
         }
     }
 
@@ -112,9 +161,24 @@ class DictationController(
         val command = gesture.onEvent(event, clock(), recording = phase == Phase.RECORDING)
         if (!hotkeyEnabled) return
         when (command) {
-            GestureCommand.START -> start()
+            GestureCommand.START -> {
+                start()
+                switchToHoldToTalk()
+            }
             GestureCommand.STOP -> stop()
             GestureCommand.NONE -> Unit
+        }
+    }
+
+    /**
+     * A key still down after [holdMs] means hold-to-talk: the recording then ends on release, not on a pause, so the
+     * silence timeout must not cut in while the user thinks.
+     */
+    private fun switchToHoldToTalk() {
+        scope.launch {
+            delay(holdMs)
+            startJob?.join()
+            if (keyHeld.value && phase == Phase.RECORDING) pipeline.setContinuous(true)
         }
     }
 
@@ -129,7 +193,7 @@ class DictationController(
             is DictationState.Done -> insert(pipelineState)
             is DictationState.Failed -> {
                 val reason = failureText(pipelineState.reason)
-                notifier.notify("Dictation failed", reason, openAction = pipelineState.reason.isKeyProblem())
+                notifier.notify("Dictation failed", reason, openAction = pipelineState.reason.isKeyProblem(), onOpen = onOpenApp)
                 _state.value = DesktopState.Failed(reason)
                 finish(pipelineState)
             }
@@ -144,8 +208,13 @@ class DictationController(
     private suspend fun insert(done: DictationState.Done) {
         phase = Phase.INSERTING
         try {
-            // Never type while the hotkey's modifiers are still down.
-            withTimeoutOrNull(RELEASE_WAIT_MS) { keyHeld.first { !it } }
+            // Never type while the hotkey's modifiers are still down: Super+Alt plus a typed key can fire other
+            // shortcuts (or this one again). If the key is still held after a fair wait, hand over the text instead.
+            val released = withTimeoutOrNull(releaseWaitMs) { keyHeld.first { !it } } != null
+            if (!released) {
+                copyInstead(done.text, "Release the shortcut first")
+                return
+            }
             val parts = InsertionPlanner.plan(done.text, inserter.capability)
             try {
                 inserter.insert(parts)
@@ -157,14 +226,17 @@ class DictationController(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                clipboard.setText(done.text)
-                val reason = e.message ?: "Couldn't type the text"
-                notifier.notify("Copied to the clipboard", "$reason. Paste it with Ctrl+V.")
-                _state.value = DesktopState.Copied(reason)
+                copyInstead(done.text, e.message ?: "Couldn't type the text")
             }
         } finally {
             finish(done)
         }
+    }
+
+    private fun copyInstead(text: String, reason: String) {
+        clipboard.setText(text)
+        notifier.notify("Copied to the clipboard", "$reason. Paste it with Ctrl+V.")
+        _state.value = DesktopState.Copied(reason)
     }
 
     private fun finish(pipelineState: DictationState) {
@@ -182,6 +254,9 @@ class DictationController(
 
     private companion object {
         const val MIC_UNAVAILABLE = "Microphone unavailable"
-        const val RELEASE_WAIT_MS = 3000L
+        const val START_FAILED = "Couldn't start recording"
+        const val START_ATTEMPTS = 4
+        const val START_ATTEMPT_MS = 300L
+        const val REENABLE_DELAY_MS = 150L
     }
 }

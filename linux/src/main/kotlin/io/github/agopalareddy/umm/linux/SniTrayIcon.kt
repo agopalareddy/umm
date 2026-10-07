@@ -89,6 +89,7 @@ class SniTrayIcon(private val portal: Portal) : TrayIcon {
     private val menuRevision = AtomicInteger(1)
     private val busName = "org.kde.StatusNotifierItem-${ProcessHandle.current().pid()}-1"
     private var shown = false
+    private var watcherSignal: AutoCloseable? = null
 
     private val item = object : StatusNotifierItem {
         override fun getCategory() = "ApplicationStatus"
@@ -143,11 +144,24 @@ class SniTrayIcon(private val portal: Portal) : TrayIcon {
             portal.conn.requestBusName(busName)
             portal.conn.exportObject(ITEM_PATH, item)
             portal.conn.exportObject(MENU_PATH, menu)
-            portal.conn.getRemoteObject(WATCHER_NAME, WATCHER_PATH, StatusNotifierWatcher::class.java)
-                .RegisterStatusNotifierItem(busName)
             shown = true
         } catch (e: Exception) {
-            // No tray on this desktop.
+            return // The bus refused us: no tray.
+        }
+        // Umm often starts at login before the panel's watcher exists, and a restarted panel loses its items, so
+        // register now and again each time the watcher appears.
+        watcherSignal = portal.onSignal("org.freedesktop.DBus", "NameOwnerChanged") { signal ->
+            if (signal.parameters[0] == WATCHER_NAME && (signal.parameters[2] as? String).orEmpty().isNotEmpty()) register()
+        }
+        register()
+    }
+
+    private fun register() {
+        try {
+            portal.conn.getRemoteObject(WATCHER_NAME, WATCHER_PATH, StatusNotifierWatcher::class.java)
+                .RegisterStatusNotifierItem(busName)
+        } catch (e: Exception) {
+            // No watcher yet (or none on this desktop); a later NameOwnerChanged retries.
         }
     }
 
@@ -167,6 +181,7 @@ class SniTrayIcon(private val portal: Portal) : TrayIcon {
     override fun hide() {
         if (!shown) return
         shown = false
+        watcherSignal?.let { runCatching { it.close() } }
         runCatching { portal.conn.unExportObject(ITEM_PATH) }
         runCatching { portal.conn.unExportObject(MENU_PATH) }
         runCatching { portal.conn.releaseBusName(busName) }

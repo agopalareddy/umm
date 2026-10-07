@@ -81,6 +81,20 @@ class DesktopGraphKeyTest {
         assertEquals("PASTED", keyring.values["openrouter_key_source"])
     }
 
+    @Test fun aRefusingKeyringStillTakesTheKeyInMemoryAndSaysSo() {
+        val refusing = object : KeyValueStore {
+            override fun getString(key: String): String? = null
+            override fun putString(key: String, value: String) = error("keyring prompt dismissed")
+            override fun remove(vararg keys: String) = error("keyring prompt dismissed")
+        }
+        val g = graph(secretStore = refusing)
+        assertFalse(g.keyringFailed.value)
+        g.apiKeyStore.set("sk-or-refused")
+        assertEquals("sk-or-refused", g.apiKeyStore.get())
+        assertTrue(g.keyringFailed.value)
+        assertEquals(emptyList<File>(), filesContaining("sk-or-refused"))
+    }
+
     @Test fun keyringKeySurvivesANewGraph() {
         val keyring = RecordingStore()
         graph(secretStore = keyring).apiKeyStore.set("sk-or-persisted")

@@ -25,6 +25,8 @@ import io.github.agopalareddy.umm.ui.Platform
 import io.github.agopalareddy.umm.ui.UmmServices
 import java.io.File
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -50,9 +52,14 @@ class DesktopGraph(
     /** False when there is no keyring: the key then only lasts until Umm quits. */
     val keyringAvailable = secretStore != null
 
+    private val keyring = secretStore?.let(::ResilientKeyValueStore)
+
+    /** True once the keyring has refused to save the key: it is then only in memory until Umm quits. */
+    val keyringFailed: StateFlow<Boolean> = keyring?.failed ?: MutableStateFlow(false)
+
     val apiKeyStore = run {
         val envKey = env["OPENROUTER_API_KEY"]?.takeIf { it.isNotBlank() }
-        val store = if (envKey == null) secretStore ?: InMemoryKeyValueStore() else InMemoryKeyValueStore()
+        val store = if (envKey == null) keyring ?: InMemoryKeyValueStore() else InMemoryKeyValueStore()
         ApiKeyStore(store, PassThroughCipher).apply { envKey?.let { set(it, KeySource.DEVELOPER) } }
     }
     val http by lazy { OpenRouterClient.defaultHttp() }
@@ -125,7 +132,7 @@ private object NoMicrophone : AudioSource {
 }
 
 internal class InMemoryKeyValueStore : KeyValueStore {
-    private val values = mutableMapOf<String, String>()
+    private val values = java.util.concurrent.ConcurrentHashMap<String, String>()
     override fun getString(key: String) = values[key]
     override fun putString(key: String, value: String) { values[key] = value }
     override fun remove(vararg keys: String) { keys.forEach(values::remove) }

@@ -10,7 +10,9 @@ import io.github.agopalareddy.umm.core.openrouter.ModelInfo
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterApi
 import io.github.agopalareddy.umm.core.openrouter.OpenRouterException
 import io.github.agopalareddy.umm.core.openrouter.Transcription
+import io.github.agopalareddy.umm.core.pipeline.DictationPipeline
 import io.github.agopalareddy.umm.core.pipeline.DictationRequest
+import io.github.agopalareddy.umm.core.pipeline.DictationState
 import io.github.agopalareddy.umm.core.platform.XdgPaths
 import io.github.agopalareddy.umm.desktop.DesktopGraph
 import io.github.agopalareddy.umm.linux.BindResult
@@ -35,7 +37,9 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -85,9 +89,32 @@ class DictationControllerTest {
         override suspend fun blockedByDataPolicy(sttModel: String): Boolean? = null
     }
 
+    /** Every collector gets every event, and one that subscribes late first gets the ones it missed. */
     private class FakeHotkey : HotkeySource {
-        val channel = Channel<HotkeyEvent>(Channel.UNLIMITED)
-        override val events: Flow<HotkeyEvent> = channel.receiveAsFlow()
+        private val history = CopyOnWriteArrayList<HotkeyEvent>()
+        private val subscribers = CopyOnWriteArrayList<Channel<HotkeyEvent>>()
+
+        // Sending and subscribing exclude each other, so no event falls between a late subscriber's replay and its join.
+        private val lock = Any()
+
+        fun send(event: HotkeyEvent) = synchronized(lock) {
+            history += event
+            subscribers.forEach { it.trySend(event) }
+        }
+
+        override val events: Flow<HotkeyEvent> = flow {
+            val channel = Channel<HotkeyEvent>(Channel.UNLIMITED)
+            synchronized(lock) {
+                history.forEach { channel.trySend(it) }
+                subscribers += channel
+            }
+            try {
+                for (event in channel) emit(event)
+            } finally {
+                subscribers -= channel
+            }
+        }
+
         override suspend fun bind() = BindResult.Bound("Super+Alt+Space")
         override suspend fun configure() = false
     }
@@ -111,12 +138,12 @@ class DictationControllerTest {
         override fun setText(text: String) { copied = text }
     }
 
-    private data class Notice(val title: String, val body: String, val openAction: Boolean)
+    private data class Notice(val title: String, val body: String, val openAction: Boolean, val onOpen: () -> Unit)
 
     private class FakeNotifier : Notifier {
         val notices = CopyOnWriteArrayList<Notice>()
         override fun notify(title: String, body: String, openAction: Boolean, onOpen: () -> Unit) {
-            notices += Notice(title, body, openAction)
+            notices += Notice(title, body, openAction, onOpen)
         }
     }
 
@@ -136,18 +163,23 @@ class DictationControllerTest {
     @Volatile private var hasKey = true
     @Volatile private var micAvailable = true
     @Volatile private var now = 0L
+    private val opened = AtomicInteger()
 
     private lateinit var graph: DesktopGraph
     private lateinit var scope: CoroutineScope
+    private lateinit var pipeline: DictationPipeline
     private lateinit var controller: DictationController
 
     @Before fun setUp() {
         graph = DesktopGraph(XdgPaths(env = emptyMap(), home = tmp.root), emptyMap(), api, recommendationsUrl = UNREACHABLE)
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        pipeline = graph.pipeline(audio)
         controller = DictationController(
             scope = scope,
             hotkey = hotkey,
-            pipeline = graph.pipeline(audio),
+            pipeline = pipeline,
+            releaseWaitMs = 1500,
+            onOpenApp = { opened.incrementAndGet() },
             inserter = inserter,
             clipboard = clipboard,
             notifier = notifier,
@@ -177,7 +209,7 @@ class DictationControllerTest {
 
     private fun press(event: HotkeyEvent, atMs: Long) {
         now = atMs
-        hotkey.channel.trySend(event)
+        hotkey.send(event)
     }
 
     private fun isListening() = controller.state.value is DesktopState.Listening
@@ -332,6 +364,79 @@ class DictationControllerTest {
         press(HotkeyEvent.Down, 1000)
         eventually("listening") { isListening() }
         assertEquals(1, audio.recordings.get())
+    }
+
+    @Test fun hotkeyStillHeldAfterTheReleaseWait_copiesInsteadOfTyping() {
+        press(HotkeyEvent.Down, 0)
+        eventually("listening") { isListening() }
+        controller.stop()
+        // The key is never released: typing now would send keys with Super+Alt down.
+        eventually("copied", timeoutMs = 8_000) { controller.state.value is DesktopState.Copied }
+        assertEquals(0, inserter.started.get())
+        assertEquals("Hello", clipboard.copied)
+        assertTrue(notifier.notices.single().body.contains("Release"))
+    }
+
+    @Test fun holdingTheKeySwitchesToContinuousRecording() {
+        press(HotkeyEvent.Down, 0)
+        eventually("listening") { isListening() }
+        assertEquals(false, (pipeline.state.value as DictationState.Listening).continuous)
+        // A held key means hold-to-talk: a pause while talking must not end the recording.
+        eventually("continuous", timeoutMs = 5_000) { (pipeline.state.value as? DictationState.Listening)?.continuous == true }
+    }
+
+    @Test fun aTapKeepsTheSilenceTimeout() {
+        press(HotkeyEvent.Down, 0)
+        eventually("listening") { isListening() }
+        press(HotkeyEvent.Up, 50)
+        // Longer than the hold threshold, shorter than the fake audio's (sped-up) no-speech grace.
+        Thread.sleep(650)
+        assertEquals(false, (pipeline.state.value as DictationState.Listening).continuous)
+    }
+
+    @Test fun startingRightAfterCancelStillRecords() {
+        controller.start()
+        eventually("listening") { isListening() }
+        controller.cancel()
+        controller.start()
+        eventually("a second recording", timeoutMs = 5_000) { audio.recordings.get() == 2 && isListening() }
+        controller.stop()
+        eventually("a final state") { isFinal() }
+        assertEquals(1, inserter.inserted.size)
+    }
+
+    @Test fun notificationOpenButtonOpensTheApp() {
+        hasKey = false
+        press(HotkeyEvent.Down, 0)
+        eventually("needs key") { controller.state.value == DesktopState.NeedsKey }
+        notifier.notices.single().onOpen()
+        assertEquals(1, opened.get())
+    }
+
+    @Test fun shortcutTest_seesThePressAndStartsNothing() {
+        val result = CompletableDeferred<Boolean>()
+        scope.launch { result.complete(controller.testHotkey(5_000)) }
+        eventually("test running") { !controller.hotkeyEnabled }
+        press(HotkeyEvent.Down, 0)
+        press(HotkeyEvent.Up, 80)
+        assertTrue(runBlocking { withTimeout(5_000) { result.await() } })
+        Thread.sleep(200)
+        assertEquals(0, audio.recordings.get())
+        assertTrue(controller.hotkeyEnabled)
+        press(HotkeyEvent.Down, 1000)
+        eventually("a real dictation after the test") { isListening() }
+    }
+
+    @Test fun shortcutTest_timesOutWithoutAPressAndReenablesTheHotkey() {
+        assertEquals(false, runBlocking { controller.testHotkey(200) })
+        assertTrue(controller.hotkeyEnabled)
+    }
+
+    @Test fun shortcutTest_cancelledStillReenablesTheHotkey() {
+        val job = scope.launch { controller.testHotkey(30_000) }
+        eventually("test running") { !controller.hotkeyEnabled }
+        job.cancel()
+        eventually("hotkey back on") { controller.hotkeyEnabled }
     }
 
     @Test fun typedTextLeavesTheClipboardAlone() {
