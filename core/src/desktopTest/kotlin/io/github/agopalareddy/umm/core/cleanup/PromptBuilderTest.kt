@@ -27,6 +27,16 @@ class PromptBuilderTest {
         }
     }
 
+    @Test fun everyLevelTurnsSpokenEmojiRequestsIntoEmoji() {
+        for (level in listOf(LIGHT, FORMATTED, POLISHED)) {
+            for (script in ScriptPreference.entries) {
+                val p = prompt(level, script)
+                listOf("thumbs up emoji", "👍", "talks about emoji", "Emoji are allowed with any script")
+                    .forEach { assertTrue("$level/$script missing '$it'", p.contains(it)) }
+            }
+        }
+    }
+
     @Test fun levelSpecificBehavior() {
         assertTrue(prompt(LIGHT).contains("Do not rephrase"))
         assertTrue(prompt(FORMATTED).contains("bullet"))
