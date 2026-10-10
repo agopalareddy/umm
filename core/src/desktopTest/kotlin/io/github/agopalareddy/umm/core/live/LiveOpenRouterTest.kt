@@ -93,6 +93,23 @@ class LiveOpenRouterTest {
         assertFalse("added an emoji: $out", emoji.containsMatchIn(out))
     }
 
+    @Test fun spokenEditingCommandsAreAppliedNotTyped() {
+        val raw = "Okay, this is me texting and testing in Kate. I add an emoji for thumbs up and an emoji for smiling " +
+            "and a few birthday emojis. Actually, cancel all the emojis and just add three birthday-related emojis."
+        val out = clean(raw, CleanupLevel.FORMATTED)
+        assertTrue(out, out.contains("Kate"))
+        assertEquals("expected exactly three emoji: $out", 3, emoji.findAll(out).count())
+        assertFalse("kept a cancelled emoji: $out", out.contains("👍") || out.contains("😊") || out.contains("🙂"))
+        assertFalse("typed the command: $out", Regex("emoji|cancel|actually", RegexOption.IGNORE_CASE).containsMatchIn(out))
+    }
+
+    @Test fun laterEmojiCorrectionReplacesTheFirst() {
+        val out = clean("see you tonight heart emoji, no wait, make that a fire emoji", CleanupLevel.LIGHT)
+        assertTrue(out, out.contains("🔥"))
+        assertFalse("kept the replaced emoji: $out", out.contains("❤"))
+        assertFalse("typed the command: $out", Regex("emoji|make that|wait", RegexOption.IGNORE_CASE).containsMatchIn(out))
+    }
+
     @Test fun hinglishEmojiStaysRomanizedAndGetsTheEmoji() {
         val out = clean("kal milte hain heart emoji", CleanupLevel.LIGHT, ScriptPreference.LATIN)
         assertTrue(out, out.contains("❤"))

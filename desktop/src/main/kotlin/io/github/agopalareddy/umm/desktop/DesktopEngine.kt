@@ -10,10 +10,12 @@ import io.github.agopalareddy.umm.linux.Autostart
 import io.github.agopalareddy.umm.linux.AwtClipboard
 import io.github.agopalareddy.umm.linux.BindResult
 import io.github.agopalareddy.umm.linux.DbusNotifier
+import io.github.agopalareddy.umm.linux.DesktopEntries
 import io.github.agopalareddy.umm.linux.FocusTracker
 import io.github.agopalareddy.umm.linux.GlobalShortcutsHotkey
 import io.github.agopalareddy.umm.linux.JavaSoundMicrophone
 import io.github.agopalareddy.umm.linux.KWinFocusTracker
+import io.github.agopalareddy.umm.linux.PortalAppearance
 import io.github.agopalareddy.umm.linux.PortalTextInserter
 import io.github.agopalareddy.umm.linux.SniTrayIcon
 import io.github.agopalareddy.umm.linux.TrayAction
@@ -22,9 +24,14 @@ import io.github.agopalareddy.umm.linux.capabilityFor
 import io.github.agopalareddy.umm.linux.portal.Portal
 import java.io.File
 import java.time.LocalDate
+import io.github.agopalareddy.umm.ui.SystemAppearance
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -72,6 +79,16 @@ class DesktopEngine(
 
     val inserter = PortalTextInserter(portal, secretStore ?: InMemoryKeyValueStore(), capabilityFor(env))
 
+    /** Installed apps, for the category picker and app names in History. */
+    val apps = DesktopEntries.forEnvironment(env, File(System.getProperty("user.home")))
+
+    private val portalAppearance = PortalAppearance(portal)
+
+    /** The desktop's light/dark and accent preferences, for the window's theme. */
+    val appearance: StateFlow<SystemAppearance> = portalAppearance.appearance
+        .map { SystemAppearance(it.dark, it.accentArgb) }
+        .stateIn(graph.scope, SharingStarted.Eagerly, portalAppearance.appearance.value.let { SystemAppearance(it.dark, it.accentArgb) })
+
     private val autostart = Autostart.forEnvironment(env, File(System.getProperty("user.home")))
 
     /** The installed launcher's path; null when running from Gradle, where there is nothing to start at login. */
@@ -92,7 +109,8 @@ class DesktopEngine(
     )
 
     init {
-        portal.register(APP_ID)?.let { System.err.println("Portal app registration: $it") }
+        // Scan the app folders now, off the UI thread, so the first History or Categories render doesn't.
+        graph.scope.launch(Dispatchers.IO) { apps.all() }
         graph.scope.launch { graph.desktopSettings.prefs.collect { prefs = it } }
     }
 
@@ -142,6 +160,7 @@ class DesktopEngine(
     fun close() {
         tray.hide()
         (focus as? KWinFocusTracker)?.close()
+        portalAppearance.close()
         graph.close()
         portal.close()
     }

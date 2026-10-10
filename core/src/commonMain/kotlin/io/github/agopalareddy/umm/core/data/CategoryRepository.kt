@@ -26,6 +26,9 @@ class CategoryRepository(db: UmmDatabase) {
 
     suspend fun appsIn(category: Category): List<String> = dao.appsIn(category)
 
+    /** App IDs Umm assigns on first run, for Android and Linux alike. */
+    val seededApps: Set<String> get() = Seeds.apps.keys
+
     suspend fun update(config: CategoryConfig) {
         dao.upsert(CategoryEntity(config.category, config.level, config.script))
     }

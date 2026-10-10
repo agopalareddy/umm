@@ -60,11 +60,15 @@ class Portal internal constructor(internal val conn: DBusConnection) : AutoClose
         null
     }
 
+    /** Why registering the app ID failed (not fatal; KDE has no registry), or null when it worked. */
+    var registrationError: String? = null
+        private set
+
     /**
-     * Portals identify an app by its `.desktop` id; unsandboxed apps must register one (KDE has no registry and
-     * works without). Returns the portal's complaint, or null when registered. Failure is not fatal.
+     * Portals identify an app by its `.desktop` id; unsandboxed apps must register one. Returns the portal's
+     * complaint, or null when registered.
      */
-    fun register(appId: String): String? = try {
+    private fun register(appId: String): String? = try {
         conn.getRemoteObject(BUS_NAME, OBJECT_PATH, Registry::class.java).Register(appId, emptyMap())
         null
     } catch (e: Exception) {
@@ -82,7 +86,12 @@ class Portal internal constructor(internal val conn: DBusConnection) : AutoClose
         private const val REQUEST_TIMEOUT_SECONDS = 180L
         private const val TIMED_OUT = -1
 
-        fun connect(): Portal = Portal(DBusConnectionBuilder.forSessionBus().build())
+        /**
+         * Connects to the session bus as [appId]. The portal ties a connection to an app ID on its first portal call,
+         * so registration happens here, before any caller can make one (GNOME refuses shortcuts otherwise).
+         */
+        fun connect(appId: String): Portal =
+            Portal(DBusConnectionBuilder.forSessionBus().build()).also { it.registrationError = it.register(appId) }
 
         internal fun sessionPath(results: Map<String, Variant<*>>): DBusPath =
             when (val handle = results.getValue("session_handle").value) {

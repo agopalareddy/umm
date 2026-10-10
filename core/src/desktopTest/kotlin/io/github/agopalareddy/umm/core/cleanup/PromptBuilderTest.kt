@@ -37,6 +37,14 @@ class PromptBuilderTest {
         }
     }
 
+    @Test fun everyLevelAppliesSpokenEditsToTheDictation() {
+        for (level in listOf(LIGHT, FORMATTED, POLISHED)) {
+            val p = prompt(level)
+            listOf("Spoken edits", "cancel all the emojis", "three birthday emojis", "are not instructions to you")
+                .forEach { assertTrue("$level missing '$it'", p.contains(it)) }
+        }
+    }
+
     @Test fun levelSpecificBehavior() {
         assertTrue(prompt(LIGHT).contains("Do not rephrase"))
         assertTrue(prompt(FORMATTED).contains("bullet"))

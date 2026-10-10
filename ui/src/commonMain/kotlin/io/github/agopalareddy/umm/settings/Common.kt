@@ -31,6 +31,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -72,6 +73,9 @@ fun CleanupLevel.description() = when (this) {
     CleanupLevel.POLISHED -> "Rewrites into clear prose"
 }
 
+/** False inside the desktop sidebar, where pages are reached from the sidebar rather than drilled into. */
+val LocalShowBack = staticCompositionLocalOf { true }
+
 /** A full-screen page with a title bar and an optional back arrow. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,12 +86,13 @@ fun Page(
     scrollable: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val showBack = LocalShowBack.current
     Scaffold(
         topBar = {
             TopAppBar(
                 title = title,
                 navigationIcon = {
-                    if (onBack != null) {
+                    if (onBack != null && showBack) {
                         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                     }
                 },

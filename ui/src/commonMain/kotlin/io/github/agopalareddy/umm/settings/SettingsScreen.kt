@@ -270,20 +270,22 @@ fun AppearancePage(settings: UmmSettings, onBack: () -> Unit, onChange: Settings
                 }
             }
         }
+        // Desktops pass their accent through systemAppearance(); with no accent set, Umm's own colors stay.
+        val desktop = LocalUmm.current.platform.systemAppearance() != null
         Section("Colors") {
-            val supported = LocalUmm.current.platform.dynamicColors(dark = false) != null
+            val supported = desktop || LocalUmm.current.platform.dynamicColors(dark = false) != null
             SwitchRow(
                 checked = settings.dynamicColor && supported,
                 enabled = supported,
                 onCheckedChange = { on -> onChange { it.copy(dynamicColor = on) } },
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Use Dynamic Theme")
+                    Text(if (desktop) "Use system accent color" else "Use Dynamic Theme")
                     if (!supported) Text("Needs Android 12 or newer", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
-        Text("Applies to the app and the Umm keyboard.", style = MaterialTheme.typography.bodySmall)
+        if (!desktop) Text("Applies to the app and the Umm keyboard.", style = MaterialTheme.typography.bodySmall)
     }
 }
 

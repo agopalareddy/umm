@@ -2,8 +2,11 @@ package io.github.agopalareddy.umm.desktop
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.SnackbarHostState
+import io.github.agopalareddy.umm.linux.DesktopEntries
 import io.github.agopalareddy.umm.ui.AppEntry
 import io.github.agopalareddy.umm.ui.Platform
+import io.github.agopalareddy.umm.ui.SystemAppearance
+import kotlinx.coroutines.flow.StateFlow
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.net.URLEncoder
@@ -13,10 +16,13 @@ import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-/** Linux desktop platform calls. Per-app categories, the system accent color and the keyring come in later sub-projects. */
+/** Linux desktop platform calls. */
 class DesktopPlatform(
     private val snackbar: SnackbarHostState,
     private val scope: CoroutineScope,
+    private val appearance: StateFlow<SystemAppearance>,
+    private val apps: DesktopEntries,
+    private val env: Map<String, String> = System.getenv(),
     private val launcher: (List<String>) -> Unit = { ProcessBuilder(it).start() },
 ) : Platform {
     override fun openUrl(url: String) {
@@ -34,9 +40,14 @@ class DesktopPlatform(
         scope.launch { snackbar.showSnackbar(text) }
     }
 
-    override fun installedApps(): List<AppEntry> = emptyList()
+    override fun installedApps(): List<AppEntry> = apps.all().map { AppEntry(it.id, it.name) }
 
-    override fun appLabel(id: String): String = id
+    override fun appLabel(id: String): String = apps.label(id) ?: id
+
+    // Only KWin tells Umm which window has focus (KWinFocusTracker).
+    override fun perAppLevelsNote(): String? =
+        if (env["XDG_CURRENT_DESKTOP"].orEmpty().contains("KDE")) null
+        else "Per-app levels need KDE Plasma; other desktops use the default level."
 
     override fun appVersion(): String = DesktopPlatform::class.java.`package`?.implementationVersion ?: "dev"
 
@@ -49,7 +60,9 @@ class DesktopPlatform(
 
     override fun animationsEnabled(): Boolean = true
 
-    override fun dynamicColors(dark: Boolean): ColorScheme? = null
+    override fun dynamicColors(dark: Boolean): ColorScheme? = appearance.value.accentArgb?.let { accentColorScheme(it, dark) }
+
+    override fun systemAppearance(): StateFlow<SystemAppearance> = appearance
 
     /** mailto: wants %20 for spaces, not URLEncoder's +. */
     private fun encode(value: String) = URLEncoder.encode(value, Charsets.UTF_8).replace("+", "%20")
