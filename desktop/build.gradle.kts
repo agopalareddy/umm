@@ -30,6 +30,8 @@ compose.desktop {
                 "jdk.unsupported",
                 "java.naming",
                 "jdk.charsets",
+                // dbus-java's login to the session bus (com.sun.security.auth.module.UnixSystem).
+                "jdk.security.auth",
             )
         }
     }

@@ -72,6 +72,12 @@ object SelfCheck {
             check(providers.isNotEmpty()) { "no ITransportProvider found" }
         }
 
+        // dbus-java reads the user ID through this class when it logs in to the bus; without its module
+        // (jdk.security.auth) the app dies before the window opens.
+        check("dbus login") {
+            Class.forName("com.sun.security.auth.module.UnixSystem")
+        }
+
         check("compose") {
             val bitmap = ImageBitmap(1, 1)
             check(bitmap.width == 1 && bitmap.height == 1) { "ImageBitmap allocation failed" }
