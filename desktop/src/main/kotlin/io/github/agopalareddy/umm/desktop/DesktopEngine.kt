@@ -6,7 +6,8 @@ import io.github.agopalareddy.umm.core.pipeline.DictationRequest
 import io.github.agopalareddy.umm.core.policy.LevelResolver
 import io.github.agopalareddy.umm.desktop.engine.DesktopState
 import io.github.agopalareddy.umm.desktop.engine.DictationController
-import io.github.agopalareddy.umm.linux.Autostart
+import io.github.agopalareddy.umm.linux.LoginStart
+import io.github.agopalareddy.umm.linux.loginStartFor
 import io.github.agopalareddy.umm.linux.AwtClipboard
 import io.github.agopalareddy.umm.linux.BindResult
 import io.github.agopalareddy.umm.linux.DbusNotifier
@@ -89,10 +90,10 @@ class DesktopEngine(
         .map { SystemAppearance(it.dark, it.accentArgb) }
         .stateIn(graph.scope, SharingStarted.Eagerly, portalAppearance.appearance.value.let { SystemAppearance(it.dark, it.accentArgb) })
 
-    private val autostart = Autostart.forEnvironment(env, File(System.getProperty("user.home")))
+    private val autostart: LoginStart = loginStartFor(env, File(System.getProperty("user.home")), portal = { portal })
 
     /** The installed launcher's path; null when running from Gradle, where there is nothing to start at login. */
-    val launcher: String? = System.getProperty("jpackage.app-path")
+    val launcher: String? = System.getProperty("jpackage.app-path") ?: if (File("/.flatpak-info").exists()) "umm" else null
 
     val controller = DictationController(
         scope = graph.scope,
