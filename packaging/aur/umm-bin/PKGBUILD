@@ -1,0 +1,43 @@
+# Maintainer: Aadarsha Gopala Reddy <agr@agreddy.com>
+pkgname=umm-bin
+pkgver=0.0.1
+pkgrel=1
+pkgdesc="Voice dictation with your own OpenRouter key"
+arch=('x86_64')
+url="https://github.com/agopalareddy/umm"
+license=('LicenseRef-PolyForm-Noncommercial-1.0.0')
+depends=('xdg-desktop-portal' 'hicolor-icon-theme')
+optdepends=(
+    'xdg-desktop-portal-kde: KDE Plasma'
+    'xdg-desktop-portal-gnome: GNOME'
+)
+provides=('umm')
+conflicts=('umm')
+options=('!strip')
+source=("https://github.com/agopalareddy/umm/releases/download/v${pkgver}/umm-${pkgver}-linux-x86_64.tar.gz")
+sha256sums=('77db53af3b7b21fad4ef3c47148131a15b6ffcff02c76bff2b65e7bc953d37d1')
+
+package() {
+    install -d "${pkgdir}/opt/umm"
+    cp -dr --no-preserve=ownership "${srcdir}/umm-${pkgver}/Umm/." "${pkgdir}/opt/umm/"
+
+    install -d "${pkgdir}/usr/bin"
+    ln -s /opt/umm/bin/Umm "${pkgdir}/usr/bin/umm"
+
+    install -d "${pkgdir}/usr/share/applications"
+    sed 's|@EXEC@|/opt/umm/bin/Umm|' \
+        "${srcdir}/umm-${pkgver}/share/io.github.agopalareddy.Umm.desktop.in" \
+        > "${pkgdir}/usr/share/applications/io.github.agopalareddy.Umm.desktop"
+    chmod 644 "${pkgdir}/usr/share/applications/io.github.agopalareddy.Umm.desktop"
+
+    install -Dm644 "${srcdir}/umm-${pkgver}/share/io.github.agopalareddy.Umm.svg" \
+        "${pkgdir}/usr/share/icons/hicolor/scalable/apps/io.github.agopalareddy.Umm.svg"
+    install -Dm644 "${srcdir}/umm-${pkgver}/share/io.github.agopalareddy.Umm.png" \
+        "${pkgdir}/usr/share/icons/hicolor/256x256/apps/io.github.agopalareddy.Umm.png"
+
+    install -Dm644 "${srcdir}/umm-${pkgver}/share/io.github.agopalareddy.Umm.metainfo.xml" \
+        "${pkgdir}/usr/share/metainfo/io.github.agopalareddy.Umm.metainfo.xml"
+
+    install -Dm644 "${srcdir}/umm-${pkgver}/LICENSE.md" \
+        "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE.md"
+}

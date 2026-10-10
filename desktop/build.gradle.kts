@@ -101,6 +101,7 @@ tasks.register<Tar>("packageLinuxTarball") {
         from(rootProject.file("packaging/linux/uninstall.sh")) {
             filePermissions { unix(493) }
         }
+        from(rootProject.file("LICENSE.md"))
         into("share") {
             from(rootProject.file("packaging/linux/$appId.desktop.in"))
             from(rootProject.file("packaging/linux/$appId.svg"))
