@@ -77,6 +77,84 @@ tasks.register("uninstallDev") {
     }
 }
 
+tasks.register<Tar>("packageLinuxTarball") {
+    group = "distribution"
+    description = "Packages the Linux standalone tarball."
+    dependsOn("createDistributable")
+    compression = Compression.GZIP
+    archiveFileName.set("umm-$appVersionName-linux-x86_64.tar.gz")
+    destinationDirectory.set(layout.buildDirectory.dir("dist"))
+    into("umm-$appVersionName") {
+        from(layout.buildDirectory.dir("compose/binaries/main/app/Umm")) {
+            into("Umm")
+            eachFile {
+                if (path.contains("/bin/")) {
+                    filePermissions { unix(493) }
+                }
+            }
+        }
+        from(rootProject.file("packaging/linux/install.sh")) {
+            filePermissions { unix(493) }
+        }
+        from(rootProject.file("packaging/linux/uninstall.sh")) {
+            filePermissions { unix(493) }
+        }
+        into("share") {
+            from(rootProject.file("packaging/linux/$appId.desktop.in"))
+            from(rootProject.file("packaging/linux/$appId.svg"))
+            from(rootProject.file("packaging/linux/$appId.png"))
+            from(rootProject.file("packaging/linux/$appId.metainfo.xml"))
+        }
+    }
+}
+
+fun registerNfpmPackageTask(packager: String, outputFileName: String, taskName: String) =
+    tasks.register<Exec>(taskName) {
+        group = "distribution"
+        description = "Packages the Linux $packager package using nfpm."
+        dependsOn("createDistributable")
+
+        val distDir = layout.buildDirectory.dir("dist").get().asFile
+        val packagingDir = layout.buildDirectory.dir("packaging").get().asFile
+        val systemDesktopFile = File(packagingDir, "$appId.desktop")
+        val appImageDir = layout.buildDirectory.dir("compose/binaries/main/app/Umm").get().asFile
+
+        doFirst {
+            val nfpmFound = runCatching {
+                val p = ProcessBuilder("which", "nfpm").start()
+                p.waitFor() == 0
+            }.getOrElse { false }
+            if (!nfpmFound) {
+                throw GradleException("nfpm executable not found on PATH. Install nfpm to package $packager.")
+            }
+            distDir.mkdirs()
+            packagingDir.mkdirs()
+            systemDesktopFile.writeText(
+                rootProject.file("packaging/linux/$appId.desktop.in")
+                    .readText()
+                    .replace("@EXEC@", "/opt/umm/bin/Umm"),
+            )
+        }
+
+        workingDir = rootProject.projectDir
+        executable = "nfpm"
+        args(
+            "pkg",
+            "--config",
+            rootProject.file("packaging/linux/nfpm.yaml").absolutePath,
+            "--packager",
+            packager,
+            "--target",
+            File(distDir, outputFileName).absolutePath,
+        )
+        environment("VERSION", appVersionName)
+        environment("APP_IMAGE_DIR", appImageDir.absolutePath)
+        environment("DESKTOP_FILE", systemDesktopFile.absolutePath)
+    }
+
+registerNfpmPackageTask("deb", "umm_${appVersionName}_amd64.deb", "packageLinuxDeb")
+registerNfpmPackageTask("rpm", "umm-$appVersionName-1.x86_64.rpm", "packageLinuxRpm")
+
 // Bundles models/recommended.json, the offline fallback for model recommendations.
 sourceSets.main {
     resources.srcDir("../models")
