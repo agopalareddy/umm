@@ -8,14 +8,29 @@ kotlin {
     jvmToolchain(17)
 }
 
+val appVersionName = providers.gradleProperty("versionName").getOrElse("0.1.0-dev")
+val packageVersionDigits = appVersionName.substringBefore("-")
+version = appVersionName
+
+tasks.withType<Jar>().configureEach {
+    manifest {
+        attributes("Implementation-Version" to appVersionName)
+    }
+}
+
 compose.desktop {
     application {
         mainClass = "io.github.agopalareddy.umm.desktop.MainKt"
         nativeDistributions {
             packageName = "Umm"
-            packageVersion = "1.0.0"
-            // dbus-java and javax.sound pull in modules the plugin's usage scan misses.
-            includeAllModules = true
+            packageVersion = packageVersionDigits
+            modules(
+                "java.desktop",
+                "jdk.crypto.ec",
+                "jdk.unsupported",
+                "java.naming",
+                "jdk.charsets",
+            )
         }
     }
 }
@@ -74,6 +89,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.material.color.utilities)
+    implementation(libs.dbus.java.core)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

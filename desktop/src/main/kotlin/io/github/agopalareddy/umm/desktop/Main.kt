@@ -8,7 +8,18 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.system.exitProcess
 import kotlinx.coroutines.runBlocking
 
+// Note: OpenJDK jpackage libapplauncher prints "pure virtual method called" when probing package managers in a forked child at launch.
 fun main(args: Array<String>) {
+    if ("--self-check" in args) {
+        val failures = SelfCheck.run()
+        if (failures.isEmpty()) {
+            println("ok")
+            exitProcess(0)
+        } else {
+            failures.forEach { System.err.println(it) }
+            exitProcess(1)
+        }
+    }
     if ("--dictate" in args) {
         val dictateArgs = parseArgs(args)
         if (dictateArgs == null) {
