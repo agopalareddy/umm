@@ -20,14 +20,14 @@ compose.desktop {
     }
 }
 
-// Dev install: puts the runnable image in the user's application menu with the umm:// handler and an icon, so the
-// portals can identify the app and the browser sign-in can reach it. Packaging (sub-project 4) replaces this.
+// Dev install: puts the runnable image in the user's application menu with an icon, so the
+// portals can identify the app. Packaging replaces this.
 val appId = "io.github.agopalareddy.Umm"
 val dataHome = providers.environmentVariable("XDG_DATA_HOME").orElse(providers.systemProperty("user.home").map { "$it/.local/share" })
 val configHome = providers.environmentVariable("XDG_CONFIG_HOME").orElse(providers.systemProperty("user.home").map { "$it/.config" })
 
 fun run(vararg command: String) {
-    // update-desktop-database and xdg-mime are conveniences; a missing one must not fail the install.
+    // update-desktop-database is a convenience; a missing one must not fail the install.
     runCatching { ProcessBuilder(*command).inheritIO().start().waitFor() }
 }
 
@@ -40,12 +40,11 @@ tasks.register("installDev") {
         check(launcher.canExecute()) { "missing launcher: $launcher" }
         val applications = File(dataHome.get(), "applications").apply { mkdirs() }
         val icons = File(dataHome.get(), "icons/hicolor/scalable/apps").apply { mkdirs() }
-        file("packaging/$appId.svg").copyTo(File(icons, "$appId.svg"), overwrite = true)
+        rootProject.file("packaging/linux/$appId.svg").copyTo(File(icons, "$appId.svg"), overwrite = true)
         File(applications, "$appId.desktop").writeText(
-            file("packaging/$appId.desktop.in").readText().replace("@EXEC@", launcher.absolutePath),
+            rootProject.file("packaging/linux/$appId.desktop.in").readText().replace("@EXEC@", "\"${launcher.absolutePath}\""),
         )
         run("update-desktop-database", applications.path)
-        run("xdg-mime", "default", "$appId.desktop", "x-scheme-handler/umm")
         println("Installed $appId; launch Umm from the application menu.")
     }
 }

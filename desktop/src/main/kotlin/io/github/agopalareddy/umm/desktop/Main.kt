@@ -48,11 +48,10 @@ private fun runApp(args: Array<String>) {
     val single = SingleInstance(portal)
     val owner = single.claim(
         onActivate = { engine.get()?.onOpenWindow?.invoke() },
-        onUrl = { engine.get()?.onLink(it) },
     )
     if (!owner) {
-        // Another Umm is running: hand over what this launch was for (a window, or a sign-in link) and leave.
-        if ("--background" !in args) runCatching { single.forward(args) }.onFailure { System.err.println("Umm is already running.") }
+        // Another Umm is running: ask it to show the window and leave.
+        if ("--background" !in args) runCatching { single.forward() }.onFailure { System.err.println("Umm is already running.") }
         portal.close()
         exitProcess(0)
     }
@@ -62,6 +61,5 @@ private fun runApp(args: Array<String>) {
     val app = DesktopEngine(portal, graph, secretStore)
     engine.set(app)
     app.start()
-    args.firstOrNull { it.startsWith("umm://") }?.let(app::onLink)
     runDesktopApp(app, startVisible = "--background" !in args)
 }

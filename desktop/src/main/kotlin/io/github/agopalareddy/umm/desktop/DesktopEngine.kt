@@ -154,9 +154,6 @@ class DesktopEngine(
         graph.desktopSettings.update { it.copy(startAtLogin = on && launcher != null) }
     }
 
-    /** A `umm://` link. Sign-in no longer uses these (it listens on localhost), so all one can do is show the window. */
-    fun onLink(@Suppress("UNUSED_PARAMETER") url: String) = onOpenWindow()
-
     fun close() {
         tray.hide()
         (focus as? KWinFocusTracker)?.close()
