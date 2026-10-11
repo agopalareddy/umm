@@ -232,13 +232,6 @@ class PairingTest {
                     val eventElement = array.getOrNull(1) ?: return
                     val event = json.decodeFromJsonElement(NostrEvent.serializer(), eventElement)
                     publishedEvents.add(event)
-                    val okMsg = buildJsonArray {
-                        add("OK")
-                        add(event.id)
-                        add(true)
-                        add("")
-                    }
-                    webSocket.send(okMsg.toString())
 
                     for (otherSocket in clientSockets) {
                         val subs = subscriptions[otherSocket] ?: continue
@@ -254,6 +247,16 @@ class PairingTest {
                             }
                         }
                     }
+
+                    // The publisher is answered last, so a test that publishes and then looks at what was
+                    // delivered does not look before the delivery happened.
+                    val okMsg = buildJsonArray {
+                        add("OK")
+                        add(event.id)
+                        add(true)
+                        add("")
+                    }
+                    webSocket.send(okMsg.toString())
                 }
                 "REQ" -> {
                     val subId = array.getOrNull(1)?.jsonPrimitive?.content ?: return
