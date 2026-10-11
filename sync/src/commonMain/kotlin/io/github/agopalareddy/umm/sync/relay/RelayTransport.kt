@@ -6,7 +6,9 @@ import io.github.agopalareddy.umm.core.sync.OpLog
 import io.github.agopalareddy.umm.sync.crypto.GroupCipher
 import io.github.agopalareddy.umm.sync.group.GroupState
 import io.github.agopalareddy.umm.sync.group.GroupStore
+import io.github.agopalareddy.umm.sync.SyncLog
 import io.github.agopalareddy.umm.sync.lan.groupHash
+import io.github.agopalareddy.umm.sync.relayHost
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -60,6 +62,7 @@ open class RelayTransport(
     val scope: CoroutineScope,
     val clockSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
     private val expirationSeconds: Long = EXPIRATION_SECONDS,
+    private val syncLog: SyncLog = SyncLog.None,
 ) {
     private val _relayErrors = MutableStateFlow<Map<String, String>>(emptyMap())
     val relayErrors: StateFlow<Map<String, String>> = _relayErrors.asStateFlow()
@@ -163,9 +166,11 @@ open class RelayTransport(
                     if (res.isSuccess) {
                         group.store.putString(lastSeqKey, lastBatchSeq.toString())
                         totalPublished += batch.size
+                        syncLog.log("relay ${relayHost(relayUrl)}: published seq $firstSeq-$lastBatchSeq")
                     } else {
                         anyFailed = true
                         val err = res.exceptionOrNull()?.message ?: "Publish failed"
+                        syncLog.log("relay ${relayHost(relayUrl)}: publish of seq $firstSeq-$lastBatchSeq failed: $err")
                         firstErr = err
                         _relayErrors.update { it + (relayUrl to err) }
                         break
@@ -258,6 +263,7 @@ open class RelayTransport(
                         throw e
                     } catch (e: Exception) {
                         _relayErrors.update { it + (relayUrl to (e.message ?: "Connection error")) }
+                        syncLog.log("relay ${relayHost(relayUrl)}: connection lost (${e.message}); retry within ${backoffMs / 1000} s")
                     }
                     withTimeoutOrNull(backoffMs) { reconnectNow(relayUrl).receive() }
                     backoffMs = (backoffMs * 2).coerceAtMost(MAX_BACKOFF_MS)
@@ -311,10 +317,14 @@ open class RelayTransport(
         val myPubkey = group.device.publicKey.toHex()
         if (event.pubkey.equals(myPubkey, ignoreCase = true)) return
 
+        val host = relayHost(relayUrl)
         val member = state.members.find { it.publicKey.equals(event.pubkey, ignoreCase = true) }
         if (member == null) {
             val withinGrace = state.previousKey != null && (clockSeconds() * 1000L <= state.previousUntil)
-            if (!withinGrace) return
+            if (!withinGrace) {
+                syncLog.log("relay $host: dropped an event from a key that is not a member")
+                return
+            }
         }
 
         val cipher = GroupCipher(
@@ -328,10 +338,15 @@ open class RelayTransport(
         val envelopes = try {
             decodeBatch(event.content, cipher)
         } catch (_: Exception) {
+            syncLog.log("relay $host: could not decrypt an event from ${member?.name ?: "a former member"}")
             return
         }
 
-        applier.apply(envelopes)
+        val applied = applier.apply(envelopes)
+        if (applied > 0) {
+            val range = "${envelopes.minOf { it.seq }}-${envelopes.maxOf { it.seq }}"
+            syncLog.log("relay $host: received seq $range from ${member?.name ?: "a former member"}, $applied new")
+        }
         lastSeenPerRelay[relayUrl] = maxOf(lastSeenPerRelay[relayUrl] ?: 0L, event.created_at)
     }
 

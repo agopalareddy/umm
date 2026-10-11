@@ -26,6 +26,7 @@ import io.github.agopalareddy.umm.core.sync.OpApplier
 import io.github.agopalareddy.umm.core.sync.OpLog
 import io.github.agopalareddy.umm.core.sync.SyncMeta
 import io.github.agopalareddy.umm.core.sync.buildSnapshot
+import io.github.agopalareddy.umm.sync.FileSyncLog
 import io.github.agopalareddy.umm.sync.SyncEngine
 import io.github.agopalareddy.umm.sync.SyncSession
 import io.github.agopalareddy.umm.sync.crypto.GroupCipher
@@ -119,6 +120,7 @@ class DesktopGraph(
             db = database,
         )
     }
+    val syncLog by lazy { FileSyncLog(File(paths.stateDir, "sync.log")) }
     val relayTransport by lazy {
         RelayTransport(
             group = groupStore,
@@ -127,6 +129,7 @@ class DesktopGraph(
             http = http,
             scope = scope,
             clockSeconds = { clock() / 1000L },
+            syncLog = syncLog,
         )
     }
     val pairing by lazy {
@@ -150,6 +153,7 @@ class DesktopGraph(
             log = opLog,
             scope = scope,
             now = clock,
+            syncLog = syncLog,
         )
     }
 

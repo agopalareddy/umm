@@ -65,6 +65,7 @@ class SyncEngine(
     val log: OpLog,
     val scope: CoroutineScope,
     val now: () -> Long = { System.currentTimeMillis() },
+    private val syncLog: SyncLog = SyncLog.None,
 ) {
     private val syncMutex = Mutex()
     private var lastSyncTime: Long? = null
@@ -250,6 +251,7 @@ class SyncEngine(
                 )
                 updateDevices(state)
             }
+            syncLog.log(describe(syncResult, via ?: if (otherMembers.isEmpty()) "alone in the group" else "nothing reached"))
             return@withLock syncResult
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
@@ -259,8 +261,30 @@ class SyncEngine(
                 lastSync = lastSyncTime,
                 result = syncResult,
             )
+            syncLog.log(describe(syncResult, "failed: ${e::class.simpleName}: ${e.message}"))
             return@withLock syncResult
         }
+    }
+
+    private fun describe(result: SyncResult, outcome: String): String {
+        val lanPart = result.lanPeers.joinToString(", ") { peer ->
+            val session = peer.sessionResult
+            if (peer.reached && session != null) {
+                "${peer.name} sent=${session.sent} received=${session.received}"
+            } else {
+                "${peer.name} unreachable (${peer.error})"
+            }
+        }.ifEmpty { "no device found" }
+        val relayPart = result.relays.joinToString(", ") { relay ->
+            val state = when {
+                relay.error != null -> "error (${relay.error})"
+                !relay.connected -> "not connected"
+                relay.caughtUp -> "ok"
+                else -> "connected, no answer to catch-up"
+            }
+            "${relayHost(relay.url)} published=${relay.opsPublished} $state"
+        }.ifEmpty { "off or none" }
+        return "sync: $outcome | wifi: $lanPart | relays: $relayPart"
     }
 
     fun onLocalChange() {

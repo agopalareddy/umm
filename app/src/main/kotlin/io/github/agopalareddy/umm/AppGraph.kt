@@ -33,6 +33,7 @@ import io.github.agopalareddy.umm.core.sync.OpApplier
 import io.github.agopalareddy.umm.core.sync.OpLog
 import io.github.agopalareddy.umm.core.sync.SyncMeta
 import io.github.agopalareddy.umm.core.sync.buildSnapshot
+import io.github.agopalareddy.umm.sync.FileSyncLog
 import io.github.agopalareddy.umm.sync.SyncEngine
 import io.github.agopalareddy.umm.sync.SyncSession
 import io.github.agopalareddy.umm.sync.crypto.GroupCipher
@@ -116,6 +117,9 @@ class AppGraph(
             db = database,
         )
     }
+    val syncLog by lazy {
+        FileSyncLog(File(app.filesDir, "sync.log"), alsoTo = { line -> if (BuildConfig.DEBUG) Log.d("UmmSync", line) })
+    }
     val relayTransport by lazy {
         RelayTransport(
             group = groupStore,
@@ -124,6 +128,7 @@ class AppGraph(
             http = http,
             scope = appScope,
             clockSeconds = { clock() / 1000L },
+            syncLog = syncLog,
         )
     }
     val pairing by lazy {
@@ -147,6 +152,7 @@ class AppGraph(
             log = opLog,
             scope = appScope,
             now = clock,
+            syncLog = syncLog,
         )
     }
 
