@@ -10,6 +10,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import io.github.agopalareddy.umm.core.audio.MediaRecorderAudioSource
 import io.github.agopalareddy.umm.core.auth.ApiKeyStore
 import io.github.agopalareddy.umm.core.auth.KeystoreCipher
+import io.github.agopalareddy.umm.core.auth.SecretCipher
 import io.github.agopalareddy.umm.core.auth.SharedPreferencesKeyValueStore
 import io.github.agopalareddy.umm.core.data.CategoryRepository
 import io.github.agopalareddy.umm.core.data.HistoryRepository
@@ -60,12 +61,16 @@ import kotlinx.coroutines.withContext
 private val Context.settingsStore by preferencesDataStore("settings")
 
 /** Manual dependency wiring; one instance per process, owned by [UmmApp]. */
-class AppGraph(private val app: Application) {
+class AppGraph(
+    private val app: Application,
+    apiCipher: SecretCipher = KeystoreCipher(),
+    syncCipher: SecretCipher = KeystoreCipher("umm_sync"),
+) {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val clock: () -> Long = System::currentTimeMillis
 
     val apiKeyStore: ApiKeyStore by lazy {
-        ApiKeyStore(SharedPreferencesKeyValueStore(app.getSharedPreferences("secure", Context.MODE_PRIVATE)), KeystoreCipher())
+        ApiKeyStore(SharedPreferencesKeyValueStore(app.getSharedPreferences("secure", Context.MODE_PRIVATE)), apiCipher)
     }
     val http by lazy { OpenRouterClient.defaultHttp() }
     val openRouter: OpenRouterApi by lazy {
@@ -78,7 +83,7 @@ class AppGraph(private val app: Application) {
     val groupStore by lazy {
         GroupStore(
             SharedPreferencesKeyValueStore(app.getSharedPreferences("sync", Context.MODE_PRIVATE)),
-            KeystoreCipher("umm_sync"),
+            syncCipher,
             defaultName = Build.MODEL,
         )
     }

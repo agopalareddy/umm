@@ -8,13 +8,15 @@ import io.github.agopalareddy.umm.core.auth.KeySource
 import io.github.agopalareddy.umm.sync.SyncWorker
 import kotlinx.coroutines.launch
 
-class UmmApp : Application() {
+open class UmmApp : Application() {
     lateinit var graph: AppGraph
-        private set
+        protected set
+
+    protected open fun createGraph(): AppGraph = AppGraph(this)
 
     override fun onCreate() {
         super.onCreate()
-        graph = AppGraph(this)
+        graph = createGraph()
         seedDebugKey()
         graph.syncEngine.start()
         schedulePeriodicSync()
