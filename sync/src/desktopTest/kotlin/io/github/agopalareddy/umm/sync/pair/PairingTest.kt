@@ -36,6 +36,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import mockwebserver3.Dispatcher
@@ -711,5 +712,66 @@ class PairingTest {
         val cHistory = nodeC.history.observeRecent().first()
         assertEquals(1, cHistory.size)
         assertEquals("Clean text from B", cHistory.first().cleanText)
+    }
+
+    @Test
+    fun concurrentJoinClaimsCodeOnceAtomically() = runTest(timeout = 20.seconds) {
+        val nodeA = TestNode("NodeA", tmp.newFolder()).also { toClose.add { it.close() } }
+        val nodeB = TestNode("NodeB", tmp.newFolder()).also { toClose.add { it.close() } }
+        val nodeC = TestNode("NodeC", tmp.newFolder()).also { toClose.add { it.close() } }
+
+        val offer = nodeA.pairing.offer(sendKey = false)
+        val encoded = offer.code.encode()
+
+        val joinB = async(Dispatchers.IO) {
+            runCatching { nodeB.pairing.join(encoded, sendKey = false) }
+        }
+        val joinC = async(Dispatchers.IO) {
+            runCatching { nodeC.pairing.join(encoded, sendKey = false) }
+        }
+
+        val resB = joinB.await()
+        val resC = joinC.await()
+        offer.result.await()
+
+        val results = listOf(resB, resC)
+        val successes = results.filter { it.isSuccess }
+        val failures = results.filter { it.isFailure }
+
+        assertEquals(1, successes.size)
+        assertEquals(1, failures.size)
+
+        val failure = failures.first().exceptionOrNull()
+        assertTrue(failure is PairingException)
+        assertEquals(PairingError.USED, (failure as PairingException).error)
+
+        val groupA = nodeA.groupStore.state.value
+        assertNotNull(groupA)
+        assertEquals(2, groupA!!.members.size)
+    }
+
+    @Test
+    fun wrongMacReleasesClaimAllowingRetry() = runTest(timeout = 20.seconds) {
+        val nodeA = TestNode("NodeA", tmp.newFolder()).also { toClose.add { it.close() } }
+        val nodeB = TestNode("NodeB", tmp.newFolder()).also { toClose.add { it.close() } }
+        val nodeC = TestNode("NodeC", tmp.newFolder()).also { toClose.add { it.close() } }
+
+        val offer = nodeA.pairing.offer(sendKey = false)
+        val wrongCode = offer.code.copy(secret = "00000000000000000000000000000000").encode()
+
+        try {
+            nodeB.pairing.join(wrongCode, sendKey = false)
+            fail("Expected PairingException(WRONG_SECRET)")
+        } catch (e: PairingException) {
+            assertEquals(PairingError.WRONG_SECRET, e.error)
+        }
+
+        val joinResult = nodeC.pairing.join(offer.code.encode(), sendKey = false)
+        val offererResult = offer.result.await()
+
+        val groupA = nodeA.groupStore.state.value
+        assertNotNull(groupA)
+        assertEquals(2, groupA!!.members.size)
+        assertTrue(groupA.members.any { it.deviceId == nodeC.selfId })
     }
 }

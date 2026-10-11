@@ -200,48 +200,56 @@ class Pairing(
 
     suspend fun join(code: String, sendKey: Boolean): PairedDevice = withContext(Dispatchers.IO) {
         val pairingCode = PairingCode.decode(code, now())
-        if (isSecretUsed(pairingCode.secret)) {
+        val handshakeId = UUID.randomUUID().toString()
+        if (!tryClaim(pairingCode.secret, handshakeId)) {
             throw PairingException(PairingError.USED)
         }
 
-        // Try LAN first
-        var lanSuccess: PairedDevice? = null
-        if (pairingCode.lan.isNotEmpty() && pairingCode.port > 0) {
-            for (ip in pairingCode.lan) {
-                try {
-                    val result = joinOverLan(ip, pairingCode.port, pairingCode, sendKey)
-                    lanSuccess = result
-                    break
-                } catch (e: PairingException) {
-                    // Protocol error: fail immediately
-                    throw e
-                } catch (_: Exception) {
-                    // Unreachable on this IP, continue
+        var claimCommitted = false
+        try {
+            // Try LAN first
+            var lanSuccess: PairedDevice? = null
+            if (pairingCode.lan.isNotEmpty() && pairingCode.port > 0) {
+                for (ip in pairingCode.lan) {
+                    try {
+                        val result = joinOverLan(ip, pairingCode.port, pairingCode, sendKey, handshakeId)
+                        lanSuccess = result
+                        break
+                    } catch (e: PairingException) {
+                        // Protocol error: fail immediately
+                        throw e
+                    } catch (_: Exception) {
+                        // Unreachable on this IP, continue
+                    }
                 }
             }
-        }
 
-        if (lanSuccess != null) {
-            markSecretUsed(pairingCode.secret)
-            return@withContext lanSuccess
-        }
+            if (lanSuccess != null) {
+                claimCommitted = true
+                return@withContext lanSuccess
+            }
 
-        // Fallback to relay
-        if (pairingCode.relays.isNotEmpty()) {
-            for (relayUrl in pairingCode.relays) {
-                try {
-                    val result = joinOverRelay(relayUrl, pairingCode, sendKey)
-                    markSecretUsed(pairingCode.secret)
-                    return@withContext result
-                } catch (e: PairingException) {
-                    throw e
-                } catch (_: Exception) {
-                    // Connection error on this relay, continue
+            // Fallback to relay
+            if (pairingCode.relays.isNotEmpty()) {
+                for (relayUrl in pairingCode.relays) {
+                    try {
+                        val result = joinOverRelay(relayUrl, pairingCode, sendKey, handshakeId)
+                        claimCommitted = true
+                        return@withContext result
+                    } catch (e: PairingException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // Connection error on this relay, continue
+                    }
                 }
             }
-        }
 
-        throw PairingException(PairingError.UNREACHABLE, "Unable to reach peer over LAN or relay")
+            throw PairingException(PairingError.UNREACHABLE, "Unable to reach peer over LAN or relay")
+        } finally {
+            if (!claimCommitted) {
+                releaseClaim(pairingCode.secret, handshakeId)
+            }
+        }
     }
 
     private suspend fun handleLanClient(
@@ -252,24 +260,34 @@ class Pairing(
         deferred: CompletableDeferred<PairedDevice>,
         server: ServerSocket?,
     ) {
-        try {
-            val input = socket.getInputStream()
-            val output = socket.getOutputStream()
+        val input = try { socket.getInputStream() } catch (_: Exception) { runCatching { socket.close() }; return }
+        val output = try { socket.getOutputStream() } catch (_: Exception) { runCatching { socket.close() }; return }
 
+        val hello = try {
             val helloBytes = FrameCodec.read(input)
-            val hello = json.decodeFromString(PairMsg.serializer(), helloBytes.decodeToString())
-            if (hello !is PairMsg.Hello) {
-                socket.close()
+            val decoded = json.decodeFromString(PairMsg.serializer(), helloBytes.decodeToString())
+            if (decoded !is PairMsg.Hello) {
+                runCatching { socket.close() }
                 return
             }
+            decoded
+        } catch (_: Exception) {
+            runCatching { socket.close() }
+            return
+        }
 
-            if (isSecretUsed(code.secret)) {
-                val err = PairMsg.Error(PairingError.USED)
+        val handshakeId = UUID.randomUUID().toString()
+        if (!tryClaim(code.secret, handshakeId)) {
+            val err = PairMsg.Error(PairingError.USED)
+            runCatching {
                 FrameCodec.write(output, json.encodeToString(PairMsg.serializer(), err).encodeToByteArray())
-                socket.close()
-                return
             }
+            runCatching { socket.close() }
+            return
+        }
 
+        var claimCommitted = false
+        try {
             val peerPubKeyBytes = hexToBytes(hello.publicKey)
             val agree = group.device.agree(peerPubKeyBytes)
             val myDeviceId = getOwnDeviceId()
@@ -288,7 +306,6 @@ class Pairing(
             if (!verifyHmac(k, expectedTranscript, hello.hmac)) {
                 val err = PairMsg.Error(PairingError.WRONG_SECRET)
                 FrameCodec.write(output, json.encodeToString(PairMsg.serializer(), err).encodeToByteArray())
-                socket.close()
                 return
             }
 
@@ -311,12 +328,15 @@ class Pairing(
                 val welcomeBytes = FrameCodec.read(input)
                 val welcome = json.decodeFromString(PairMsg.serializer(), welcomeBytes.decodeToString())
                 if (welcome !is PairMsg.Welcome) {
-                    socket.close()
                     return
                 }
 
                 val payload = openPayload(k, welcome.sealedPayload)
+                check(holdsClaim(code.secret, handshakeId))
                 group.save(payload.group)
+                claimCommitted = true
+                commitClaim(code.secret, handshakeId)
+
                 val keyRecv = if (payload.apiKey != null) {
                     apiKey.set(payload.apiKey)
                     true
@@ -329,7 +349,6 @@ class Pairing(
                 FrameCodec.write(output, json.encodeToString(PairMsg.serializer(), ack).encodeToByteArray())
 
                 if (completed.compareAndSet(false, true)) {
-                    markSecretUsed(code.secret)
                     deferred.complete(PairedDevice(name = hello.name, keyReceived = keyRecv))
                     runCatching { server?.close() }
                 }
@@ -374,9 +393,12 @@ class Pairing(
                 val ackBytes = FrameCodec.read(input)
                 val ack = json.decodeFromString(PairMsg.serializer(), ackBytes.decodeToString())
                 if (ack is PairMsg.Ack) {
+                    check(holdsClaim(code.secret, handshakeId))
                     group.save(finalGroup)
+                    claimCommitted = true
+                    commitClaim(code.secret, handshakeId)
+
                     if (completed.compareAndSet(false, true)) {
-                        markSecretUsed(code.secret)
                         deferred.complete(PairedDevice(name = hello.name, keyReceived = false))
                         runCatching { server?.close() }
                     }
@@ -384,6 +406,9 @@ class Pairing(
             }
         } catch (_: Exception) {
         } finally {
+            if (!claimCommitted) {
+                releaseClaim(code.secret, handshakeId)
+            }
             runCatching { socket.close() }
         }
     }
@@ -393,6 +418,7 @@ class Pairing(
         port: Int,
         code: PairingCode,
         sendKey: Boolean,
+        handshakeId: String,
     ): PairedDevice = withContext(Dispatchers.IO) {
         val socket = Socket()
         socket.connect(InetSocketAddress(host, port), 2000)
@@ -449,7 +475,10 @@ class Pairing(
                     if (reply.sealedWelcome != null) {
                         // Offerer sent group
                         val payload = openPayload(k, reply.sealedWelcome)
+                        check(holdsClaim(code.secret, handshakeId))
                         group.save(payload.group)
+                        commitClaim(code.secret, handshakeId)
+
                         val keyRecv = if (payload.apiKey != null) {
                             apiKey.set(payload.apiKey)
                             true
@@ -481,7 +510,9 @@ class Pairing(
                         val ack = json.decodeFromString(PairMsg.serializer(), ackBytes.decodeToString())
                         if (ack !is PairMsg.Ack) throw IOException("Expected Ack")
 
+                        check(holdsClaim(code.secret, handshakeId))
                         group.save(updatedGroup)
+                        commitClaim(code.secret, handshakeId)
                         return@withContext PairedDevice(name = code.name, keyReceived = false)
                     }
                 }
@@ -501,6 +532,7 @@ class Pairing(
         server: ServerSocket?,
     ) {
         val client = RelayClient(relayUrl, relay.http)
+        var boundHandshakeId: String? = null
         try {
             val myPubKey = group.device.publicKey.toHex()
             val filter = buildJsonObject {
@@ -528,9 +560,14 @@ class Pairing(
                 }
 
                 if (msg is PairMsg.Welcome) {
-                    if (boundPeerPubKey != null && event.pubkey.equals(boundPeerPubKey, ignoreCase = true) && boundSessionKey != null) {
+                    if (boundPeerPubKey != null && event.pubkey.equals(boundPeerPubKey, ignoreCase = true) && boundSessionKey != null && boundHandshakeId != null) {
+                        val hid = boundHandshakeId!!
+                        check(holdsClaim(code.secret, hid))
                         val payload = openPayload(boundSessionKey!!, msg.sealedPayload)
                         group.save(payload.group)
+                        commitClaim(code.secret, hid)
+                        boundHandshakeId = null
+
                         val keyRecv = if (payload.apiKey != null) {
                             apiKey.set(payload.apiKey)
                             true
@@ -550,7 +587,6 @@ class Pairing(
                         client.publish(ackEvent)
 
                         if (completed.compareAndSet(false, true)) {
-                            markSecretUsed(code.secret)
                             deferred.complete(PairedDevice(name = boundPeerName ?: "", keyReceived = keyRecv))
                             runCatching { server?.close() }
                         }
@@ -563,7 +599,8 @@ class Pairing(
                         return@collect
                     }
 
-                    if (isSecretUsed(code.secret)) {
+                    val handshakeId = UUID.randomUUID().toString()
+                    if (!tryClaim(code.secret, handshakeId)) {
                         val errEvent = NostrEvent.sign(
                             keys = group.device,
                             kind = KIND_PAIRING,
@@ -591,6 +628,7 @@ class Pairing(
                         platform = msg.platform,
                     )
                     if (!verifyHmac(k, expectedTranscript, msg.hmac)) {
+                        releaseClaim(code.secret, handshakeId)
                         val errEvent = NostrEvent.sign(
                             keys = group.device,
                             kind = KIND_PAIRING,
@@ -602,12 +640,13 @@ class Pairing(
                         return@collect
                     }
 
-                    boundPeerPubKey = msg.publicKey
-                    boundPeerName = msg.name
-                    boundSessionKey = k
-
                     val offererHasGroup = group.state.value != null
                     if (shouldJoinerSendWelcome(joinerInGroup = msg.inGroup, offererHasGroup = offererHasGroup)) {
+                        boundPeerPubKey = msg.publicKey
+                        boundPeerName = msg.name
+                        boundSessionKey = k
+                        boundHandshakeId = handshakeId
+
                         // Joiner has group and offerer does not: joiner sends group
                         val myTranscript = confirmTranscript(
                             offererDeviceId = code.deviceId,
@@ -673,17 +712,24 @@ class Pairing(
                         )
                         client.publish(confirmEvent)
 
-                        group.save(finalGroup)
-                        if (completed.compareAndSet(false, true)) {
-                            markSecretUsed(code.secret)
-                            deferred.complete(PairedDevice(name = msg.name, keyReceived = false))
-                            runCatching { server?.close() }
+                        try {
+                            check(holdsClaim(code.secret, handshakeId))
+                            group.save(finalGroup)
+                            commitClaim(code.secret, handshakeId)
+                            if (completed.compareAndSet(false, true)) {
+                                deferred.complete(PairedDevice(name = msg.name, keyReceived = false))
+                                runCatching { server?.close() }
+                            }
+                        } catch (e: Throwable) {
+                            releaseClaim(code.secret, handshakeId)
+                            throw e
                         }
                     }
                 }
             }
         } catch (_: Exception) {
         } finally {
+            boundHandshakeId?.let { releaseClaim(code.secret, it) }
             runCatching { client.close() }
         }
     }
@@ -692,6 +738,7 @@ class Pairing(
         relayUrl: String,
         code: PairingCode,
         sendKey: Boolean,
+        handshakeId: String,
     ): PairedDevice = withContext(Dispatchers.IO) {
         val client = RelayClient(relayUrl, relay.http)
         var resultDevice: PairedDevice? = null
@@ -768,8 +815,11 @@ class Pairing(
                                 throw PairingException(PairingError.WRONG_SECRET)
                             }
                             if (msg.sealedWelcome != null) {
+                                check(holdsClaim(code.secret, handshakeId))
                                 val payload = openPayload(k, msg.sealedWelcome)
                                 group.save(payload.group)
+                                commitClaim(code.secret, handshakeId)
+
                                 val keyRecv = if (payload.apiKey != null) {
                                     apiKey.set(payload.apiKey)
                                     true
@@ -816,7 +866,9 @@ class Pairing(
                         is PairMsg.Ack -> {
                             val updated = pendingUpdatedGroup
                             if (updated != null) {
+                                check(holdsClaim(code.secret, handshakeId))
                                 group.save(updated)
+                                commitClaim(code.secret, handshakeId)
                                 resultDevice = PairedDevice(name = code.name, keyReceived = false)
                                 throw CancellationException("Done")
                             }
@@ -892,6 +944,41 @@ class Pairing(
             ips.add("127.0.0.1")
         }
         return ips
+    }
+
+    private val claimLock = Any()
+    private val activeClaims = mutableMapOf<String, String>()
+
+    internal fun tryClaim(secret: String, handshakeId: String): Boolean {
+        synchronized(claimLock) {
+            if (isSecretUsed(secret)) return false
+            if (secret in activeClaims) return false
+            activeClaims[secret] = handshakeId
+            return true
+        }
+    }
+
+    internal fun holdsClaim(secret: String, handshakeId: String): Boolean {
+        synchronized(claimLock) {
+            return activeClaims[secret] == handshakeId
+        }
+    }
+
+    internal fun releaseClaim(secret: String, handshakeId: String) {
+        synchronized(claimLock) {
+            if (activeClaims[secret] == handshakeId) {
+                activeClaims.remove(secret)
+            }
+        }
+    }
+
+    internal fun commitClaim(secret: String, handshakeId: String) {
+        synchronized(claimLock) {
+            if (activeClaims[secret] == handshakeId) {
+                activeClaims.remove(secret)
+                markSecretUsed(secret)
+            }
+        }
     }
 
     private fun isSecretUsed(secret: String): Boolean {
