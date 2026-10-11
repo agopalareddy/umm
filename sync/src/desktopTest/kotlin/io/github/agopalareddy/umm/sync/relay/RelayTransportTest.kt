@@ -33,6 +33,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
@@ -55,6 +56,7 @@ import okhttp3.WebSocketListener
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -224,7 +226,7 @@ class RelayTransportTest {
         val groupStore = GroupStore(kv, FakeCipher())
         val selfId = runBlocking { meta.deviceId() }
 
-        fun transport(http: OkHttpClient): RelayTransport {
+        fun transport(http: OkHttpClient, expirationSeconds: Long = EXPIRATION_SECONDS): RelayTransport {
             return RelayTransport(
                 group = groupStore,
                 log = log,
@@ -232,6 +234,7 @@ class RelayTransportTest {
                 http = http,
                 scope = deviceScope,
                 clockSeconds = { clockSec },
+                expirationSeconds = expirationSeconds,
             )
         }
 
@@ -467,6 +470,57 @@ class RelayTransportTest {
                 deviceB.history.observeRecent().first().map { it.cleanText },
             )
         }
+    }
+
+    /**
+     * Talks to the real default relays with throwaway keys and one tiny encrypted event that expires in two minutes.
+     * Fakes cannot show a relay's rate limits or refusals. Run with `-PrelayCheck`; skipped otherwise.
+     */
+    @OptIn(ExperimentalEncodingApi::class)
+    @Test
+    fun publicRelaysStoreAndDeliver() = runTest(timeout = 180.seconds) {
+        assumeTrue("run with -PrelayCheck", System.getProperty("umm.relayCheck") == "true")
+        val failures = mutableListOf<String>()
+
+        withContext(Dispatchers.IO) {
+            for (relay in GroupState.DEFAULT_RELAYS) {
+                val now = System.currentTimeMillis() / 1000
+                val sender = TestDevice("Sender", tmp.newFolder(), clockSec = now).also { device -> toClose.add { device.close() } }
+                val listener = TestDevice("Listener", tmp.newFolder(), clockSec = now).also { device -> toClose.add { device.close() } }
+                val latecomer = TestDevice("Latecomer", tmp.newFolder(), clockSec = now).also { device -> toClose.add { device.close() } }
+                val devices = listOf(sender, listener, latecomer)
+                val members = devices.map { Member(it.selfId, it.name, "desktop", it.groupStore.device.publicKey.toHex()) }
+                val key = Base64.UrlSafe.encode(java.security.SecureRandom().generateSeed(32))
+                val groupId = java.util.UUID.randomUUID().toString()
+                devices.forEach { it.groupStore.save(GroupState(groupId, key, 1, null, 0L, members, listOf(relay))) }
+                fun TestDevice.live() = transport(httpClient, expirationSeconds = 120).also { transport -> toClose.add { transport.stop() } }
+
+                val listening = listener.live().also { it.start() }
+                val listenerReady = listening.catchUp(15_000)[relay] == true
+
+                sender.dictate("relay check")
+                val published = sender.live().publishPending().single()
+                val accepted = published.error == null && published.opsPublished > 0
+
+                val pushed = withTimeoutOrNull(15.seconds) {
+                    while (listener.history.observeRecent().first().isEmpty()) delay(100)
+                    true
+                } == true
+
+                val late = latecomer.live().also { it.start() }
+                val lateCaughtUp = late.catchUp(15_000)[relay] == true
+                val stored = latecomer.history.observeRecent().first().isNotEmpty()
+
+                println(
+                    "RELAY CHECK $relay: subscribe=${if (listenerReady) "ok" else "NO ANSWER"} " +
+                        "publish=${if (accepted) "accepted" else "REFUSED (${published.error})"} " +
+                        "live delivery=${if (pushed) "ok" else "NOTHING IN 15 s"} " +
+                        "stored delivery=${if (stored) "ok" else if (lateCaughtUp) "NOT STORED" else "NO ANSWER"}",
+                )
+                if (!(listenerReady && accepted && pushed && stored)) failures += relay
+            }
+        }
+        assertTrue("relays that failed the check: $failures", failures.isEmpty())
     }
 
     @Test

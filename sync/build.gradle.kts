@@ -17,6 +17,15 @@ kotlin {
     }
     jvm("desktop")
 
+    // `-PrelayCheck` runs the one test that talks to the public relays; it is skipped otherwise.
+    tasks.withType<Test>().configureEach {
+        if (providers.gradleProperty("relayCheck").isPresent) {
+            systemProperty("umm.relayCheck", "true")
+            testLogging.showStandardStreams = true
+            outputs.upToDateWhen { false }
+        }
+    }
+
     sourceSets {
         commonMain.dependencies {
             api(project(":core"))

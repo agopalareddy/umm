@@ -59,6 +59,7 @@ open class RelayTransport(
     val http: OkHttpClient,
     val scope: CoroutineScope,
     val clockSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
+    private val expirationSeconds: Long = EXPIRATION_SECONDS,
 ) {
     private val _relayErrors = MutableStateFlow<Map<String, String>>(emptyMap())
     val relayErrors: StateFlow<Map<String, String>> = _relayErrors.asStateFlow()
@@ -149,7 +150,7 @@ open class RelayTransport(
                     val groupHashStr = groupHash(state.groupId)
                     val tags = listOf(
                         listOf("d", "umm:$groupHashStr:$firstSeq-$lastBatchSeq"),
-                        listOf("expiration", (clockSeconds() + EXPIRATION_SECONDS).toString())
+                        listOf("expiration", (clockSeconds() + expirationSeconds).toString())
                     )
                     val event = NostrEvent.sign(
                         keys = group.device,
