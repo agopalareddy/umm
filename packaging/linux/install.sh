@@ -50,7 +50,9 @@ ln -sf "$LIB_DIR/bin/Umm" "$BIN_DIR/umm"
 
 APPS_DIR="$SHARE_DIR/applications"
 mkdir -p "$APPS_DIR"
-sed "s|@EXEC@|\"$LIB_DIR/bin/Umm\"|" "$SRC_SHARE/io.github.agopalareddy.Umm.desktop.in" > "$APPS_DIR/io.github.agopalareddy.Umm.desktop"
+shopt -u patsub_replacement 2>/dev/null || true
+template=$(<"$SRC_SHARE/io.github.agopalareddy.Umm.desktop.in")
+printf '%s\n' "${template//@EXEC@/\"$LIB_DIR/bin/Umm\"}" > "$APPS_DIR/io.github.agopalareddy.Umm.desktop"
 chmod 644 "$APPS_DIR/io.github.agopalareddy.Umm.desktop"
 
 SCALABLE_ICON_DIR="$SHARE_DIR/icons/hicolor/scalable/apps"

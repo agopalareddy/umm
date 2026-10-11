@@ -30,6 +30,11 @@ else
     AUTOSTART_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/autostart"
 fi
 
+if pgrep -f "$LIB_DIR/bin/Umm" >/dev/null 2>&1; then
+    echo "Umm is running. Quit it from the tray, then run this again." >&2
+    exit 1
+fi
+
 APPS_DIR="$SHARE_DIR/applications"
 SCALABLE_ICON_DIR="$SHARE_DIR/icons/hicolor/scalable/apps"
 PNG_ICON_DIR="$SHARE_DIR/icons/hicolor/256x256/apps"
@@ -50,33 +55,6 @@ if command -v gtk-update-icon-cache >/dev/null 2>&1; then
     gtk-update-icon-cache -q -t "$SHARE_DIR/icons/hicolor" 2>/dev/null || true
 fi
 
-if [ "$SYSTEM" -eq 0 ]; then
-    if [ -d "$APPS_DIR" ]; then
-        shopt -s nullglob
-        desktops=("$APPS_DIR"/*.desktop)
-        if [ "${#desktops[@]}" -eq 0 ]; then
-            rm -f "$APPS_DIR/mimeinfo.cache"
-        fi
-    fi
-    if [ -d "$SHARE_DIR/icons/hicolor" ]; then
-        remaining_icons=$(find "$SHARE_DIR/icons/hicolor" -type f ! -name "icon-theme.cache" 2>/dev/null | head -n 1)
-        if [ -z "$remaining_icons" ]; then
-            rm -f "$SHARE_DIR/icons/hicolor/icon-theme.cache"
-        fi
-    fi
-
-    rmdir "$APPS_DIR" 2>/dev/null || true
-    rmdir "$METAINFO_DIR" 2>/dev/null || true
-    rmdir "$SCALABLE_ICON_DIR" 2>/dev/null || true
-    rmdir "$SHARE_DIR/icons/hicolor/scalable" 2>/dev/null || true
-    rmdir "$PNG_ICON_DIR" 2>/dev/null || true
-    rmdir "$SHARE_DIR/icons/hicolor/256x256" 2>/dev/null || true
-    rmdir "$SHARE_DIR/icons/hicolor" 2>/dev/null || true
-    rmdir "$SHARE_DIR/icons" 2>/dev/null || true
-    rmdir "$SHARE_DIR" 2>/dev/null || true
-    rmdir "$BIN_DIR" 2>/dev/null || true
-    rmdir "${HOME}/.local/lib" 2>/dev/null || true
-    rmdir "${HOME}/.local" 2>/dev/null || true
-    rmdir "$AUTOSTART_DIR" 2>/dev/null || true
-    rmdir "${XDG_CONFIG_HOME:-${HOME}/.config}" 2>/dev/null || true
-fi
+DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/umm"
+CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/umm"
+echo "Removed Umm. Your settings and history are still in $DATA_DIR and $CONFIG_DIR."
