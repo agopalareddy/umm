@@ -157,6 +157,7 @@ fun SyncPage(onBack: (() -> Unit)?) {
             RelaysSection(
                 relays = groupState!!.relays,
                 relayErrors = relayErrors,
+                isRelayConnected = { sync.relay.isConnected(it) },
                 onAddRelay = { newRelay ->
                     val updated = groupState!!.relays + newRelay
                     scope.launch { sync.setRelays(updated) }
@@ -378,13 +379,14 @@ private fun DeviceCard(
 private fun RelaysSection(
     relays: List<String>,
     relayErrors: Map<String, String>,
+    isRelayConnected: (String) -> Boolean = { true },
     onAddRelay: (String) -> Unit,
     onRemoveRelay: (String) -> Unit,
 ) {
     Section("Relays") {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             relays.forEach { url ->
-                val error = relayErrors[url]
+                val error = relayErrors[url] ?: if (!isRelayConnected(url)) "Not connected" else null
                 Row(
                     Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,

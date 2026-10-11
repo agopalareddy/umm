@@ -7,6 +7,7 @@ import io.github.agopalareddy.umm.sync.group.GroupStore
 import io.github.agopalareddy.umm.sync.group.Membership
 import io.github.agopalareddy.umm.sync.lan.LanTransport
 import io.github.agopalareddy.umm.sync.pair.Pairing
+import io.github.agopalareddy.umm.sync.relay.RelaySyncResult
 import io.github.agopalareddy.umm.sync.relay.RelayTransport
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -20,11 +21,32 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 
+data class LanPeerSyncResult(
+    val deviceId: String,
+    val name: String,
+    val reached: Boolean,
+    val sessionResult: SessionResult? = null,
+    val error: String? = null,
+)
+
+data class SyncResult(
+    val lanPeers: List<LanPeerSyncResult> = emptyList(),
+    val relays: List<RelaySyncResult> = emptyList(),
+)
+
 sealed interface SyncStatus {
     data object NotPaired : SyncStatus
-    data class Idle(val lastSync: Long? = null, val via: String? = null) : SyncStatus
+    data class Idle(
+        val lastSync: Long? = null,
+        val via: String? = null,
+        val result: SyncResult? = null,
+    ) : SyncStatus
     data object Syncing : SyncStatus
-    data class Error(val message: String, val lastSync: Long? = null) : SyncStatus
+    data class Error(
+        val message: String,
+        val lastSync: Long? = null,
+        val result: SyncResult? = null,
+    ) : SyncStatus
 }
 
 data class DeviceInfo(
@@ -123,42 +145,111 @@ class SyncEngine(
         relay.stop()
     }
 
-    suspend fun syncNow() = syncMutex.withLock {
+    suspend fun syncNow(): SyncResult = syncMutex.withLock {
         val state = group.state.value
         if (state == null) {
             _status.value = SyncStatus.NotPaired
-            return@withLock
+            return@withLock SyncResult()
         }
 
         _status.value = SyncStatus.Syncing
+        val lanResults = mutableListOf<LanPeerSyncResult>()
+        var relayResults = emptyList<RelaySyncResult>()
+
+        val myPubkey = group.device.publicKey.joinToString("") { "%02x".format(it) }
+        val otherMembers = state.members.filter { !it.publicKey.equals(myPubkey, ignoreCase = true) }
+
         try {
-            var via: String? = null
             if (state.lanEnabled && lan != null) {
                 val peers = lan.peers.value
                 for (peer in peers) {
-                    val result = lan.syncWith(peer)
-                    if (result != null) {
-                        val t = now()
-                        lastSeenMap[peer.deviceId] = Pair(t, "lan")
-                        via = "lan"
+                    val member = state.members.find { it.deviceId == peer.deviceId }
+                    val devName = member?.name ?: peer.deviceId
+                    try {
+                        val result = lan.syncWith(peer)
+                        if (result != null) {
+                            val t = now()
+                            lastSeenMap[peer.deviceId] = Pair(t, "lan")
+                            lanResults.add(
+                                LanPeerSyncResult(
+                                    deviceId = peer.deviceId,
+                                    name = devName,
+                                    reached = true,
+                                    sessionResult = result,
+                                )
+                            )
+                        } else {
+                            lanResults.add(
+                                LanPeerSyncResult(
+                                    deviceId = peer.deviceId,
+                                    name = devName,
+                                    reached = false,
+                                    error = "Couldn't reach $devName",
+                                )
+                            )
+                        }
+                    } catch (e: Throwable) {
+                        if (e is CancellationException) throw e
+                        lanResults.add(
+                            LanPeerSyncResult(
+                                deviceId = peer.deviceId,
+                                name = devName,
+                                reached = false,
+                                error = e.message ?: "Couldn't reach $devName",
+                            )
+                        )
                     }
                 }
             }
             if (state.relayEnabled) {
-                relay.publishPending()
-                via = if (via == null) "relay" else "$via+relay"
+                relayResults = relay.publishPending()
             }
-            val t = now()
-            lastSyncTime = t
-            lastSyncVia = via
-            _status.value = SyncStatus.Idle(lastSync = t, via = via)
-            updateDevices(state)
+
+            val syncResult = SyncResult(lanPeers = lanResults, relays = relayResults)
+
+            val lanSucceeded = lanResults.any { it.reached }
+            val relaySucceeded = state.relayEnabled && relayResults.any { it.connected && it.error == null }
+
+            val via = when {
+                lanSucceeded && relaySucceeded -> "lan+relay"
+                lanSucceeded -> "lan"
+                relaySucceeded -> "relay"
+                else -> null
+            }
+
+            if (via != null) {
+                val t = now()
+                lastSyncTime = t
+                lastSyncVia = via
+                _status.value = SyncStatus.Idle(lastSync = t, via = via, result = syncResult)
+                updateDevices(state)
+            } else if (otherMembers.isEmpty()) {
+                _status.value = SyncStatus.Idle(lastSync = lastSyncTime, via = lastSyncVia, result = syncResult)
+                updateDevices(state)
+            } else {
+                val failedPeer = lanResults.firstOrNull { !it.reached }
+                val errorMsg = if (failedPeer != null) {
+                    "Couldn't reach ${failedPeer.name}"
+                } else {
+                    "No device or relay reachable"
+                }
+                _status.value = SyncStatus.Error(
+                    message = errorMsg,
+                    lastSync = lastSyncTime,
+                    result = syncResult,
+                )
+                updateDevices(state)
+            }
+            return@withLock syncResult
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
+            val syncResult = SyncResult(lanPeers = lanResults, relays = relayResults)
             _status.value = SyncStatus.Error(
                 message = e.message ?: "Sync failed",
                 lastSync = lastSyncTime,
+                result = syncResult,
             )
+            return@withLock syncResult
         }
     }
 

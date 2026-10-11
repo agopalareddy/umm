@@ -35,6 +35,13 @@ import java.util.zip.GZIPOutputStream
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
+data class RelaySyncResult(
+    val url: String,
+    val connected: Boolean,
+    val opsPublished: Int = 0,
+    val error: String? = null,
+)
+
 open class RelayTransport(
     val group: GroupStore,
     val log: OpLog,
@@ -54,6 +61,8 @@ open class RelayTransport(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    open fun isConnected(relayUrl: String): Boolean = clients[relayUrl]?.isConnected == true
+
     open fun start() {
         stop()
         groupWatchJob = scope.launch {
@@ -72,14 +81,14 @@ open class RelayTransport(
         clients.clear()
     }
 
-    open suspend fun publishPending() = withContext(Dispatchers.IO) {
+    open suspend fun publishPending(): List<RelaySyncResult> = withContext(Dispatchers.IO) {
         publishMutex.withLock {
-            val state = group.state.value ?: return@withLock
-            if (!state.relayEnabled || state.relays.isEmpty()) return@withLock
+            val state = group.state.value ?: return@withLock emptyList()
+            if (!state.relayEnabled || state.relays.isEmpty()) return@withLock emptyList()
 
             val myPubkey = group.device.publicKey.toHex()
             val selfMember = state.members.find { it.publicKey.equals(myPubkey, ignoreCase = true) }
-            val selfDeviceId = selfMember?.deviceId ?: return@withLock
+            val selfDeviceId = selfMember?.deviceId ?: return@withLock emptyList()
 
             val cipher = GroupCipher(
                 key = decodeKey(state.key),
@@ -89,17 +98,37 @@ open class RelayTransport(
                 clock = { clockSeconds() * 1000L },
             )
 
+            val results = mutableListOf<RelaySyncResult>()
+
             for (relayUrl in state.relays) {
                 val lastSeqKey = getLastSeqKey(relayUrl)
                 val lastSeq = group.store.getString(lastSeqKey)?.toLongOrNull() ?: 0L
                 val pendingOps = log.since(mapOf(selfDeviceId to lastSeq))
                     .filter { it.origin == selfDeviceId && it.seq > lastSeq }
 
-                if (pendingOps.isEmpty()) continue
+                val client = getOrCreateClient(relayUrl)
+
+                if (pendingOps.isEmpty()) {
+                    if (client.isConnected) {
+                        results.add(RelaySyncResult(url = relayUrl, connected = true, opsPublished = 0, error = null))
+                    } else {
+                        val connectRes = client.connect()
+                        if (connectRes.isSuccess) {
+                            _relayErrors.update { it - relayUrl }
+                            results.add(RelaySyncResult(url = relayUrl, connected = true, opsPublished = 0, error = null))
+                        } else {
+                            val err = connectRes.exceptionOrNull()?.message ?: "Not connected"
+                            _relayErrors.update { it + (relayUrl to err) }
+                            results.add(RelaySyncResult(url = relayUrl, connected = false, opsPublished = 0, error = err))
+                        }
+                    }
+                    continue
+                }
 
                 val batches = batchOps(pendingOps, cipher)
-                val client = getOrCreateClient(relayUrl)
                 var anyFailed = false
+                var totalPublished = 0
+                var firstErr: String? = null
 
                 for (batch in batches) {
                     val content = encodeBatch(batch, cipher)
@@ -120,17 +149,23 @@ open class RelayTransport(
                     val res = client.publish(event)
                     if (res.isSuccess) {
                         group.store.putString(lastSeqKey, lastBatchSeq.toString())
+                        totalPublished += batch.size
                     } else {
                         anyFailed = true
                         val err = res.exceptionOrNull()?.message ?: "Publish failed"
+                        firstErr = err
                         _relayErrors.update { it + (relayUrl to err) }
                         break
                     }
                 }
                 if (!anyFailed) {
                     _relayErrors.update { it - relayUrl }
+                    results.add(RelaySyncResult(url = relayUrl, connected = true, opsPublished = totalPublished, error = null))
+                } else {
+                    results.add(RelaySyncResult(url = relayUrl, connected = client.isConnected, opsPublished = totalPublished, error = firstErr))
                 }
             }
+            results
         }
     }
 

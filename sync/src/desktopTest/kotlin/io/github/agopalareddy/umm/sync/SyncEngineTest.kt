@@ -26,6 +26,7 @@ import io.github.agopalareddy.umm.sync.lan.Discovery
 import io.github.agopalareddy.umm.sync.lan.LanPeer
 import io.github.agopalareddy.umm.sync.lan.LanTransport
 import io.github.agopalareddy.umm.sync.pair.Pairing
+import io.github.agopalareddy.umm.sync.relay.RelaySyncResult
 import io.github.agopalareddy.umm.sync.relay.RelayTransport
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -112,10 +113,12 @@ class SyncEngineTest {
             started = false
         }
 
+        var sessionResultToReturn: SessionResult? = SessionResult(1, 1)
+
         override suspend fun syncWith(peer: LanPeer): SessionResult? {
             if (shouldThrow) throw IOException("LAN sync error")
             syncCount++
-            return SessionResult(1, 1)
+            return sessionResultToReturn
         }
     }
 
@@ -135,6 +138,11 @@ class SyncEngineTest {
         var stopped = false
         var publishCount = 0
         var shouldThrow = false
+        var isRelayConnected = true
+        var publishError: String? = null
+        var opsPublishedCount = 0
+
+        override fun isConnected(relayUrl: String): Boolean = isRelayConnected
 
         override fun start() {
             started = true
@@ -146,9 +154,20 @@ class SyncEngineTest {
             started = false
         }
 
-        override suspend fun publishPending() {
+        override suspend fun publishPending(): List<RelaySyncResult> {
             if (shouldThrow) throw IOException("Relay publish error")
             publishCount++
+            val state = group.state.value ?: return emptyList()
+            val relays = state.relays.ifEmpty { listOf("relay1") }
+            return relays.map { url ->
+                if (!isRelayConnected) {
+                    RelaySyncResult(url = url, connected = false, opsPublished = 0, error = "Not connected")
+                } else if (publishError != null) {
+                    RelaySyncResult(url = url, connected = true, opsPublished = 0, error = publishError)
+                } else {
+                    RelaySyncResult(url = url, connected = true, opsPublished = opsPublishedCount, error = null)
+                }
+            }
         }
     }
 
@@ -606,6 +625,246 @@ class SyncEngineTest {
 
             assertEquals(0, env.relay.publishCount)
             assertTrue(env.log.since(emptyMap()).isEmpty())
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun lanSessionCompletesIdleViaLan() = runTest(timeout = 20.seconds) {
+        val env = TestEnv(this, tmp.newFolder(), currentTime = 10_000L)
+        try {
+            val engine = env.engine
+            val myPubkey = env.groupStore.device.publicKey.joinToString("") { "%02x".format(it) }
+            env.groupStore.save(
+                GroupState(
+                    groupId = "grp-1",
+                    key = "key1",
+                    epoch = 0,
+                    previousKey = null,
+                    previousUntil = 0L,
+                    members = listOf(
+                        Member("d1", "Desktop", "desktop", myPubkey),
+                        Member("d2", "Phone", "android", "peerpubkey"),
+                    ),
+                    lanEnabled = true,
+                    relayEnabled = false,
+                ),
+            )
+            engine.start()
+            runCurrent()
+
+            env.lan.setPeers(listOf(LanPeer("d2", java.net.InetAddress.getByName("127.0.0.1"), 1234)))
+            env.lan.sessionResultToReturn = SessionResult(2, 3)
+
+            val res = engine.syncNow()
+            val status = engine.status.value
+            assertTrue("Expected Idle, got $status", status is SyncStatus.Idle)
+            val idle = status as SyncStatus.Idle
+            assertEquals(10_000L, idle.lastSync)
+            assertEquals("lan", idle.via)
+            assertTrue(res.lanPeers.any { it.deviceId == "d2" && it.reached })
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun noLanPeerRelayAcceptsViaRelay() = runTest(timeout = 20.seconds) {
+        val env = TestEnv(this, tmp.newFolder(), currentTime = 20_000L)
+        try {
+            val engine = env.engine
+            val myPubkey = env.groupStore.device.publicKey.joinToString("") { "%02x".format(it) }
+            env.groupStore.save(
+                GroupState(
+                    groupId = "grp-1",
+                    key = "key1",
+                    epoch = 0,
+                    previousKey = null,
+                    previousUntil = 0L,
+                    members = listOf(
+                        Member("d1", "Desktop", "desktop", myPubkey),
+                        Member("d2", "Phone", "android", "peerpubkey"),
+                    ),
+                    lanEnabled = true,
+                    relayEnabled = true,
+                ),
+            )
+            engine.start()
+            runCurrent()
+
+            env.lan.setPeers(emptyList())
+            env.relay.isRelayConnected = true
+            env.relay.publishError = null
+
+            val res = engine.syncNow()
+            val status = engine.status.value
+            assertTrue("Expected Idle, got $status", status is SyncStatus.Idle)
+            val idle = status as SyncStatus.Idle
+            assertEquals(20_000L, idle.lastSync)
+            assertEquals("relay", idle.via)
+            assertTrue(res.relays.any { it.connected && it.error == null })
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun noLanPeerRelayPublishFailsOnEveryRelayErrorLastSyncUnchanged() = runTest(timeout = 20.seconds) {
+        val env = TestEnv(this, tmp.newFolder(), currentTime = 30_000L)
+        try {
+            val engine = env.engine
+            val myPubkey = env.groupStore.device.publicKey.joinToString("") { "%02x".format(it) }
+            env.groupStore.save(
+                GroupState(
+                    groupId = "grp-1",
+                    key = "key1",
+                    epoch = 0,
+                    previousKey = null,
+                    previousUntil = 0L,
+                    members = listOf(
+                        Member("d1", "Desktop", "desktop", myPubkey),
+                        Member("d2", "Phone", "android", "peerpubkey"),
+                    ),
+                    lanEnabled = true,
+                    relayEnabled = true,
+                ),
+            )
+            engine.start()
+            runCurrent()
+
+            // First: successful sync at t = 30_000
+            env.lan.setPeers(emptyList())
+            env.relay.isRelayConnected = true
+            env.relay.publishError = null
+            engine.syncNow()
+            assertEquals(30_000L, (engine.status.value as SyncStatus.Idle).lastSync)
+
+            // Second: at t = 40_000, publish fails on every relay
+            env.currentTime = 40_000L
+            env.relay.publishError = "Relay rejected event"
+            val res = engine.syncNow()
+
+            val status = engine.status.value
+            assertTrue("Expected Error, got $status", status is SyncStatus.Error)
+            val err = status as SyncStatus.Error
+            assertEquals("No device or relay reachable", err.message)
+            assertEquals(30_000L, err.lastSync)
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun lanPeerPresentSyncWithNullRelaysOffErrorNamingDevice() = runTest(timeout = 20.seconds) {
+        val env = TestEnv(this, tmp.newFolder(), currentTime = 50_000L)
+        try {
+            val engine = env.engine
+            val myPubkey = env.groupStore.device.publicKey.joinToString("") { "%02x".format(it) }
+            env.groupStore.save(
+                GroupState(
+                    groupId = "grp-1",
+                    key = "key1",
+                    epoch = 0,
+                    previousKey = null,
+                    previousUntil = 0L,
+                    members = listOf(
+                        Member("d1", "Desktop", "desktop", myPubkey),
+                        Member("d2", "Pixel Phone", "android", "peerpubkey"),
+                    ),
+                    lanEnabled = true,
+                    relayEnabled = false,
+                ),
+            )
+            engine.start()
+            runCurrent()
+
+            env.lan.setPeers(listOf(LanPeer("d2", java.net.InetAddress.getByName("127.0.0.1"), 1234)))
+            env.lan.sessionResultToReturn = null
+
+            val res = engine.syncNow()
+
+            val status = engine.status.value
+            assertTrue("Expected Error, got $status", status is SyncStatus.Error)
+            val err = status as SyncStatus.Error
+            assertEquals("Couldn't reach Pixel Phone", err.message)
+            assertNull(err.lastSync)
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun relaysEnabledNothingPendingNoRelayConnectedError() = runTest(timeout = 20.seconds) {
+        val env = TestEnv(this, tmp.newFolder(), currentTime = 60_000L)
+        try {
+            val engine = env.engine
+            val myPubkey = env.groupStore.device.publicKey.joinToString("") { "%02x".format(it) }
+            env.groupStore.save(
+                GroupState(
+                    groupId = "grp-1",
+                    key = "key1",
+                    epoch = 0,
+                    previousKey = null,
+                    previousUntil = 0L,
+                    members = listOf(
+                        Member("d1", "Desktop", "desktop", myPubkey),
+                        Member("d2", "Phone", "android", "peerpubkey"),
+                    ),
+                    lanEnabled = false,
+                    relayEnabled = true,
+                ),
+            )
+            engine.start()
+            runCurrent()
+
+            env.relay.isRelayConnected = false
+            env.relay.publishError = null
+
+            val res = engine.syncNow()
+
+            val status = engine.status.value
+            assertTrue("Expected Error, got $status", status is SyncStatus.Error)
+            val err = status as SyncStatus.Error
+            assertEquals("No device or relay reachable", err.message)
+            assertNull(err.lastSync)
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun singleMemberGroupIdleNoError() = runTest(timeout = 20.seconds) {
+        val env = TestEnv(this, tmp.newFolder(), currentTime = 70_000L)
+        try {
+            val engine = env.engine
+            val myPubkey = env.groupStore.device.publicKey.joinToString("") { "%02x".format(it) }
+            env.groupStore.save(
+                GroupState(
+                    groupId = "grp-1",
+                    key = "key1",
+                    epoch = 0,
+                    previousKey = null,
+                    previousUntil = 0L,
+                    members = listOf(
+                        Member("d1", "Desktop", "desktop", myPubkey),
+                    ),
+                    lanEnabled = true,
+                    relayEnabled = true,
+                ),
+            )
+            engine.start()
+            runCurrent()
+
+            env.lan.setPeers(emptyList())
+            env.relay.isRelayConnected = false
+
+            val res = engine.syncNow()
+
+            val status = engine.status.value
+            assertTrue("Expected Idle, got $status", status is SyncStatus.Idle)
+            val idle = status as SyncStatus.Idle
+            assertNull(idle.lastSync)
         } finally {
             env.close()
         }

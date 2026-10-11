@@ -36,6 +36,20 @@ class RelayClient(
     private var connectDeferred: CompletableDeferred<Unit>? = null
     private var isClosed = false
 
+    val isConnected: Boolean
+        get() = synchronized(lock) {
+            !isClosed && webSocket != null && connectDeferred?.isCompleted == true && connectDeferred?.getCompletionExceptionOrNull() == null
+        }
+
+    suspend fun connect(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            ensureConnected()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     private val pendingPublishes = ConcurrentHashMap<String, CompletableDeferred<Result<Unit>>>()
     private val subscriptions = ConcurrentHashMap<String, ProducerScope<NostrEvent>>()
     private val subscriptionFilters = ConcurrentHashMap<String, JsonObject>()
