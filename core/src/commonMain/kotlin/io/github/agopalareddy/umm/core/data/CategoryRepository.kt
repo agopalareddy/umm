@@ -1,10 +1,17 @@
 package io.github.agopalareddy.umm.core.data
 
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
+import io.github.agopalareddy.umm.core.sync.ChangeRecorder
+import io.github.agopalareddy.umm.core.sync.SyncOp
 import kotlinx.coroutines.flow.Flow
+
 import kotlinx.coroutines.flow.map
 
-class CategoryRepository(db: UmmDatabase) {
+class CategoryRepository(
+    db: UmmDatabase,
+    private val recorder: ChangeRecorder = ChangeRecorder.None,
+) {
+
     private val dao = db.categoryDao()
 
     fun observeAll(): Flow<List<CategoryConfig>> = dao.observeAll().map { list ->
@@ -22,6 +29,7 @@ class CategoryRepository(db: UmmDatabase) {
     suspend fun assign(packageName: String, category: Category) {
         if (category == Category.OTHER) dao.unassign(packageName)
         else dao.assign(AppAssignmentEntity(packageName, category))
+        recorder.record(SyncOp.AppAssign(packageName, category))
     }
 
     suspend fun appsIn(category: Category): List<String> = dao.appsIn(category)
@@ -31,7 +39,9 @@ class CategoryRepository(db: UmmDatabase) {
 
     suspend fun update(config: CategoryConfig) {
         dao.upsert(CategoryEntity(config.category, config.level, config.script))
+        recorder.record(SyncOp.CategorySet(config.category, config.level, config.script))
     }
+
 
     private fun CategoryEntity.toConfig() = CategoryConfig(category, level, script)
 }

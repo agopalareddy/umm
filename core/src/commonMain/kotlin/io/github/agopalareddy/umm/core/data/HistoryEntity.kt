@@ -4,8 +4,11 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
+import kotlinx.serialization.Serializable
 
+@Serializable
 enum class HistoryStatus { PENDING, DONE, CLEANUP_FAILED, FAILED }
+
 
 data class HistoryItem(
     val id: Long,

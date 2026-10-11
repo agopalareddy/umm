@@ -21,7 +21,11 @@ import io.github.agopalareddy.umm.core.policy.ModelPlan
 import io.github.agopalareddy.umm.core.policy.ModelSelector
 import io.github.agopalareddy.umm.core.policy.RecommendationRepository
 import io.github.agopalareddy.umm.core.stats.StatsRepository
+import io.github.agopalareddy.umm.core.sync.HybridClock
+import io.github.agopalareddy.umm.core.sync.OpLog
+import io.github.agopalareddy.umm.core.sync.SyncMeta
 import io.github.agopalareddy.umm.ui.Platform
+
 import io.github.agopalareddy.umm.ui.UmmServices
 import java.io.File
 import kotlinx.coroutines.flow.Flow
@@ -66,13 +70,17 @@ class DesktopGraph(
     val openRouter: OpenRouterApi = api ?: OpenRouterClient(OpenRouterClient.DEFAULT_BASE_URL, http) { apiKeyStore.get() }
 
     val database by lazy { buildUmmDatabase(File(paths.dataDir, "umm.db")) }
-    val categories by lazy { CategoryRepository(database) }
-    val history by lazy { HistoryRepository(database, clock) }
-    val settings by lazy { SettingsRepository(buildSettingsStore(File(paths.configDir, "settings.preferences_pb"))) }
+    val syncMeta by lazy { SyncMeta(database) }
+    val hybridClock by lazy { HybridClock(clock) }
+    val opLog by lazy { OpLog(database, syncMeta, hybridClock, active = { false }) }
+    val categories by lazy { CategoryRepository(database, opLog) }
+    val history by lazy { HistoryRepository(database, clock, opLog) }
+    val settings by lazy { SettingsRepository(buildSettingsStore(File(paths.configDir, "settings.preferences_pb")), opLog) }
     val desktopSettings by lazy { DesktopSettings(buildSettingsStore(File(paths.configDir, "desktop.preferences_pb"))) }
-    val stats by lazy { StatsRepository(database) { settings.settings.first().statsRecording } }
+    val stats by lazy { StatsRepository(database, { settings.settings.first().statsRecording }, opLog) }
 
     val recommendations by lazy {
+
         RecommendationRepository(
             http,
             recommendationsUrl,

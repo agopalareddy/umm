@@ -4,13 +4,23 @@ import androidx.room.immediateTransaction
 import androidx.room.useWriterConnection
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
+import io.github.agopalareddy.umm.core.sync.ChangeRecorder
+import io.github.agopalareddy.umm.core.sync.DataKind
 import io.github.agopalareddy.umm.core.sync.SyncMeta
+import io.github.agopalareddy.umm.core.sync.SyncOp
+import io.github.agopalareddy.umm.core.sync.toSynced
 import java.io.File
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
+
 /** Recent dictations. Audio is kept only while a dictation still needs a retry. */
-class HistoryRepository(private val db: UmmDatabase, private val clock: () -> Long = System::currentTimeMillis) {
+class HistoryRepository(
+    private val db: UmmDatabase,
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val recorder: ChangeRecorder = ChangeRecorder.None,
+) {
+
     private val dao = db.historyDao()
     private val meta = SyncMeta(db)
 
@@ -70,12 +80,15 @@ class HistoryRepository(private val db: UmmDatabase, private val clock: () -> Lo
     }
 
     suspend fun delete(id: Long) {
-        dao.get(id)?.let { removeWithAudio(listOf(it)) }
+        val item = dao.get(id) ?: return
+        removeWithAudio(listOf(item))
+        recorder.record(SyncOp.HistoryDelete(item.originDevice, item.originId))
     }
 
     suspend fun clearAll() {
         dao.all().forEach(::deleteAudio)
         dao.deleteAll()
+        recorder.record(SyncOp.ClearBefore(DataKind.HISTORY, clock(), null))
     }
 
     suspend fun purgeExpiredAudio(maxAgeMs: Long = 7L * 24 * 3600 * 1000) {
@@ -87,8 +100,13 @@ class HistoryRepository(private val db: UmmDatabase, private val clock: () -> Lo
 
     private suspend fun edit(id: Long, change: (HistoryEntity) -> HistoryEntity) {
         val current = dao.get(id) ?: return
-        dao.update(change(current))
+        val updated = change(current)
+        dao.update(updated)
+        if (updated.status != HistoryStatus.PENDING) {
+            recorder.record(SyncOp.HistoryUpsert(updated.toSynced()))
+        }
     }
+
 
     private suspend fun removeWithAudio(entities: List<HistoryEntity>) {
         if (entities.isEmpty()) return

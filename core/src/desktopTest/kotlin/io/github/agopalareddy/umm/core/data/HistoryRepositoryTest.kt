@@ -2,6 +2,9 @@ package io.github.agopalareddy.umm.core.data
 
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
+import io.github.agopalareddy.umm.core.sync.ChangeRecorder
+import io.github.agopalareddy.umm.core.sync.DataKind
+import io.github.agopalareddy.umm.core.sync.SyncOp
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -18,10 +21,11 @@ class HistoryRepositoryTest {
     @get:Rule val tmp = TemporaryFolder()
     private val db = inMemoryUmmDatabase()
     private var now = 1_000_000_000L
-    private val repo = HistoryRepository(db) { now }
+    private val repo = HistoryRepository(db, clock = { now })
     private val day = 24L * 3600 * 1000
 
     @After fun tearDown() = db.close()
+
 
     private fun audio(): File = tmp.newFile().apply { writeBytes(byteArrayOf(1, 2, 3)) }
 
@@ -96,6 +100,7 @@ class HistoryRepositoryTest {
 
         assertFalse(oldFile.exists())
         assertNull(repo.get(old)!!.audioPath)
+
         assertTrue(recentFile.exists())
         assertEquals(recentFile.path, repo.get(recent)!!.audioPath)
     }
@@ -144,4 +149,42 @@ class HistoryRepositoryTest {
         assertTrue(ownRows.any { it.id == own51stId })
         assertFalse(files.first().exists()) // oldest own audio deleted
     }
+
+    @Test fun recordsFinishedItemsNotPending() = runTest {
+        val recorded = mutableListOf<SyncOp>()
+        val recorder = ChangeRecorder { recorded.add(it) }
+        val repoWithRecorder = HistoryRepository(db, { now }, recorder = recorder)
+
+        val file = audio()
+        val id = repoWithRecorder.createPending(
+            packageName = "com.whatsapp",
+            appLabel = null,
+            level = CleanupLevel.LIGHT,
+            script = ScriptPreference.LATIN,
+            language = "auto",
+            audioPath = file.path,
+        )
+        assertTrue(recorded.isEmpty())
+
+        repoWithRecorder.markDone(id, "raw", "clean")
+        assertEquals(1, recorded.size)
+        val upsert = recorded.single() as SyncOp.HistoryUpsert
+        assertEquals(id, upsert.row.originId)
+        assertEquals("clean", upsert.row.cleanText)
+
+        recorded.clear()
+        repoWithRecorder.delete(id)
+        assertEquals(1, recorded.size)
+        val delete = recorded.single() as SyncOp.HistoryDelete
+        assertEquals(id, delete.originId)
+
+        recorded.clear()
+        repoWithRecorder.clearAll()
+        assertEquals(1, recorded.size)
+        val clear = recorded.single() as SyncOp.ClearBefore
+        assertEquals(DataKind.HISTORY, clear.data)
+        assertEquals(now, clear.before)
+        assertNull(clear.origin)
+    }
 }
+

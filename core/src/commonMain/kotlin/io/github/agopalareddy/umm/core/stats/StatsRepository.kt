@@ -1,21 +1,33 @@
 package io.github.agopalareddy.umm.core.stats
 
 import io.github.agopalareddy.umm.core.data.UmmDatabase
+import io.github.agopalareddy.umm.core.sync.ChangeRecorder
 import io.github.agopalareddy.umm.core.sync.SyncMeta
+import io.github.agopalareddy.umm.core.sync.SyncOp
+import io.github.agopalareddy.umm.core.sync.toSynced
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 
-class StatsRepository(private val db: UmmDatabase, private val enabled: suspend () -> Boolean = { true }) {
+class StatsRepository(
+    private val db: UmmDatabase,
+    private val enabled: suspend () -> Boolean = { true },
+    private val recorder: ChangeRecorder = ChangeRecorder.None,
+) {
+
     private val dao = db.statsDao()
     private val meta = SyncMeta(db)
 
     /** Upserts by composite key (originDevice, historyId), so a successful retry replaces the failed attempt. Writes nothing while recording is off. */
     suspend fun record(entry: StatsEntry) {
-        if (enabled()) dao.upsert(entry)
+        if (enabled()) {
+            dao.upsert(entry)
+            recorder.record(SyncOp.StatsUpsert(entry.toSynced()))
+        }
     }
+
 
     suspend fun get(historyId: Long): StatsEntry? = dao.get(meta.deviceId(), historyId)
 
