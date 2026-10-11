@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Translate
@@ -83,6 +84,7 @@ fun SettingsHome(
         NavRow(Icons.Default.AutoAwesome, "Models", settings.modelMode.label() + if (settings.zdrOnly) " · zero data retention" else "") { onOpen(Routes.MODELS) }
         NavRow(Icons.Default.Palette, "Appearance", settings.themeMode.label() + if (settings.dynamicColor) " · dynamic theme" else "") { onOpen(Routes.APPEARANCE) }
         NavRow(Icons.Default.BarChart, "Stats", settings.statsSummary()) { onOpen(Routes.STATS) }
+        NavRow(Icons.Default.NewReleases, "What's new", null) { onOpen(Routes.WHATS_NEW) }
         NavRow(Icons.Default.Info, "About", "Version ${platform.appVersion()} · source on GitHub") {
             platform.openUrl("https://github.com/agopalareddy/umm")
         }

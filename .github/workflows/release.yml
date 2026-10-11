@@ -19,6 +19,13 @@ jobs:
       code: ${{ steps.version.outputs.code }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
+      - uses: actions/checkout@v7
+
+      # The "What's new" page and the release notes come from CHANGELOG.md, so a release needs its section there.
+      - name: Check the changelog covers this release
+        if: github.ref_type == 'tag'
+        run: scripts/changelog-section.sh "${GITHUB_REF_NAME#v}" > /dev/null
+
       - name: Work out the version
         id: version
         run: |
@@ -188,7 +195,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cat > notes.md <<NOTES
+          {
+            echo "### What's new"
+            echo
+            scripts/changelog-section.sh "${{ needs.version.outputs.name }}"
+            echo
+          } > notes.md
+          cat >> notes.md <<NOTES
           ### Android
 
           1. Download \`umm-${{ needs.version.outputs.name }}.apk\` below on your Android phone (Android 10 or newer).

@@ -30,6 +30,7 @@ object Routes {
     const val SYNC = "settings/sync"
     const val HISTORY = "history"
     const val ABOUT = "about"
+    const val WHATS_NEW = "about/whats-new"
 }
 
 /** A platform-only Settings row, shown after Dictation. */
@@ -83,6 +84,7 @@ fun UmmNavHost(
         composable(Routes.CATEGORIES) { CategoriesScreen(back) }
         composable(Routes.MODELS) { ModelsScreen(back) }
         composable(Routes.HISTORY) { HistoryScreen(back) }
-        composable(Routes.ABOUT) { AboutPage(back) }
+        composable(Routes.ABOUT) { AboutPage(back, open) }
+        composable(Routes.WHATS_NEW) { WhatsNewPage(back) }
     }
 }
