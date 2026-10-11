@@ -30,6 +30,7 @@ kotlin {
         }
         getByName("desktopMain").dependencies {
             api(libs.secp256k1.jni.jvm)
+            api(libs.jmdns)
         }
         getByName("desktopTest").dependencies {
             implementation(libs.junit)

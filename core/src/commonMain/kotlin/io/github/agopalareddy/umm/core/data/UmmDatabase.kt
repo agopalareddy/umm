@@ -38,7 +38,7 @@ abstract class UmmDatabase : RoomDatabase() {
     internal abstract fun categoryDao(): CategoryDao
     internal abstract fun historyDao(): HistoryDao
     internal abstract fun statsDao(): StatsDao
-    internal abstract fun syncDao(): SyncDao
+    abstract fun syncDao(): SyncDao
 }
 
 /** Room's KSP processor generates the `actual` for each target. */

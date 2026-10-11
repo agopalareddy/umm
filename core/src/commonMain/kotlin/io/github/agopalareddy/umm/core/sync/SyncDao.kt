@@ -12,7 +12,7 @@ data class HighWaterMark(
 )
 
 @Dao
-internal interface SyncDao {
+interface SyncDao {
     @Query("SELECT value FROM sync_meta WHERE key = :key")
     suspend fun getMeta(key: String): String?
 

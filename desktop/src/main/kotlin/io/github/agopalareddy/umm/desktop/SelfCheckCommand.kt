@@ -86,6 +86,11 @@ object SelfCheck {
             Class.forName("com.sun.security.auth.module.UnixSystem")
         }
 
+        check("jmdns") {
+            val jmdns = javax.jmdns.JmDNS.create()
+            jmdns.close()
+        }
+
         check("compose") {
             val bitmap = ImageBitmap(1, 1)
             check(bitmap.width == 1 && bitmap.height == 1) { "ImageBitmap allocation failed" }
