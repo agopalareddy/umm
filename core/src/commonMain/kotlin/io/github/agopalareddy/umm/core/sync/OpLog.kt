@@ -1,8 +1,8 @@
 package io.github.agopalareddy.umm.core.sync
 
+import androidx.room.immediateTransaction
+import androidx.room.useWriterConnection
 import io.github.agopalareddy.umm.core.data.UmmDatabase
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
@@ -14,7 +14,6 @@ class OpLog(
     private val clock: HybridClock,
     private val active: suspend () -> Boolean,
 ) : ChangeRecorder {
-    private val mutex = Mutex()
 
     private val json = Json {
         classDiscriminator = "t"
@@ -39,22 +38,26 @@ class OpLog(
         if (!active()) return
         val origin = meta.deviceId()
         val dao = db.syncDao()
-        mutex.withLock {
-            val seq = (dao.maxSeq(origin) ?: 0L) + 1L
-            val hlc = clock.tick()
-            val envelope = OpEnvelope(origin, seq, hlc, op)
-            storeInternal(envelope)
-            when (op) {
-                is SyncOp.SettingSet -> dao.putSettingsHlc(SyncSettingsHlcEntity(op.key, hlc, origin))
-                is SyncOp.CategorySet -> dao.putSettingsHlc(SyncSettingsHlcEntity("category:${op.category.name}", hlc, origin))
-                is SyncOp.AppAssign -> dao.putSettingsHlc(SyncSettingsHlcEntity("app:${op.packageName}", hlc, origin))
-                else -> Unit
+        db.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                val seq = (dao.maxSeq(origin) ?: 0L) + 1L
+                val hlc = clock.tick()
+                val envelope = OpEnvelope(origin, seq, hlc, op)
+                storeInternal(envelope)
+                when (op) {
+                    is SyncOp.SettingSet -> dao.putSettingsHlc(SyncSettingsHlcEntity(op.key, hlc, origin))
+                    is SyncOp.CategorySet -> dao.putSettingsHlc(SyncSettingsHlcEntity("category:${op.category.name}", hlc, origin))
+                    is SyncOp.AppAssign -> dao.putSettingsHlc(SyncSettingsHlcEntity("app:${op.packageName}", hlc, origin))
+                    else -> Unit
+                }
             }
         }
     }
 
-    suspend fun store(envelope: OpEnvelope): Boolean = mutex.withLock {
-        storeInternal(envelope)
+    suspend fun store(envelope: OpEnvelope): Boolean = db.useWriterConnection { transactor ->
+        transactor.immediateTransaction {
+            storeInternal(envelope)
+        }
     }
 
     private suspend fun storeInternal(envelope: OpEnvelope): Boolean {

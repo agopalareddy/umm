@@ -1,15 +1,27 @@
 package io.github.agopalareddy.umm.core.sync
 
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.room.immediateTransaction
+import androidx.room.useWriterConnection
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
+import io.github.agopalareddy.umm.core.data.HistoryRepository
 import io.github.agopalareddy.umm.core.data.HistoryStatus
+import io.github.agopalareddy.umm.core.data.SettingsRepository
 import io.github.agopalareddy.umm.core.data.inMemoryUmmDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration.Companion.seconds
 
 class OpLogTest {
     private val db = inMemoryUmmDatabase()
@@ -144,5 +156,64 @@ class OpLogTest {
         val remaining = opLog.since(emptyMap())
         assertEquals(1, remaining.size)
         assertEquals(2L, remaining.single().seq)
+    }
+
+    @Test
+    fun testNestedWriterConnectionRollback() = runTest {
+        val me = meta.deviceId()
+        try {
+            db.useWriterConnection { t1 ->
+                t1.immediateTransaction {
+                    opLog.record(SyncOp.SettingSet("test", "val"))
+                    throw RuntimeException("Intentional failure")
+                }
+            }
+        } catch (_: RuntimeException) {}
+        assertEquals(0, opLog.since(emptyMap()).size)
+    }
+
+    @Test
+    fun concurrentHistoryInsertsAndSettingsWritesNoDeadlockAndNoGaps() = runTest(timeout = 30.seconds) {
+        val me = meta.deviceId()
+        val tempFolder = org.junit.rules.TemporaryFolder().apply { create() }
+        val testScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        val dataStore = PreferenceDataStoreFactory.create(scope = testScope) {
+            java.io.File(tempFolder.root, "test_settings.preferences_pb")
+        }
+        val settingsRepo = SettingsRepository(dataStore, recorder = opLog)
+        val historyRepo = HistoryRepository(db, clock = { System.currentTimeMillis() }, recorder = opLog)
+
+        val deferreds = mutableListOf<kotlinx.coroutines.Deferred<Unit>>()
+        for (i in 1..200) {
+            deferreds.add(async(Dispatchers.IO) {
+                val id = historyRepo.createPending(
+                    packageName = "com.test.app$i",
+                    level = CleanupLevel.LIGHT,
+                    script = ScriptPreference.LATIN,
+                    language = "en",
+                    audioPath = "",
+                )
+                historyRepo.markDone(id, "raw$i", "clean$i")
+            })
+            deferreds.add(async(Dispatchers.IO) {
+                settingsRepo.update {
+                    val nextLevel = if (it.defaultLevel == CleanupLevel.LIGHT) CleanupLevel.POLISHED else CleanupLevel.LIGHT
+                    it.copy(defaultLevel = nextLevel)
+                }
+            })
+        }
+        deferreds.awaitAll()
+
+        val allOps = opLog.since(emptyMap())
+        assertTrue("Expected ops to be recorded", allOps.isNotEmpty())
+        val opsByOrigin = allOps.groupBy { it.origin }
+        for ((origin, ops) in opsByOrigin) {
+            val seqs = ops.map { it.seq }
+            assertEquals("No duplicate seq numbers for origin $origin", seqs.toSet().size, seqs.size)
+            val expected = (1L..seqs.size.toLong()).toList()
+            assertEquals("No gaps in sequence numbers for origin $origin", expected, seqs)
+        }
+        testScope.cancel()
+        tempFolder.delete()
     }
 }
