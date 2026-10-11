@@ -109,9 +109,9 @@ def add_entry(grp, art, ver, local_fname, sha1, file_path, sha256_val=None):
     if not url:
         url = probe_url(grp, art, ver, local_fname)
     if not url:
-        grp_path = grp.replace(".", "/")
-        url = f"https://repo1.maven.org/maven2/{grp_path}/{art}/{ver}/{local_fname}"
-        
+        # A guessed URL would only fail later, inside flatpak-builder. Stop here and name the artifact.
+        sys.exit(f"Error: no repository answered for {grp}:{art}:{ver} ({local_fname}); not writing a guessed URL.")
+
     url_fname = url.split("/")[-1]
     grp_path = grp.replace(".", "/")
     dest = f"flatpak-repo/{grp_path}/{art}/{ver}"
