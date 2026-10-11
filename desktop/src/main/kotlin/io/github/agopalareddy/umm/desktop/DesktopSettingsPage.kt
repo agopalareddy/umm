@@ -76,7 +76,13 @@ fun DesktopSettingsPage(engine: DesktopEngine, onBack: () -> Unit, onSetup: () -
         Section("Startup") {
             SwitchRow(
                 checked = prefs.startAtLogin,
-                onCheckedChange = { on -> scope.launch { engine.setStartAtLogin(on) } },
+                onCheckedChange = { on ->
+                    scope.launch {
+                        if (!engine.setStartAtLogin(on)) {
+                            platform.showMessage("Couldn't change start at login.")
+                        }
+                    }
+                },
                 enabled = engine.launcher != null,
             ) {
                 Column(Modifier.weight(1f)) {

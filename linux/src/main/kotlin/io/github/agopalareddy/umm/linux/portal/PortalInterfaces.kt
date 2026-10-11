@@ -57,3 +57,10 @@ internal interface SettingsPortal : DBusInterface {
 internal interface Session : DBusInterface {
     fun Close()
 }
+
+@JvmSuppressWildcards
+@DBusInterfaceName("org.freedesktop.portal.Background")
+internal interface Background : DBusInterface {
+    fun RequestBackground(parentWindow: String, options: Opts): DBusPath
+}
+

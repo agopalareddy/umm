@@ -1,0 +1,33 @@
+name: "umm"
+arch: "amd64"
+platform: "linux"
+version: "${VERSION}"
+release: "1"
+maintainer: "Aadarsha Gopala Reddy <agr@agreddy.com>"
+description: "Voice dictation with your own OpenRouter key"
+homepage: "https://github.com/agopalareddy/umm"
+license: "PolyForm-Noncommercial-1.0.0"
+
+# Paths are relative to the repository root, where the Gradle task runs nfpm. nfpm does not expand
+# environment variables in `src`, so the app image and the generated desktop file are named directly.
+contents:
+  - src: "desktop/build/compose/binaries/main/app/Umm"
+    dst: "/opt/umm"
+    # "tree" makes the package own the folders as well as the files. The launcher asks rpm or dpkg for the
+    # package's file list and takes the entry ending in "/app" as the app folder; an rpm that owns only files
+    # has no such entry, and the launcher then cannot find Umm.cfg. Owned folders are also removed on uninstall.
+    type: "tree"
+  - src: "/opt/umm/bin/Umm"
+    dst: "/usr/bin/umm"
+    type: "symlink"
+  - src: "desktop/build/packaging/io.github.agopalareddy.Umm.desktop"
+    dst: "/usr/share/applications/io.github.agopalareddy.Umm.desktop"
+  - src: "packaging/linux/io.github.agopalareddy.Umm.svg"
+    dst: "/usr/share/icons/hicolor/scalable/apps/io.github.agopalareddy.Umm.svg"
+  - src: "packaging/linux/io.github.agopalareddy.Umm.png"
+    dst: "/usr/share/icons/hicolor/256x256/apps/io.github.agopalareddy.Umm.png"
+  - src: "packaging/linux/io.github.agopalareddy.Umm.metainfo.xml"
+    dst: "/usr/share/metainfo/io.github.agopalareddy.Umm.metainfo.xml"
+
+recommends:
+  - xdg-desktop-portal

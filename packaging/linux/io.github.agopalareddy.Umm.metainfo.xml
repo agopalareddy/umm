@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.agopalareddy.Umm</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>PolyForm-Noncommercial-1.0.0</project_license>
+  <name>Umm</name>
+  <summary>Voice dictation with your own OpenRouter key</summary>
+  <description>
+    <p>
+      Umm provides voice dictation on the Linux desktop using your own
+      OpenRouter API key.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.agopalareddy.Umm.desktop</launchable>
+  <url type="homepage">https://github.com/agopalareddy/umm</url>
+  <url type="bugtracker">https://github.com/agopalareddy/umm/issues</url>
+  <developer id="io.github.agopalareddy">
+    <name>Aadarsha Gopala Reddy</name>
+  </developer>
+  <provides>
+    <binary>umm</binary>
+  </provides>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.1.0" date="2026-10-10" />
+  </releases>
+</component>

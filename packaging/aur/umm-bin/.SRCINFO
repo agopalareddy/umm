@@ -1,0 +1,18 @@
+pkgbase = umm-bin
+	pkgdesc = Voice dictation with your own OpenRouter key
+	pkgver = 0.0.1
+	pkgrel = 1
+	url = https://github.com/agopalareddy/umm
+	arch = x86_64
+	license = LicenseRef-PolyForm-Noncommercial-1.0.0
+	depends = xdg-desktop-portal
+	depends = hicolor-icon-theme
+	optdepends = xdg-desktop-portal-kde: KDE Plasma
+	optdepends = xdg-desktop-portal-gnome: GNOME
+	provides = umm
+	conflicts = umm
+	options = !strip
+	source = https://github.com/agopalareddy/umm/releases/download/v0.0.1/umm-0.0.1-linux-x86_64.tar.gz
+	sha256sums = 77db53af3b7b21fad4ef3c47148131a15b6ffcff02c76bff2b65e7bc953d37d1
+
+pkgname = umm-bin

@@ -47,4 +47,24 @@ class AutostartTest {
         autostart.enable("/home/a b/umm/bin/Umm")
         assertTrue(entry(tmp.root).readLines().contains("Exec=\"/home/a b/umm/bin/Umm\" --background"))
     }
+
+    @Test fun flatpakUsesThePortal() {
+        val flatpakInfo = tmp.newFile(".flatpak-info")
+        val forFlatpak = loginStartFor(emptyMap(), tmp.root, flatpakInfo = flatpakInfo, portal = { error("unused") })
+        assertTrue(forFlatpak is BackgroundPortal)
+
+        val nonFlatpak = loginStartFor(emptyMap(), tmp.root, flatpakInfo = File(tmp.root, "not-here"), portal = { error("unused") })
+        assertTrue(nonFlatpak is Autostart)
+    }
+
+    @Test fun backgroundPortalFlagLifecycle() {
+        val flag = File(tmp.root, "flag")
+        val portal = BackgroundPortal(flagFile = flag, request = { emptyMap() })
+        assertFalse(portal.isEnabled())
+        flag.writeText("true\n")
+        assertTrue(portal.isEnabled())
+        portal.disable()
+        assertFalse(portal.isEnabled())
+        assertFalse(flag.exists())
+    }
 }

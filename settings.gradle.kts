@@ -1,5 +1,8 @@
 pluginManagement {
     repositories {
+        if (providers.gradleProperty("flatpak").isPresent) {
+            maven { url = uri("${rootDir}/flatpak-repo") }
+        }
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -8,6 +11,9 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        if (providers.gradleProperty("flatpak").isPresent) {
+            maven { url = uri("${rootDir}/flatpak-repo") }
+        }
         google()
         mavenCentral()
     }

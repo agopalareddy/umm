@@ -1,0 +1,73 @@
+app-id: io.github.agopalareddy.Umm
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.openjdk17
+command: umm
+
+finish-args:
+  # Java 17's AWT draws through X11 only, so the app needs the X11 socket on Wayland sessions too (XWayland).
+  # With fallback-x11 the sandbox has no DISPLAY there and the app dies with a HeadlessException at start.
+  - --socket=x11
+  - --socket=wayland
+  # GPU access for Skia; without it the window falls back to software rendering.
+  - --device=dri
+  - --socket=pulseaudio
+  - --share=network
+  - --share=ipc
+  - --talk-name=org.freedesktop.secrets
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.kde.KWin
+
+build-options:
+  append-path: /usr/lib/sdk/openjdk17/bin
+  env:
+    JAVA_HOME: /usr/lib/sdk/openjdk17
+
+modules:
+  - name: umm
+    buildsystem: simple
+    build-commands:
+      - gradle-dist/bin/gradle --offline -Pflatpak -Pkotlin.compiler.execution.strategy=in-process :desktop:createDistributable -PversionName="${VERSION:-0.1.0}"
+      - mkdir -p /app/lib/umm
+      - cp -a desktop/build/compose/binaries/main/app/Umm/. /app/lib/umm/
+      - mkdir -p /app/bin
+      - |
+        cat << 'EOF' > /app/bin/umm
+        #!/bin/sh
+        exec /app/lib/umm/bin/Umm "$@"
+        EOF
+      - chmod +x /app/bin/umm
+      - mkdir -p /app/share/applications
+      - sed 's|@EXEC@|umm|' packaging/linux/io.github.agopalareddy.Umm.desktop.in > /app/share/applications/io.github.agopalareddy.Umm.desktop
+      - mkdir -p /app/share/icons/hicolor/scalable/apps
+      - cp packaging/linux/io.github.agopalareddy.Umm.svg /app/share/icons/hicolor/scalable/apps/io.github.agopalareddy.Umm.svg
+      - mkdir -p /app/share/icons/hicolor/256x256/apps
+      - cp packaging/linux/io.github.agopalareddy.Umm.png /app/share/icons/hicolor/256x256/apps/io.github.agopalareddy.Umm.png
+      - mkdir -p /app/share/metainfo
+      - cp packaging/linux/io.github.agopalareddy.Umm.metainfo.xml /app/share/metainfo/io.github.agopalareddy.Umm.metainfo.xml
+    sources:
+      - type: dir
+        path: ../..
+        # Build output and flatpak-builder's own folders must not be copied into the build.
+        skip:
+          - .git
+          - .gradle
+          - .kotlin
+          - .flatpak-builder
+          - build-flatpak
+          - repo
+          - flatpak-repo
+          - build
+          - app/build
+          - core/build
+          - desktop/build
+          - linux/build
+          - ui/build
+      - type: archive
+        url: https://services.gradle.org/distributions/gradle-9.8.0-bin.zip
+        sha256: bafd5ce9cfaea0fbccfdc8439a1ac42fbd4cd9c89dc9a988228d8a2639a58e6c
+        dest: gradle-dist
+      - gradle-sources.json

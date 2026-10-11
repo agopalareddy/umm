@@ -4,8 +4,8 @@ import java.net.URLEncoder
 
 object AuthUrl {
     /**
-     * OpenRouter only accepts web callbacks (a umm:// callback lands on its home page), so it returns to a page
-     * in this repo's GitHub Pages site (docs/oauth/index.html), which hands the code to the app as umm://oauth.
+     * OpenRouter only accepts web callbacks (a custom-scheme callback lands on its home page), so it returns to a page
+     * in this repo's GitHub Pages site (docs/oauth/index.html), which hands the code to the Android app.
      */
     const val CALLBACK = "https://agopalareddy.github.io/umm/oauth/"
 
