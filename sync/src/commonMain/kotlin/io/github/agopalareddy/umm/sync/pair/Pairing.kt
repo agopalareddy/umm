@@ -728,6 +728,7 @@ class Pairing(
             var boundPeerName: String? = null
             var boundSessionKey: ByteArray? = null
             var boundJoinerDeviceId: String? = null
+            val usedAnswers = HashMap<String, Long>()
             client.subscribe("pair-offer", filter).collect { event ->
                 if (event.kind != KIND_PAIRING || completed.get()) return@collect
                 if (event.created_at < sinceTime) return@collect
@@ -854,6 +855,13 @@ class Pairing(
                     val coordinator = getCoordinator(code.secret)
                     val handshakeId = msg.handshakeId
                     if (!coordinator.tryBind(handshakeId)) {
+                        // One answer per sender is enough for a person who retries a used code; a sender that
+                        // repeats its Hello must not make this device publish an event for each one.
+                        val sender = event.pubkey.lowercase()
+                        val lastAnswer = usedAnswers[sender]
+                        if (lastAnswer != null && now() - lastAnswer < USED_ANSWER_INTERVAL_MS) return@collect
+                        if (usedAnswers.size >= MAX_USED_ANSWER_SENDERS) usedAnswers.clear()
+                        usedAnswers[sender] = now()
                         val errTranscript = errorTranscript(
                             handshakeId = handshakeId,
                             offererDeviceId = code.deviceId,
@@ -1437,5 +1445,9 @@ class Pairing(
 
     companion object {
         private val usedSecrets = ConcurrentHashMap<String, Long>()
+
+        /** A sender is told once in this time that the code is used; long enough to stop a replayed Hello. */
+        private const val USED_ANSWER_INTERVAL_MS = 2_000L
+        private const val MAX_USED_ANSWER_SENDERS = 256
     }
 }

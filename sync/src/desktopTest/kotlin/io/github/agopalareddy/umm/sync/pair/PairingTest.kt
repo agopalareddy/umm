@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.runTest
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
@@ -258,7 +259,8 @@ class PairingTest {
                     val subId = array.getOrNull(1)?.jsonPrimitive?.content ?: return
                     val filter = array.getOrNull(2)?.jsonObject ?: buildJsonObject {}
                     subscriptions[webSocket]?.put(subId, filter)
-                    subscriptionBarriers[subId]?.complete(Unit)
+                    // Created here too: a REQ that arrives before the test starts waiting must not be lost.
+                    subscriptionBarriers.computeIfAbsent(subId) { CompletableDeferred() }.complete(Unit)
                     val eoseMsg = buildJsonArray {
                         add("EOSE")
                         add(subId)
@@ -774,6 +776,55 @@ class PairingTest {
         }
         val elapsed = System.currentTimeMillis() - start
         assertTrue("Expected used code to fail well before deadline, but took ${elapsed}ms", elapsed < 5_000)
+    }
+
+    @Test
+    fun aReplayedHelloForAUsedCodeIsAnsweredOnce() = runTest(timeout = 30.seconds) {
+        val fakeRelay = FakeRelay()
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return MockResponse.Builder().webSocketUpgrade(fakeRelay).build()
+            }
+        }
+        server.start()
+        toClose.add {
+            fakeRelay.clientSockets.forEach { runCatching { it.close(1000, "close") } }
+            server.close()
+        }
+
+        // A clock that stands still, so the answers cannot be spaced out by the test running slowly.
+        val relayUrl = "ws://${server.hostName}:${server.port}/"
+        val frozen = System.currentTimeMillis()
+        val nodeA = TestNode("NodeA", tmp.newFolder(), now = { frozen }, relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+        val nodeB = TestNode("NodeB", tmp.newFolder(), now = { frozen }, relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+
+        val offer = nodeA.pairing.offer(sendKey = false)
+        fakeRelay.awaitSubscription("pair-offer").await()
+        nodeA.pairing.getCoordinator(offer.code.secret).tryBind("earlier-handshake")
+
+        val relayOnly = offer.code.copy(lan = emptyList(), port = 0, relays = listOf(relayUrl))
+        try {
+            nodeB.pairing.join(relayOnly.encode(), sendKey = false)
+            fail("Expected PairingException(USED)")
+        } catch (e: PairingException) {
+            assertEquals(PairingError.USED, e.error)
+        }
+
+        val offererKey = nodeA.groupStore.device.publicKey.joinToString("") { "%02x".format(it) }
+        val joinerKey = nodeB.groupStore.device.publicKey.joinToString("") { "%02x".format(it) }
+        fun answers() = fakeRelay.publishedEvents.count { it.pubkey.equals(offererKey, ignoreCase = true) }
+        val hello = fakeRelay.publishedEvents.first { it.pubkey.equals(joinerKey, ignoreCase = true) }
+        assertEquals(1, answers())
+
+        val replayer = io.github.agopalareddy.umm.sync.relay.RelayClient(relayUrl, OkHttpClient())
+        toClose.add { replayer.close() }
+        withContext(Dispatchers.IO) {
+            repeat(100) { assertTrue(replayer.publish(hello).isSuccess) }
+            delay(500)
+        }
+
+        assertEquals("a hundred replays of the same Hello must not be answered a hundred times", 1, answers())
     }
 
     @Test
