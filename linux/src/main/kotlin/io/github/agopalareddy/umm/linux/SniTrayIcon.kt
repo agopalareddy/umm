@@ -88,6 +88,9 @@ class SniTrayIcon(private val portal: Portal) : TrayIcon {
     @Volatile private var onAction: (TrayAction) -> Unit = {}
     private val menuRevision = AtomicInteger(1)
     private val busName = "org.kde.StatusNotifierItem-${ProcessHandle.current().pid()}-1"
+
+    /** What the watcher is told: [busName], or our unique connection name where the bus won't let us own one (Flatpak). */
+    @Volatile private var serviceName = busName
     private var shown = false
     private var watcherSignal: AutoCloseable? = null
 
@@ -141,7 +144,14 @@ class SniTrayIcon(private val portal: Portal) : TrayIcon {
         this.state = state
         this.onAction = onAction
         try {
-            portal.conn.requestBusName(busName)
+            // A Flatpak sandbox can't own this name (and Flatpak has no way to allow a "-<pid>" pattern), but a
+            // watcher takes a unique name just as well.
+            serviceName = try {
+                portal.conn.requestBusName(busName)
+                busName
+            } catch (e: Exception) {
+                portal.conn.uniqueName
+            }
             portal.conn.exportObject(ITEM_PATH, item)
             portal.conn.exportObject(MENU_PATH, menu)
             shown = true
@@ -159,7 +169,7 @@ class SniTrayIcon(private val portal: Portal) : TrayIcon {
     private fun register() {
         try {
             portal.conn.getRemoteObject(WATCHER_NAME, WATCHER_PATH, StatusNotifierWatcher::class.java)
-                .RegisterStatusNotifierItem(busName)
+                .RegisterStatusNotifierItem(serviceName)
         } catch (e: Exception) {
             // No watcher yet (or none on this desktop); a later NameOwnerChanged retries.
         }
@@ -184,7 +194,7 @@ class SniTrayIcon(private val portal: Portal) : TrayIcon {
         watcherSignal?.let { runCatching { it.close() } }
         runCatching { portal.conn.unExportObject(ITEM_PATH) }
         runCatching { portal.conn.unExportObject(MENU_PATH) }
-        runCatching { portal.conn.releaseBusName(busName) }
+        if (serviceName == busName) runCatching { portal.conn.releaseBusName(busName) }
     }
 
     private fun propertiesOf(entry: MenuItem): Map<String, Variant<*>> = buildMap {
