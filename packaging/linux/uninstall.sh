@@ -31,7 +31,7 @@ else
 fi
 
 if pgrep -f "$LIB_DIR/bin/Umm" >/dev/null 2>&1; then
-    echo "Umm is running. Quit it from the tray, then run this again." >&2
+    echo "Umm is running. Quit Umm, then run this again." >&2
     exit 1
 fi
 
