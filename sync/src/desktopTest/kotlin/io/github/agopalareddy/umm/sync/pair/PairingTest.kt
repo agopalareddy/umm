@@ -18,6 +18,7 @@ import io.github.agopalareddy.umm.core.sync.SyncMeta
 import io.github.agopalareddy.umm.core.sync.buildSnapshot
 import io.github.agopalareddy.umm.sync.SyncSession
 import io.github.agopalareddy.umm.sync.crypto.GroupCipher
+import io.github.agopalareddy.umm.sync.crypto.Hkdf
 import io.github.agopalareddy.umm.sync.group.GroupState
 import io.github.agopalareddy.umm.sync.group.GroupStore
 import io.github.agopalareddy.umm.sync.lan.Discovery
@@ -417,5 +418,210 @@ class PairingTest {
 
         assertNull(nodeB.apiKeyStore.get())
         assertFalse(joinerResult.keyReceived)
+    }
+
+    private fun hexToBytes(hex: String): ByteArray {
+        val clean = hex.trim()
+        val len = clean.length
+        val data = ByteArray(len / 2)
+        var i = 0
+        while (i < len) {
+            val high = Character.digit(clean[i], 16)
+            val low = Character.digit(clean[i + 1], 16)
+            data[i / 2] = ((high shl 4) + low).toByte()
+            i += 2
+        }
+        return data
+    }
+    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
+
+    @Test
+    fun flippingInGroupInHelloFailsWithWrongSecret() = runTest(timeout = 20.seconds) {
+        val nodeA = TestNode("NodeA", tmp.newFolder()).also { toClose.add { it.close() } }
+        val nodeB = TestNode("NodeB", tmp.newFolder()).also { toClose.add { it.close() } }
+
+        val offer = nodeA.pairing.offer(sendKey = true)
+        val socket = java.net.Socket("127.0.0.1", offer.code.port)
+        toClose.add { runCatching { socket.close() } }
+
+        val myDeviceId = nodeB.selfId
+        val peerPubKeyBytes = hexToBytes(offer.code.publicKey)
+        val agree = nodeB.groupStore.device.agree(peerPubKeyBytes)
+        val salt = offer.code.deviceId.encodeToByteArray() + myDeviceId.encodeToByteArray()
+        val k = Hkdf.derive(agree + offer.code.secret.encodeToByteArray(), salt, "umm-pair", 32)
+
+        // Compute MAC for inGroup = false
+        val bos = java.io.ByteArrayOutputStream()
+        val dos = java.io.DataOutputStream(bos)
+        for (f in listOf(
+            "hello".encodeToByteArray(),
+            offer.code.deviceId.encodeToByteArray(),
+            myDeviceId.encodeToByteArray(),
+            offer.code.publicKey.encodeToByteArray(),
+            nodeB.groupStore.device.publicKey.toHex().encodeToByteArray(),
+            byteArrayOf(0), // inGroup = false
+            nodeB.groupStore.deviceName.encodeToByteArray(),
+            "desktop".encodeToByteArray(),
+        )) {
+            dos.writeInt(f.size)
+            dos.write(f)
+        }
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(k, "HmacSHA256"))
+        val hmac = mac.doFinal(bos.toByteArray()).toHex()
+
+        val hello = PairMsg.Hello(
+            deviceId = myDeviceId,
+            name = nodeB.groupStore.deviceName,
+            publicKey = nodeB.groupStore.device.publicKey.toHex(),
+            platform = "desktop",
+            inGroup = true, // flipped in transit
+            hmac = hmac,
+        )
+        val json = Json { ignoreUnknownKeys = true }
+        io.github.agopalareddy.umm.sync.lan.FrameCodec.write(
+            socket.getOutputStream(),
+            json.encodeToString(PairMsg.serializer(), hello).encodeToByteArray()
+        )
+        val replyBytes = io.github.agopalareddy.umm.sync.lan.FrameCodec.read(socket.getInputStream())
+        val reply = json.decodeFromString(PairMsg.serializer(), replyBytes.decodeToString())
+        assertTrue("Expected PairMsg.Error(WRONG_SECRET), got $reply", reply is PairMsg.Error && reply.error == PairingError.WRONG_SECRET)
+        assertNull(nodeA.groupStore.state.value)
+        assertNull(nodeB.groupStore.state.value)
+    }
+
+    @Test
+    fun relayPairingWithBadSignatureIsIgnored() = runTest(timeout = 20.seconds) {
+        val fakeRelay = FakeRelay()
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return MockResponse.Builder().webSocketUpgrade(fakeRelay).build()
+            }
+        }
+        server.start()
+        toClose.add {
+            fakeRelay.clientSockets.forEach { runCatching { it.close(1000, "close") } }
+            server.close()
+        }
+
+        val relayUrl = "ws://${server.hostName}:${server.port}/"
+        val nodeA = TestNode("NodeA", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+        val nodeB = TestNode("NodeB", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+
+        val offer = nodeA.pairing.offer(sendKey = true)
+
+        val badEvent = NostrEvent(
+            id = "00".repeat(32),
+            pubkey = nodeB.groupStore.device.publicKey.toHex(),
+            created_at = 10_000L,
+            kind = io.github.agopalareddy.umm.sync.relay.KIND_PAIRING,
+            tags = listOf(listOf("p", offer.code.publicKey.lowercase())),
+            content = """{"type":"Hello","deviceId":"bad","name":"bad","publicKey":"${nodeB.groupStore.device.publicKey.toHex()}","platform":"desktop","inGroup":false,"hmac":"bad"}""",
+            sig = "00".repeat(64),
+        )
+        fakeRelay.publishedEvents.add(badEvent)
+
+        assertFalse(offer.result.isCompleted)
+
+        val unreachableCode = offer.code.copy(lan = listOf("192.0.2.1"), port = 54321, relays = listOf(relayUrl))
+        val joinerResult = nodeB.pairing.join(unreachableCode.encode(), sendKey = true)
+        val offererResult = offer.result.await()
+
+        assertNotNull(nodeA.groupStore.state.value)
+        assertNotNull(nodeB.groupStore.state.value)
+        assertEquals(nodeA.groupStore.state.value!!.groupId, nodeB.groupStore.state.value!!.groupId)
+    }
+
+    @Test
+    fun relayPairingWithMismatchedPubkeyIsIgnored() = runTest(timeout = 20.seconds) {
+        val fakeRelay = FakeRelay()
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return MockResponse.Builder().webSocketUpgrade(fakeRelay).build()
+            }
+        }
+        server.start()
+        toClose.add {
+            fakeRelay.clientSockets.forEach { runCatching { it.close(1000, "close") } }
+            server.close()
+        }
+
+        val relayUrl = "ws://${server.hostName}:${server.port}/"
+        val nodeA = TestNode("NodeA", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+        val nodeB = TestNode("NodeB", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+        val nodeAttacker = TestNode("Attacker", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+
+        val offer = nodeA.pairing.offer(sendKey = true)
+
+        val spoofedHello = PairMsg.Hello(
+            deviceId = "attacker",
+            name = "attacker",
+            publicKey = nodeB.groupStore.device.publicKey.toHex(),
+            platform = "desktop",
+            inGroup = false,
+            hmac = "badhmac",
+        )
+        val json = Json { ignoreUnknownKeys = true }
+        val spoofedEvent = NostrEvent.sign(
+            keys = nodeAttacker.groupStore.device,
+            kind = io.github.agopalareddy.umm.sync.relay.KIND_PAIRING,
+            tags = listOf(listOf("p", offer.code.publicKey.lowercase())),
+            content = json.encodeToString(PairMsg.serializer(), spoofedHello),
+            createdAt = 10_000L,
+        )
+        fakeRelay.publishedEvents.add(spoofedEvent)
+
+        assertFalse(offer.result.isCompleted)
+
+        val unreachableCode = offer.code.copy(lan = listOf("192.0.2.1"), port = 54321, relays = listOf(relayUrl))
+        val joinerResult = nodeB.pairing.join(unreachableCode.encode(), sendKey = true)
+        val offererResult = offer.result.await()
+
+        assertNotNull(nodeA.groupStore.state.value)
+        assertNotNull(nodeB.groupStore.state.value)
+        assertEquals(nodeA.groupStore.state.value!!.groupId, nodeB.groupStore.state.value!!.groupId)
+    }
+
+    @Test
+    fun unauthenticatedErrorDoesNotAbortPairing() = runTest(timeout = 20.seconds) {
+        val fakeRelay = FakeRelay()
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return MockResponse.Builder().webSocketUpgrade(fakeRelay).build()
+            }
+        }
+        server.start()
+        toClose.add {
+            fakeRelay.clientSockets.forEach { runCatching { it.close(1000, "close") } }
+            server.close()
+        }
+
+        val relayUrl = "ws://${server.hostName}:${server.port}/"
+        val nodeA = TestNode("NodeA", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+        val nodeB = TestNode("NodeB", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+        val nodeAttacker = TestNode("Attacker", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+
+        val offer = nodeA.pairing.offer(sendKey = true)
+        val unreachableCode = offer.code.copy(lan = listOf("192.0.2.1"), port = 54321, relays = listOf(relayUrl))
+
+        val json = Json { ignoreUnknownKeys = true }
+        val fakeErrorEvent = NostrEvent.sign(
+            keys = nodeAttacker.groupStore.device,
+            kind = io.github.agopalareddy.umm.sync.relay.KIND_PAIRING,
+            tags = listOf(listOf("p", nodeB.groupStore.device.publicKey.toHex().lowercase())),
+            content = json.encodeToString(PairMsg.serializer(), PairMsg.Error(PairingError.USED)),
+            createdAt = 10_000L,
+        )
+        fakeRelay.publishedEvents.add(fakeErrorEvent)
+
+        val joinerResult = nodeB.pairing.join(unreachableCode.encode(), sendKey = true)
+        val offererResult = offer.result.await()
+
+        assertNotNull(nodeA.groupStore.state.value)
+        assertNotNull(nodeB.groupStore.state.value)
+        assertEquals(nodeA.groupStore.state.value!!.groupId, nodeB.groupStore.state.value!!.groupId)
     }
 }
