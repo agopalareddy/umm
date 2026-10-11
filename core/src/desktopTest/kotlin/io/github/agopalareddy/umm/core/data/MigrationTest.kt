@@ -143,6 +143,45 @@ class MigrationTest {
     }
 
     @Test
+    fun version4AddsTheDeleteRecordsAndKeepsTheRest() = runTest {
+        val dbFile = tmp.newFile("deletes_test.db")
+        val helper = MigrationTestHelper(
+            schemaDirectoryPath = schemaDir,
+            databasePath = dbFile.toPath(),
+            driver = BundledSQLiteDriver(),
+            databaseClass = UmmDatabase::class,
+        )
+
+        val v3 = helper.createDatabase(3)
+        v3.prepare("INSERT INTO sync_meta (key, value) VALUES (?, ?)").use {
+            it.bindText(1, SyncMeta.KEY_DEVICE_ID)
+            it.bindText(2, "0123456789ABCDEFGHJKMNPQRS")
+            it.step()
+        }
+        v3.prepare("INSERT INTO sync_ops (originDevice, seq, hlc, type, payload) VALUES (?, ?, ?, ?, ?)").use {
+            it.bindText(1, "0123456789ABCDEFGHJKMNPQRS")
+            it.bindLong(2, 1)
+            it.bindLong(3, 1000)
+            it.bindText(4, "SettingSet")
+            it.bindText(5, "{\"t\":\"SettingSet\",\"key\":\"default_level\",\"value\":\"LIGHT\"}")
+            it.step()
+        }
+        v3.close()
+
+        val v4 = helper.runMigrationsAndValidate(4, listOf(MIGRATION_2_3))
+        v4.close()
+
+        val db = buildUmmDatabase(dbFile)
+        try {
+            assertEquals("0123456789ABCDEFGHJKMNPQRS", SyncMeta(db).deviceId())
+            assertEquals(1, db.syncDao().allOps().size)
+            assertTrue(db.syncDao().allDeletes().isEmpty())
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
     fun createsDeviceIdOnce() = runTest {
         val dbFile = tmp.newFile("device_id_test.db")
         val db1 = buildUmmDatabase(dbFile)

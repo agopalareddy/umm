@@ -65,6 +65,26 @@ interface SyncDao {
     suspend fun clearsForData(data: String): List<SyncClearEntity>
 
     @Upsert
+    suspend fun putDelete(delete: SyncDeleteEntity)
+
+    @Query("SELECT * FROM sync_deletes WHERE origin = :origin AND originId = :originId")
+    suspend fun getDelete(origin: String, originId: Long): SyncDeleteEntity?
+
+    @Query("SELECT * FROM sync_deletes")
+    suspend fun allDeletes(): List<SyncDeleteEntity>
+
+    /**
+     * A row older than the newest [keep] rows of its origin is trimmed the moment it arrives, so once this device
+     * holds that many newer rows the deleted one cannot come back and its record is no longer needed.
+     */
+    @Query(
+        "DELETE FROM sync_deletes WHERE createdAt IS NOT NULL " +
+            "AND (SELECT COUNT(*) FROM history WHERE history.originDevice = sync_deletes.origin) >= :keep " +
+            "AND createdAt < (SELECT MIN(createdAt) FROM history WHERE history.originDevice = sync_deletes.origin)",
+    )
+    suspend fun dropDeletesOfRowsTooOldToReturn(keep: Int)
+
+    @Upsert
     suspend fun putPeer(peer: SyncPeerEntity)
 
     @Query("SELECT * FROM sync_peers WHERE deviceId = :deviceId")

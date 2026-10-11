@@ -27,6 +27,8 @@ data class Snapshot(
     val apps: List<AppAssign>,
     val clears: List<ClearBefore>,
     val members: List<Member>,
+    /** History rows the sender knows are deleted, so the receiver drops its copies and does not send them back. */
+    val deletes: List<SyncOp.HistoryDelete> = emptyList(),
 )
 
 suspend fun buildSnapshot(
@@ -74,5 +76,6 @@ suspend fun buildSnapshot(
         apps = apps,
         clears = clears,
         members = members,
+        deletes = log.deletedHistory(),
     )
 }

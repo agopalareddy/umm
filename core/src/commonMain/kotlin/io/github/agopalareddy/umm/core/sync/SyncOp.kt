@@ -132,7 +132,12 @@ sealed interface SyncOp {
 
     @Serializable
     @SerialName("HistoryDelete")
-    data class HistoryDelete(val origin: String, val originId: Long) : SyncOp
+    data class HistoryDelete(
+        val origin: String,
+        val originId: Long,
+        /** The deleted row's creation time, which decides how long the delete has to be remembered. */
+        val createdAt: Long? = null,
+    ) : SyncOp
 
     @Serializable
     @SerialName("StatsUpsert")

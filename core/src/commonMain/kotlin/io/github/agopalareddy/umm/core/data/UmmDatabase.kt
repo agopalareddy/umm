@@ -11,6 +11,7 @@ import io.github.agopalareddy.umm.core.stats.StatsDao
 import io.github.agopalareddy.umm.core.stats.StatsEntry
 import io.github.agopalareddy.umm.core.sync.SyncClearEntity
 import io.github.agopalareddy.umm.core.sync.SyncDao
+import io.github.agopalareddy.umm.core.sync.SyncDeleteEntity
 import io.github.agopalareddy.umm.core.sync.SyncMeta
 import io.github.agopalareddy.umm.core.sync.SyncMetaEntity
 import io.github.agopalareddy.umm.core.sync.SyncOpEntity
@@ -28,10 +29,11 @@ import io.github.agopalareddy.umm.core.sync.SyncSettingsHlcEntity
         SyncPeerEntity::class,
         SyncSettingsHlcEntity::class,
         SyncClearEntity::class,
+        SyncDeleteEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 3, to = 4)],
 )
 @ConstructedBy(UmmDatabaseConstructor::class)
 abstract class UmmDatabase : RoomDatabase() {

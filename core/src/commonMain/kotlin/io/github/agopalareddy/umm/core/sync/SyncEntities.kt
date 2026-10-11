@@ -45,3 +45,17 @@ data class SyncClearEntity(
     val origin: String,
     val before: Long,
 )
+
+/**
+ * A history row that was deleted, kept apart from the op log because the log forgets ops after 90 days and a device
+ * that was away longer would bring the row back. [createdAt] is the row's; null when the deleting device did not say.
+ */
+@Entity(
+    tableName = "sync_deletes",
+    primaryKeys = ["origin", "originId"],
+)
+data class SyncDeleteEntity(
+    val origin: String,
+    val originId: Long,
+    val createdAt: Long?,
+)

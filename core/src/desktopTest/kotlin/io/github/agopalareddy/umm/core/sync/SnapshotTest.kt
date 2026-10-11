@@ -78,6 +78,65 @@ class SnapshotTest {
         devices.forEach { it.close() }
     }
 
+    private suspend fun TestDevice.dictate(text: String): Long {
+        val id = history.createPending(
+            packageName = "app.one",
+            level = CleanupLevel.LIGHT,
+            script = ScriptPreference.LATIN,
+            language = "en",
+            audioPath = File(tmp.root, "missing.wav").absolutePath,
+        )
+        history.markDone(id, raw = text, clean = text)
+        return id
+    }
+
+    private suspend fun TestDevice.snapshot() = buildSnapshot(db, log, settings, members = emptyList())
+
+    private val hundredDays = 100L * 24 * 60 * 60 * 1000
+
+    @Test
+    fun aDeleteOutlivesTheOpLog() = runTest {
+        val a = createDevice("A")
+        val c = createDevice("C")
+        val id = a.dictate("Deleted on A")
+        c.applySnapshot(a.snapshot())
+        assertEquals(1, c.history.observeRecent().first().size)
+
+        a.history.delete(id)
+        a.log.prune(a.wall + hundredDays)
+        assertTrue("the op log has forgotten the delete", a.log.since(emptyMap()).none { it.op is SyncOp.HistoryDelete })
+
+        // C was away the whole time and still holds the row. Its state must not bring the row back to A,
+        a.applySnapshot(c.snapshot())
+        assertEquals(0, a.history.observeRecent().first().size)
+
+        // and A's state tells C that the row is gone.
+        c.applySnapshot(a.snapshot())
+        assertEquals(0, c.history.observeRecent().first().size)
+        assertEquals(1, c.log.deletedHistory().size)
+    }
+
+    @Test
+    fun aDeleteIsForgottenOnceItsRowCouldNotComeBack() = runTest {
+        val a = createDevice("A")
+        val id = a.dictate("Deleted early")
+        a.history.delete(id)
+
+        // 49 newer rows: a returning copy of the deleted row would still be among the newest 50 and would stay.
+        repeat(49) {
+            a.wall += 1_000
+            a.dictate("Newer $it")
+        }
+        a.log.prune(a.wall + hundredDays)
+        assertEquals(1, a.log.deletedHistory().size)
+
+        // With 50 newer rows a returning copy is trimmed on arrival, so the record has no more work to do.
+        a.wall += 1_000
+        a.dictate("The fiftieth")
+        a.log.prune(a.wall + hundredDays)
+        assertEquals(0, a.log.deletedHistory().size)
+    }
+
     @Test
     fun snapshotThenOps() = runTest {
         val a = createDevice("A", initialWall = 100L)

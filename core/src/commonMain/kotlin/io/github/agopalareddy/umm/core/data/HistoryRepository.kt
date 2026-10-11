@@ -93,7 +93,7 @@ class HistoryRepository(
             transactor.immediateTransaction {
                 val item = dao.get(id) ?: return@immediateTransaction
                 dao.delete(listOf(item.id))
-                recorder.record(SyncOp.HistoryDelete(item.originDevice, item.originId))
+                recorder.record(SyncOp.HistoryDelete(item.originDevice, item.originId, item.createdAt))
                 audioToDelete = item.audioPath
             }
         }

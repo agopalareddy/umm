@@ -95,8 +95,32 @@ class OpLog(
         val type = typeOf(envelope.op)
         val payload = json.encodeToString(SyncOp.serializer(), envelope.op)
         dao.insertOp(SyncOpEntity(envelope.origin, envelope.seq, envelope.hlc, type, payload))
+        (envelope.op as? SyncOp.HistoryDelete)?.let { rememberDelete(it) }
         compact(envelope.op)
         return true
+    }
+
+    /**
+     * Keeps a deleted history row's identity outside the op log, which forgets ops after 90 days. Call it before the
+     * row is removed here when the op does not carry the row's creation time, so it can be read from the row.
+     */
+    suspend fun rememberDelete(delete: SyncOp.HistoryDelete) {
+        val dao = db.syncDao()
+        val createdAt = delete.createdAt
+            ?: db.historyDao().getByOrigin(delete.origin, delete.originId)?.createdAt
+            ?: dao.getDelete(delete.origin, delete.originId)?.createdAt
+        dao.putDelete(SyncDeleteEntity(delete.origin, delete.originId, createdAt))
+    }
+
+    /** Every history row known to be deleted: the remembered deletes, and deletes still in the op log. */
+    suspend fun deletedHistory(): List<SyncOp.HistoryDelete> {
+        val dao = db.syncDao()
+        val remembered = dao.allDeletes().map { SyncOp.HistoryDelete(it.origin, it.originId, it.createdAt) }
+        val known = remembered.map { it.origin to it.originId }.toSet()
+        val inLog = dao.opsByType("HistoryDelete").mapNotNull { entity ->
+            runCatching { json.decodeFromString<SyncOp>(entity.payload) as? SyncOp.HistoryDelete }.getOrNull()
+        }.filter { (it.origin to it.originId) !in known }
+        return remembered + inLog
     }
 
     private suspend fun compact(op: SyncOp) {
@@ -220,11 +244,15 @@ class OpLog(
         val maxAgeMs = 90L * 24 * 60 * 60 * 1000L
         val cutoff = nowMs - maxAgeMs
         db.syncDao().deleteOpsOlderThan(cutoff)
+        db.syncDao().dropDeletesOfRowsTooOldToReturn(HISTORY_ROWS_KEPT)
     }
 
     private companion object {
         const val KEY_MARKS = "complete_marks"
         const val KEY_ROWS_RECORDED = "rows_recorded_for_group"
+
+        /** History rows kept per origin; the same number the repository and the applier trim to. */
+        const val HISTORY_ROWS_KEPT = 50
         val markJson = Json
         val markSerializer = MapSerializer(String.serializer(), Long.serializer())
     }

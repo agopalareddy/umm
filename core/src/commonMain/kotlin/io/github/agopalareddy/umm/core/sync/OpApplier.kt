@@ -15,8 +15,6 @@ class OpApplier(
     private val clock: HybridClock,
     private val onGroupOp: suspend (OpEnvelope) -> Unit,
 ) {
-    private val opJson = Json { ignoreUnknownKeys = true }
-
     suspend fun apply(envelopes: List<OpEnvelope>): Int {
         val sorted = envelopes.sortedWith(compareBy({ it.origin }, { it.seq }))
         var newlyApplied = 0
@@ -90,6 +88,12 @@ class OpApplier(
 
         for (clear in snapshot.clears) {
             applyClearBefore(clear)
+        }
+
+        // The sender's deletes come first: they remove rows this device still shows, and stop them coming back.
+        for (delete in snapshot.deletes) {
+            log.rememberDelete(delete)
+            applyHistoryDelete(delete.origin, delete.originId)
         }
 
         val deletedHistory = deletedHistory()
@@ -212,16 +216,9 @@ class OpApplier(
         }
     }
 
-    /** The (origin device, origin id) of every history row a delete in the op log names. */
+    /** The (origin device, origin id) of every history row known to be deleted. */
     private suspend fun deletedHistory(): Set<Pair<String, Long>> =
-        db.syncDao().opsByType("HistoryDelete").mapNotNull { entity ->
-            try {
-                val candidate = opJson.decodeFromString<SyncOp.HistoryDelete>(entity.payload)
-                candidate.origin to candidate.originId
-            } catch (_: Exception) {
-                null
-            }
-        }.toSet()
+        log.deletedHistory().map { it.origin to it.originId }.toSet()
 
     private fun isHigher(hlc1: Long, origin1: String, hlc2: Long, origin2: String): Boolean {
         if (hlc1 != hlc2) return hlc1 > hlc2
