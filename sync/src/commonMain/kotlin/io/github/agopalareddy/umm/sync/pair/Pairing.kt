@@ -32,6 +32,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -141,6 +142,7 @@ sealed interface PairMsg {
         val platform: String = "desktop",
         val inGroup: Boolean = false,
         val hmac: String,
+        val handshakeId: String = "",
     ) : PairMsg
 
     @Serializable
@@ -150,18 +152,23 @@ sealed interface PairMsg {
         val name: String,
         val hmac: String,
         val sealedWelcome: String? = null,
+        val handshakeId: String = "",
     ) : PairMsg
 
     @Serializable
     @SerialName("Welcome")
     data class Welcome(
         val sealedPayload: String,
+        val handshakeId: String = "",
+        val hmac: String = "",
     ) : PairMsg
 
     @Serializable
     @SerialName("Ack")
     data class Ack(
         val success: Boolean = true,
+        val handshakeId: String = "",
+        val hmac: String = "",
     ) : PairMsg
 
     @Serializable
@@ -169,6 +176,8 @@ sealed interface PairMsg {
     data class Error(
         val error: PairingError,
         val message: String = error.name,
+        val handshakeId: String = "",
+        val hmac: String = "",
     ) : PairMsg
 }
 
@@ -278,7 +287,7 @@ class Pairing(
 
     suspend fun join(code: String, sendKey: Boolean): PairedDevice = withContext(Dispatchers.IO) {
         val pairingCode = PairingCode.decode(code, now())
-        val handshakeId = UUID.randomUUID().toString()
+        val handshakeId = generateHandshakeId()
         val coordinator = getCoordinator(pairingCode.secret)
         if (!coordinator.tryBind(handshakeId)) {
             throw PairingException(PairingError.USED)
@@ -354,7 +363,7 @@ class Pairing(
                 }
                 val hello = decoded
 
-                val hid = UUID.randomUUID().toString()
+                val hid = hello.handshakeId.ifEmpty { generateHandshakeId() }
                 handshakeId = hid
                 val coordinator = getCoordinator(code.secret)
                 if (!coordinator.tryBind(hid)) {
@@ -372,6 +381,7 @@ class Pairing(
                 val k = Hkdf.derive(agree + code.secret.encodeToByteArray(), salt, "umm-pair", 32)
 
                 val expectedTranscript = helloTranscript(
+                    handshakeId = hid,
                     offererDeviceId = code.deviceId,
                     joinerDeviceId = hello.deviceId,
                     offererPubKey = code.publicKey,
@@ -392,6 +402,7 @@ class Pairing(
                 if (shouldJoinerSendWelcome(joinerInGroup = hello.inGroup, offererHasGroup = offererHasGroup)) {
                     // Joiner has group and offerer does not: joiner sends group
                     val myTranscript = confirmTranscript(
+                        handshakeId = hid,
                         offererDeviceId = code.deviceId,
                         joinerDeviceId = hello.deviceId,
                         offererPubKey = code.publicKey,
@@ -400,12 +411,30 @@ class Pairing(
                         hasWelcome = false,
                     )
                     val myHmac = computeHmac(k, myTranscript)
-                    val confirm = PairMsg.Confirm(deviceId = myDeviceId, name = group.deviceName, hmac = myHmac, sealedWelcome = null)
+                    val confirm = PairMsg.Confirm(
+                        deviceId = myDeviceId,
+                        name = group.deviceName,
+                        hmac = myHmac,
+                        sealedWelcome = null,
+                        handshakeId = hid,
+                    )
                     FrameCodec.write(output, json.encodeToString(PairMsg.serializer(), confirm).encodeToByteArray())
 
                     val welcomeBytes = FrameCodec.read(input)
                     val welcome = json.decodeFromString(PairMsg.serializer(), welcomeBytes.decodeToString())
                     if (welcome !is PairMsg.Welcome) {
+                        return@withTimeout
+                    }
+                    if (welcome.handshakeId.isNotEmpty() && welcome.handshakeId != hid) {
+                        return@withTimeout
+                    }
+                    val expectedWelcomeTranscript = welcomeTranscript(
+                        handshakeId = hid,
+                        offererDeviceId = code.deviceId,
+                        joinerDeviceId = hello.deviceId,
+                        sealedPayload = welcome.sealedPayload,
+                    )
+                    if (welcome.hmac.isNotEmpty() && !verifyHmac(k, expectedWelcomeTranscript, welcome.hmac)) {
                         return@withTimeout
                     }
 
@@ -424,7 +453,14 @@ class Pairing(
                         applier.applySnapshot(payload.snapshot)
                     }
 
-                    val ack = PairMsg.Ack(true)
+                    val ackTranscriptBytes = ackTranscript(
+                        handshakeId = hid,
+                        offererDeviceId = code.deviceId,
+                        joinerDeviceId = hello.deviceId,
+                        success = true,
+                    )
+                    val ackHmac = computeHmac(k, ackTranscriptBytes)
+                    val ack = PairMsg.Ack(success = true, handshakeId = hid, hmac = ackHmac)
                     FrameCodec.write(output, json.encodeToString(PairMsg.serializer(), ack).encodeToByteArray())
 
                     if (completed.compareAndSet(false, true)) {
@@ -458,6 +494,7 @@ class Pairing(
                     val sealedWelcome = sealPayload(k, payload)
 
                     val myTranscript = confirmTranscript(
+                        handshakeId = hid,
                         offererDeviceId = code.deviceId,
                         joinerDeviceId = hello.deviceId,
                         offererPubKey = code.publicKey,
@@ -466,12 +503,31 @@ class Pairing(
                         hasWelcome = true,
                     )
                     val myHmac = computeHmac(k, myTranscript)
-                    val confirm = PairMsg.Confirm(deviceId = myDeviceId, name = group.deviceName, hmac = myHmac, sealedWelcome = sealedWelcome)
+                    val confirm = PairMsg.Confirm(
+                        deviceId = myDeviceId,
+                        name = group.deviceName,
+                        hmac = myHmac,
+                        sealedWelcome = sealedWelcome,
+                        handshakeId = hid,
+                    )
                     FrameCodec.write(output, json.encodeToString(PairMsg.serializer(), confirm).encodeToByteArray())
 
                     val ackBytes = FrameCodec.read(input)
                     val ack = json.decodeFromString(PairMsg.serializer(), ackBytes.decodeToString())
                     if (ack is PairMsg.Ack) {
+                        if (ack.handshakeId.isNotEmpty() && ack.handshakeId != hid) {
+                            return@withTimeout
+                        }
+                        val expectedAckTranscript = ackTranscript(
+                            handshakeId = hid,
+                            offererDeviceId = code.deviceId,
+                            joinerDeviceId = hello.deviceId,
+                            success = ack.success,
+                        )
+                        if (ack.hmac.isNotEmpty() && !verifyHmac(k, expectedAckTranscript, ack.hmac)) {
+                            return@withTimeout
+                        }
+
                         val saved = coordinator.saveAndCommit(hid, preSaveHook) {
                             group.save(finalGroup)
                         }
@@ -517,6 +573,7 @@ class Pairing(
                 val k = Hkdf.derive(agree + code.secret.encodeToByteArray(), salt, "umm-pair", 32)
                 val myPubKey = group.device.publicKey.toHex()
                 val myTranscript = helloTranscript(
+                    handshakeId = handshakeId,
                     offererDeviceId = code.deviceId,
                     joinerDeviceId = myDeviceId,
                     offererPubKey = code.publicKey,
@@ -534,6 +591,7 @@ class Pairing(
                     platform = "desktop",
                     inGroup = group.state.value != null,
                     hmac = myHmac,
+                    handshakeId = handshakeId,
                 )
                 FrameCodec.write(output, json.encodeToString(PairMsg.serializer(), hello).encodeToByteArray())
 
@@ -543,7 +601,11 @@ class Pairing(
                 when (reply) {
                     is PairMsg.Error -> throw PairingException(reply.error, reply.message)
                     is PairMsg.Confirm -> {
+                        if (reply.handshakeId.isNotEmpty() && reply.handshakeId != handshakeId) {
+                            throw PairingException(PairingError.WRONG_SECRET)
+                        }
                         val expectedTranscript = confirmTranscript(
+                            handshakeId = handshakeId,
                             offererDeviceId = code.deviceId,
                             joinerDeviceId = myDeviceId,
                             offererPubKey = code.publicKey,
@@ -572,7 +634,14 @@ class Pairing(
                                 applier.applySnapshot(payload.snapshot)
                             }
 
-                            val ack = PairMsg.Ack(true)
+                            val ackTranscriptBytes = ackTranscript(
+                                handshakeId = handshakeId,
+                                offererDeviceId = code.deviceId,
+                                joinerDeviceId = myDeviceId,
+                                success = true,
+                            )
+                            val ackHmac = computeHmac(k, ackTranscriptBytes)
+                            val ack = PairMsg.Ack(success = true, handshakeId = handshakeId, hmac = ackHmac)
                             FrameCodec.write(output, json.encodeToString(PairMsg.serializer(), ack).encodeToByteArray())
 
                             return@withTimeout PairedDevice(name = code.name, keyReceived = keyRecv)
@@ -588,12 +657,35 @@ class Pairing(
                             val payload = WelcomePayload(group = updatedGroup, apiKey = keyToSend, snapshot = snap)
                             val sealedWelcome = sealPayload(k, payload)
 
-                            val welcomeMsg = PairMsg.Welcome(sealedWelcome)
+                            val welcomeTranscriptBytes = welcomeTranscript(
+                                handshakeId = handshakeId,
+                                offererDeviceId = code.deviceId,
+                                joinerDeviceId = myDeviceId,
+                                sealedPayload = sealedWelcome,
+                            )
+                            val welcomeHmac = computeHmac(k, welcomeTranscriptBytes)
+                            val welcomeMsg = PairMsg.Welcome(
+                                sealedPayload = sealedWelcome,
+                                handshakeId = handshakeId,
+                                hmac = welcomeHmac,
+                            )
                             FrameCodec.write(output, json.encodeToString(PairMsg.serializer(), welcomeMsg).encodeToByteArray())
 
                             val ackBytes = FrameCodec.read(input)
                             val ack = json.decodeFromString(PairMsg.serializer(), ackBytes.decodeToString())
                             if (ack !is PairMsg.Ack) throw IOException("Expected Ack")
+                            if (ack.handshakeId.isNotEmpty() && ack.handshakeId != handshakeId) {
+                                throw IOException("Ack handshakeId mismatch")
+                            }
+                            val expectedAckTranscript = ackTranscript(
+                                handshakeId = handshakeId,
+                                offererDeviceId = code.deviceId,
+                                joinerDeviceId = myDeviceId,
+                                success = ack.success,
+                            )
+                            if (ack.hmac.isNotEmpty() && !verifyHmac(k, expectedAckTranscript, ack.hmac)) {
+                                throw IOException("Ack HMAC mismatch")
+                            }
 
                             val coordinator = getCoordinator(code.secret)
                             val saved = coordinator.saveAndCommit(handshakeId, preSaveHook) {
@@ -623,17 +715,22 @@ class Pairing(
         var boundHandshakeId: String? = null
         var handshakeTimerJob: Job? = null
         try {
+            val handshakeStartTime = now() / 1000L
+            val sinceTime = handshakeStartTime - 60L
             val myPubKey = group.device.publicKey.toHex()
             val filter = buildJsonObject {
                 put("kinds", buildJsonArray { add(KIND_PAIRING) })
                 put("#p", buildJsonArray { add(myPubKey.lowercase()) })
+                put("since", JsonPrimitive(maxOf(0L, sinceTime)))
             }
 
             var boundPeerPubKey: String? = null
             var boundPeerName: String? = null
             var boundSessionKey: ByteArray? = null
+            var boundJoinerDeviceId: String? = null
             client.subscribe("pair-offer", filter).collect { event ->
                 if (event.kind != KIND_PAIRING || completed.get()) return@collect
+                if (event.created_at < sinceTime) return@collect
                 if (!event.verify()) return@collect
                 val msg = try {
                     json.decodeFromString(PairMsg.serializer(), event.content)
@@ -642,16 +739,44 @@ class Pairing(
                 }
 
                 if (msg is PairMsg.Error) {
-                    if (boundPeerPubKey != null && event.pubkey.equals(boundPeerPubKey, ignoreCase = true)) {
-                        deferred.completeExceptionally(PairingException(msg.error, msg.message))
+                    if (boundPeerPubKey != null && event.pubkey.equals(boundPeerPubKey, ignoreCase = true) &&
+                        boundSessionKey != null && boundHandshakeId != null && boundJoinerDeviceId != null
+                    ) {
+                        if (msg.handshakeId == boundHandshakeId) {
+                            val expectedTranscript = errorTranscript(
+                                handshakeId = boundHandshakeId!!,
+                                offererDeviceId = code.deviceId,
+                                joinerDeviceId = boundJoinerDeviceId!!,
+                                error = msg.error.name,
+                                message = msg.message,
+                            )
+                            if (verifyHmac(boundSessionKey!!, expectedTranscript, msg.hmac)) {
+                                deferred.completeExceptionally(PairingException(msg.error, msg.message))
+                            }
+                        }
                     }
                     return@collect
                 }
 
                 if (msg is PairMsg.Welcome) {
-                    if (boundPeerPubKey != null && event.pubkey.equals(boundPeerPubKey, ignoreCase = true) && boundSessionKey != null && boundHandshakeId != null) {
+                    if (boundPeerPubKey != null && event.pubkey.equals(boundPeerPubKey, ignoreCase = true) &&
+                        boundSessionKey != null && boundHandshakeId != null && boundJoinerDeviceId != null
+                    ) {
                         val hid = boundHandshakeId!!
+                        if (msg.handshakeId != hid) return@collect
+
                         val sessionKey = boundSessionKey!!
+                        val joinerDevId = boundJoinerDeviceId!!
+                        val expectedWelcomeTranscript = welcomeTranscript(
+                            handshakeId = hid,
+                            offererDeviceId = code.deviceId,
+                            joinerDeviceId = joinerDevId,
+                            sealedPayload = msg.sealedPayload,
+                        )
+                        if (!verifyHmac(sessionKey, expectedWelcomeTranscript, msg.hmac)) {
+                            return@collect
+                        }
+
                         val coordinator = getCoordinator(code.secret)
                         val payload = openPayload(sessionKey, msg.sealedPayload)
                         val saved = coordinator.saveAndCommit(hid, preSaveHook) {
@@ -663,6 +788,7 @@ class Pairing(
                         boundPeerPubKey = null
                         boundPeerName = null
                         boundSessionKey = null
+                        boundJoinerDeviceId = null
 
                         val keyRecv = if (payload.apiKey != null) {
                             apiKey.set(payload.apiKey)
@@ -672,7 +798,14 @@ class Pairing(
                             applier.applySnapshot(payload.snapshot)
                         }
 
-                        val ack = PairMsg.Ack(true)
+                        val ackTranscriptBytes = ackTranscript(
+                            handshakeId = hid,
+                            offererDeviceId = code.deviceId,
+                            joinerDeviceId = joinerDevId,
+                            success = true,
+                        )
+                        val ackHmac = computeHmac(sessionKey, ackTranscriptBytes)
+                        val ack = PairMsg.Ack(success = true, handshakeId = hid, hmac = ackHmac)
                         val ackEvent = NostrEvent.sign(
                             keys = group.device,
                             kind = KIND_PAIRING,
@@ -694,9 +827,12 @@ class Pairing(
                     if (!event.pubkey.equals(msg.publicKey, ignoreCase = true)) {
                         return@collect
                     }
+                    if (msg.handshakeId.isEmpty()) {
+                        return@collect
+                    }
 
                     val coordinator = getCoordinator(code.secret)
-                    val handshakeId = UUID.randomUUID().toString()
+                    val handshakeId = msg.handshakeId
                     if (!coordinator.tryBind(handshakeId)) {
                         val errEvent = NostrEvent.sign(
                             keys = group.device,
@@ -716,6 +852,7 @@ class Pairing(
                     val k = Hkdf.derive(agree + code.secret.encodeToByteArray(), salt, "umm-pair", 32)
 
                     val expectedTranscript = helloTranscript(
+                        handshakeId = msg.handshakeId,
                         offererDeviceId = code.deviceId,
                         joinerDeviceId = msg.deviceId,
                         offererPubKey = code.publicKey,
@@ -743,9 +880,11 @@ class Pairing(
                         boundPeerName = msg.name
                         boundSessionKey = k
                         boundHandshakeId = handshakeId
+                        boundJoinerDeviceId = msg.deviceId
 
                         // Joiner has group and offerer does not: joiner sends group
                         val myTranscript = confirmTranscript(
+                            handshakeId = handshakeId,
                             offererDeviceId = code.deviceId,
                             joinerDeviceId = msg.deviceId,
                             offererPubKey = code.publicKey,
@@ -754,7 +893,13 @@ class Pairing(
                             hasWelcome = false,
                         )
                         val myHmac = computeHmac(k, myTranscript)
-                        val confirm = PairMsg.Confirm(deviceId = myDeviceId, name = group.deviceName, hmac = myHmac, sealedWelcome = null)
+                        val confirm = PairMsg.Confirm(
+                            deviceId = myDeviceId,
+                            name = group.deviceName,
+                            hmac = myHmac,
+                            sealedWelcome = null,
+                            handshakeId = handshakeId,
+                        )
                         val confirmEvent = NostrEvent.sign(
                             keys = group.device,
                             kind = KIND_PAIRING,
@@ -773,12 +918,14 @@ class Pairing(
                                     boundPeerName = null
                                     boundSessionKey = null
                                     boundHandshakeId = null
+                                    boundJoinerDeviceId = null
                                 }
                             }
                         }
                     } else {
                         // Offerer sends group (either offerer has group, or neither has group)
                         val myTranscript = confirmTranscript(
+                            handshakeId = handshakeId,
                             offererDeviceId = code.deviceId,
                             joinerDeviceId = msg.deviceId,
                             offererPubKey = code.publicKey,
@@ -812,7 +959,13 @@ class Pairing(
                         val payload = WelcomePayload(group = finalGroup, apiKey = keyToSend, snapshot = snap)
                         val sealedWelcome = sealPayload(k, payload)
 
-                        val confirm = PairMsg.Confirm(deviceId = myDeviceId, name = group.deviceName, hmac = myHmac, sealedWelcome = sealedWelcome)
+                        val confirm = PairMsg.Confirm(
+                            deviceId = myDeviceId,
+                            name = group.deviceName,
+                            hmac = myHmac,
+                            sealedWelcome = sealedWelcome,
+                            handshakeId = handshakeId,
+                        )
                         val confirmEvent = NostrEvent.sign(
                             keys = group.device,
                             kind = KIND_PAIRING,
@@ -863,6 +1016,7 @@ class Pairing(
             val salt = code.deviceId.encodeToByteArray() + myDeviceId.encodeToByteArray()
             val k = Hkdf.derive(agree + code.secret.encodeToByteArray(), salt, "umm-pair", 32)
             val myTranscript = helloTranscript(
+                handshakeId = handshakeId,
                 offererDeviceId = code.deviceId,
                 joinerDeviceId = myDeviceId,
                 offererPubKey = code.publicKey,
@@ -880,11 +1034,15 @@ class Pairing(
                 platform = "desktop",
                 inGroup = group.state.value != null,
                 hmac = myHmac,
+                handshakeId = handshakeId,
             )
 
+            val handshakeStartTime = now() / 1000L
+            val sinceTime = handshakeStartTime - 60L
             val filter = buildJsonObject {
                 put("kinds", buildJsonArray { add(KIND_PAIRING) })
                 put("#p", buildJsonArray { add(myPubKey.lowercase()) })
+                put("since", JsonPrimitive(maxOf(0L, sinceTime)))
             }
 
             val helloEvent = NostrEvent.sign(
@@ -904,6 +1062,7 @@ class Pairing(
 
                 sub.collect { event ->
                     if (event.kind != KIND_PAIRING) return@collect
+                    if (event.created_at < sinceTime) return@collect
                     if (!event.verify()) return@collect
                     if (!event.pubkey.equals(code.publicKey, ignoreCase = true)) return@collect
                     val msg = try {
@@ -913,9 +1072,25 @@ class Pairing(
                     }
 
                     when (msg) {
-                        is PairMsg.Error -> throw PairingException(msg.error, msg.message)
+                        is PairMsg.Error -> {
+                            if (msg.handshakeId == handshakeId) {
+                                val expectedTranscript = errorTranscript(
+                                    handshakeId = handshakeId,
+                                    offererDeviceId = code.deviceId,
+                                    joinerDeviceId = myDeviceId,
+                                    error = msg.error.name,
+                                    message = msg.message,
+                                )
+                                if (verifyHmac(k, expectedTranscript, msg.hmac)) {
+                                    throw PairingException(msg.error, msg.message)
+                                }
+                            }
+                            return@collect
+                        }
                         is PairMsg.Confirm -> {
+                            if (msg.handshakeId != handshakeId) return@collect
                             val expectedTranscript = confirmTranscript(
+                                handshakeId = handshakeId,
                                 offererDeviceId = code.deviceId,
                                 joinerDeviceId = myDeviceId,
                                 offererPubKey = code.publicKey,
@@ -942,7 +1117,14 @@ class Pairing(
                                     applier.applySnapshot(payload.snapshot)
                                 }
 
-                                val ack = PairMsg.Ack(true)
+                                val ackTranscriptBytes = ackTranscript(
+                                    handshakeId = handshakeId,
+                                    offererDeviceId = code.deviceId,
+                                    joinerDeviceId = myDeviceId,
+                                    success = true,
+                                )
+                                val ackHmac = computeHmac(k, ackTranscriptBytes)
+                                val ack = PairMsg.Ack(success = true, handshakeId = handshakeId, hmac = ackHmac)
                                 val ackEvent = NostrEvent.sign(
                                     keys = group.device,
                                     kind = KIND_PAIRING,
@@ -965,7 +1147,18 @@ class Pairing(
                                 val payload = WelcomePayload(group = updatedGroup, apiKey = keyToSend, snapshot = snap)
                                 val sealedWelcome = sealPayload(k, payload)
 
-                                val welcomeMsg = PairMsg.Welcome(sealedWelcome)
+                                val welcomeTranscriptBytes = welcomeTranscript(
+                                    handshakeId = handshakeId,
+                                    offererDeviceId = code.deviceId,
+                                    joinerDeviceId = myDeviceId,
+                                    sealedPayload = sealedWelcome,
+                                )
+                                val welcomeHmac = computeHmac(k, welcomeTranscriptBytes)
+                                val welcomeMsg = PairMsg.Welcome(
+                                    sealedPayload = sealedWelcome,
+                                    handshakeId = handshakeId,
+                                    hmac = welcomeHmac,
+                                )
                                 val welcomeEvent = NostrEvent.sign(
                                     keys = group.device,
                                     kind = KIND_PAIRING,
@@ -980,6 +1173,16 @@ class Pairing(
                         is PairMsg.Ack -> {
                             val updated = pendingUpdatedGroup
                             if (updated != null) {
+                                if (msg.handshakeId != handshakeId) return@collect
+                                val expectedTranscript = ackTranscript(
+                                    handshakeId = handshakeId,
+                                    offererDeviceId = code.deviceId,
+                                    joinerDeviceId = myDeviceId,
+                                    success = msg.success,
+                                )
+                                if (!verifyHmac(k, expectedTranscript, msg.hmac)) {
+                                    return@collect
+                                }
                                 val coordinator = getCoordinator(code.secret)
                                 val saved = coordinator.saveAndCommit(handshakeId, preSaveHook) {
                                     group.save(updated)
@@ -1095,13 +1298,18 @@ class Pairing(
         usedSecrets[secret] = now() + 10 * 60 * 1000L
     }
 
+    private fun generateHandshakeId(): String {
+        val bytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        return bytes.toHex()
+    }
+
     private fun hmacSha256(key: ByteArray, message: ByteArray): ByteArray {
         val mac = Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(key, "HmacSHA256"))
         return mac.doFinal(message)
     }
 
-    private fun lengthPrefixed(vararg fields: ByteArray): ByteArray {
+    internal fun lengthPrefixed(vararg fields: ByteArray): ByteArray {
         val bos = ByteArrayOutputStream()
         val dos = DataOutputStream(bos)
         for (f in fields) {
@@ -1111,7 +1319,8 @@ class Pairing(
         return bos.toByteArray()
     }
 
-    private fun helloTranscript(
+    internal fun helloTranscript(
+        handshakeId: String,
         offererDeviceId: String,
         joinerDeviceId: String,
         offererPubKey: String,
@@ -1121,6 +1330,7 @@ class Pairing(
         platform: String,
     ): ByteArray = lengthPrefixed(
         "hello".encodeToByteArray(),
+        handshakeId.encodeToByteArray(),
         offererDeviceId.encodeToByteArray(),
         joinerDeviceId.encodeToByteArray(),
         offererPubKey.encodeToByteArray(),
@@ -1130,7 +1340,8 @@ class Pairing(
         platform.encodeToByteArray(),
     )
 
-    private fun confirmTranscript(
+    internal fun confirmTranscript(
+        handshakeId: String,
         offererDeviceId: String,
         joinerDeviceId: String,
         offererPubKey: String,
@@ -1139,6 +1350,7 @@ class Pairing(
         hasWelcome: Boolean,
     ): ByteArray = lengthPrefixed(
         "confirm".encodeToByteArray(),
+        handshakeId.encodeToByteArray(),
         offererDeviceId.encodeToByteArray(),
         joinerDeviceId.encodeToByteArray(),
         offererPubKey.encodeToByteArray(),
@@ -1147,19 +1359,60 @@ class Pairing(
         byteArrayOf(if (hasWelcome) 1 else 0),
     )
 
-    private fun computeHmac(key: ByteArray, transcript: ByteArray): String {
+    internal fun welcomeTranscript(
+        handshakeId: String,
+        offererDeviceId: String,
+        joinerDeviceId: String,
+        sealedPayload: String,
+    ): ByteArray = lengthPrefixed(
+        "welcome".encodeToByteArray(),
+        handshakeId.encodeToByteArray(),
+        offererDeviceId.encodeToByteArray(),
+        joinerDeviceId.encodeToByteArray(),
+        sealedPayload.encodeToByteArray(),
+    )
+
+    internal fun ackTranscript(
+        handshakeId: String,
+        offererDeviceId: String,
+        joinerDeviceId: String,
+        success: Boolean,
+    ): ByteArray = lengthPrefixed(
+        "ack".encodeToByteArray(),
+        handshakeId.encodeToByteArray(),
+        offererDeviceId.encodeToByteArray(),
+        joinerDeviceId.encodeToByteArray(),
+        byteArrayOf(if (success) 1 else 0),
+    )
+
+    internal fun errorTranscript(
+        handshakeId: String,
+        offererDeviceId: String,
+        joinerDeviceId: String,
+        error: String,
+        message: String,
+    ): ByteArray = lengthPrefixed(
+        "error".encodeToByteArray(),
+        handshakeId.encodeToByteArray(),
+        offererDeviceId.encodeToByteArray(),
+        joinerDeviceId.encodeToByteArray(),
+        error.encodeToByteArray(),
+        message.encodeToByteArray(),
+    )
+
+    internal fun computeHmac(key: ByteArray, transcript: ByteArray): String {
         return hmacSha256(key, transcript).toHex()
     }
 
-    private fun verifyHmac(key: ByteArray, transcript: ByteArray, actualHex: String): Boolean {
+    internal fun verifyHmac(key: ByteArray, transcript: ByteArray, actualHex: String): Boolean {
         val expected = hmacSha256(key, transcript)
         val actual = runCatching { hexToBytes(actualHex) }.getOrNull() ?: return false
         return MessageDigest.isEqual(expected, actual)
     }
 
-    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
+    internal fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 
-    private fun hexToBytes(hex: String): ByteArray {
+    internal fun hexToBytes(hex: String): ByteArray {
         val clean = hex.trim()
         val len = clean.length
         require(len % 2 == 0) { "Invalid hex length: $len" }

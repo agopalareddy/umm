@@ -455,25 +455,18 @@ class PairingTest {
         val salt = offer.code.deviceId.encodeToByteArray() + myDeviceId.encodeToByteArray()
         val k = Hkdf.derive(agree + offer.code.secret.encodeToByteArray(), salt, "umm-pair", 32)
 
-        // Compute MAC for inGroup = false
-        val bos = java.io.ByteArrayOutputStream()
-        val dos = java.io.DataOutputStream(bos)
-        for (f in listOf(
-            "hello".encodeToByteArray(),
-            offer.code.deviceId.encodeToByteArray(),
-            myDeviceId.encodeToByteArray(),
-            offer.code.publicKey.encodeToByteArray(),
-            nodeB.groupStore.device.publicKey.toHex().encodeToByteArray(),
-            byteArrayOf(0), // inGroup = false
-            nodeB.groupStore.deviceName.encodeToByteArray(),
-            "desktop".encodeToByteArray(),
-        )) {
-            dos.writeInt(f.size)
-            dos.write(f)
-        }
-        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
-        mac.init(javax.crypto.spec.SecretKeySpec(k, "HmacSHA256"))
-        val hmac = mac.doFinal(bos.toByteArray()).toHex()
+        val handshakeId = "0123456789abcdef0123456789abcdef"
+        val transcript = nodeA.pairing.helloTranscript(
+            handshakeId = handshakeId,
+            offererDeviceId = offer.code.deviceId,
+            joinerDeviceId = myDeviceId,
+            offererPubKey = offer.code.publicKey,
+            joinerPubKey = nodeB.groupStore.device.publicKey.toHex(),
+            inGroup = false, // compute MAC for inGroup = false
+            name = nodeB.groupStore.deviceName,
+            platform = "desktop",
+        )
+        val hmac = nodeA.pairing.computeHmac(k, transcript)
 
         val hello = PairMsg.Hello(
             deviceId = myDeviceId,
@@ -482,6 +475,7 @@ class PairingTest {
             platform = "desktop",
             inGroup = true, // flipped in transit
             hmac = hmac,
+            handshakeId = handshakeId,
         )
         val json = Json { ignoreUnknownKeys = true }
         io.github.agopalareddy.umm.sync.lan.FrameCodec.write(
@@ -516,13 +510,41 @@ class PairingTest {
 
         val offer = nodeA.pairing.offer(sendKey = true)
 
+        val handshakeId = "0123456789abcdef0123456789abcdef"
+        val myDeviceIdB = nodeB.selfId
+        val peerPubKeyBytes = hexToBytes(offer.code.publicKey)
+        val agree = nodeB.groupStore.device.agree(peerPubKeyBytes)
+        val salt = offer.code.deviceId.encodeToByteArray() + myDeviceIdB.encodeToByteArray()
+        val kB = Hkdf.derive(agree + offer.code.secret.encodeToByteArray(), salt, "umm-pair", 32)
+        val myPubkeyB = nodeB.groupStore.device.publicKey.toHex()
+        val transcript = nodeA.pairing.helloTranscript(
+            handshakeId = handshakeId,
+            offererDeviceId = offer.code.deviceId,
+            joinerDeviceId = myDeviceIdB,
+            offererPubKey = offer.code.publicKey,
+            joinerPubKey = myPubkeyB,
+            inGroup = false,
+            name = nodeB.groupStore.deviceName,
+            platform = "desktop",
+        )
+        val correctHmac = nodeA.pairing.computeHmac(kB, transcript)
+        val json = Json { ignoreUnknownKeys = true }
+        val helloMsg = PairMsg.Hello(
+            deviceId = myDeviceIdB,
+            name = nodeB.groupStore.deviceName,
+            publicKey = myPubkeyB,
+            platform = "desktop",
+            inGroup = false,
+            hmac = correctHmac,
+            handshakeId = handshakeId,
+        )
         val badEvent = NostrEvent(
             id = "00".repeat(32),
-            pubkey = nodeB.groupStore.device.publicKey.toHex(),
-            created_at = 10_000L,
+            pubkey = myPubkeyB,
+            created_at = 10_000L / 1000L,
             kind = io.github.agopalareddy.umm.sync.relay.KIND_PAIRING,
             tags = listOf(listOf("p", offer.code.publicKey.lowercase())),
-            content = """{"type":"Hello","deviceId":"bad","name":"bad","publicKey":"${nodeB.groupStore.device.publicKey.toHex()}","platform":"desktop","inGroup":false,"hmac":"bad"}""",
+            content = json.encodeToString(PairMsg.serializer(), helloMsg),
             sig = "00".repeat(64),
         )
         fakeRelay.publishedEvents.add(badEvent)
@@ -560,13 +582,32 @@ class PairingTest {
 
         val offer = nodeA.pairing.offer(sendKey = true)
 
+        val handshakeId = "0123456789abcdef0123456789abcdef"
+        val myDeviceIdB = nodeB.selfId
+        val peerPubKeyBytes = hexToBytes(offer.code.publicKey)
+        val agree = nodeB.groupStore.device.agree(peerPubKeyBytes)
+        val salt = offer.code.deviceId.encodeToByteArray() + myDeviceIdB.encodeToByteArray()
+        val kB = Hkdf.derive(agree + offer.code.secret.encodeToByteArray(), salt, "umm-pair", 32)
+        val myPubkeyB = nodeB.groupStore.device.publicKey.toHex()
+        val transcript = nodeA.pairing.helloTranscript(
+            handshakeId = handshakeId,
+            offererDeviceId = offer.code.deviceId,
+            joinerDeviceId = myDeviceIdB,
+            offererPubKey = offer.code.publicKey,
+            joinerPubKey = myPubkeyB,
+            inGroup = false,
+            name = nodeB.groupStore.deviceName,
+            platform = "desktop",
+        )
+        val correctHmac = nodeA.pairing.computeHmac(kB, transcript)
         val spoofedHello = PairMsg.Hello(
-            deviceId = "attacker",
-            name = "attacker",
-            publicKey = nodeB.groupStore.device.publicKey.toHex(),
+            deviceId = myDeviceIdB,
+            name = nodeB.groupStore.deviceName,
+            publicKey = myPubkeyB,
             platform = "desktop",
             inGroup = false,
-            hmac = "badhmac",
+            hmac = correctHmac,
+            handshakeId = handshakeId,
         )
         val json = Json { ignoreUnknownKeys = true }
         val spoofedEvent = NostrEvent.sign(
@@ -574,7 +615,7 @@ class PairingTest {
             kind = io.github.agopalareddy.umm.sync.relay.KIND_PAIRING,
             tags = listOf(listOf("p", offer.code.publicKey.lowercase())),
             content = json.encodeToString(PairMsg.serializer(), spoofedHello),
-            createdAt = 10_000L,
+            createdAt = 10_000L / 1000L,
         )
         fakeRelay.publishedEvents.add(spoofedEvent)
 
@@ -824,24 +865,18 @@ class PairingTest {
         val saltB = unreachableCode.deviceId.encodeToByteArray() + nodeB.selfId.encodeToByteArray()
         val kB = Hkdf.derive(agreeB + unreachableCode.secret.encodeToByteArray(), saltB, "umm-pair", 32)
 
-        val bos = java.io.ByteArrayOutputStream()
-        val dos = java.io.DataOutputStream(bos)
-        for (f in listOf(
-            "hello".encodeToByteArray(),
-            unreachableCode.deviceId.encodeToByteArray(),
-            nodeB.selfId.encodeToByteArray(),
-            unreachableCode.publicKey.encodeToByteArray(),
-            myPubkeyB.encodeToByteArray(),
-            byteArrayOf(1), // inGroup = true
-            "NodeB".encodeToByteArray(),
-            "desktop".encodeToByteArray(),
-        )) {
-            dos.writeInt(f.size)
-            dos.write(f)
-        }
-        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
-        mac.init(javax.crypto.spec.SecretKeySpec(kB, "HmacSHA256"))
-        val hmacB = mac.doFinal(bos.toByteArray()).toHex()
+        val handshakeIdB = "0123456789abcdef0123456789abcdef"
+        val transcriptB = nodeA.pairing.helloTranscript(
+            handshakeId = handshakeIdB,
+            offererDeviceId = unreachableCode.deviceId,
+            joinerDeviceId = nodeB.selfId,
+            offererPubKey = unreachableCode.publicKey,
+            joinerPubKey = myPubkeyB,
+            inGroup = true,
+            name = "NodeB",
+            platform = "desktop",
+        )
+        val hmacB = nodeA.pairing.computeHmac(kB, transcriptB)
 
         val helloB = PairMsg.Hello(
             deviceId = nodeB.selfId,
@@ -850,6 +885,7 @@ class PairingTest {
             platform = "desktop",
             inGroup = true,
             hmac = hmacB,
+            handshakeId = handshakeIdB,
         )
         val clientB = io.github.agopalareddy.umm.sync.relay.RelayClient(relayUrl, OkHttpClient())
         toClose.add { runCatching { clientB.close() } }
@@ -973,24 +1009,18 @@ class PairingTest {
         val saltB = unreachableCode.deviceId.encodeToByteArray() + nodeB.selfId.encodeToByteArray()
         val kB = Hkdf.derive(agreeB + unreachableCode.secret.encodeToByteArray(), saltB, "umm-pair", 32)
 
-        val bos = java.io.ByteArrayOutputStream()
-        val dos = java.io.DataOutputStream(bos)
-        for (f in listOf(
-            "hello".encodeToByteArray(),
-            unreachableCode.deviceId.encodeToByteArray(),
-            nodeB.selfId.encodeToByteArray(),
-            unreachableCode.publicKey.encodeToByteArray(),
-            myPubkeyB.encodeToByteArray(),
-            byteArrayOf(1), // inGroup = true
-            "NodeB".encodeToByteArray(),
-            "desktop".encodeToByteArray(),
-        )) {
-            dos.writeInt(f.size)
-            dos.write(f)
-        }
-        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
-        mac.init(javax.crypto.spec.SecretKeySpec(kB, "HmacSHA256"))
-        val hmacB = mac.doFinal(bos.toByteArray()).toHex()
+        val handshakeIdB = "0123456789abcdef0123456789abcdef"
+        val transcriptB = nodeA.pairing.helloTranscript(
+            handshakeId = handshakeIdB,
+            offererDeviceId = unreachableCode.deviceId,
+            joinerDeviceId = nodeB.selfId,
+            offererPubKey = unreachableCode.publicKey,
+            joinerPubKey = myPubkeyB,
+            inGroup = true,
+            name = "NodeB",
+            platform = "desktop",
+        )
+        val hmacB = nodeA.pairing.computeHmac(kB, transcriptB)
 
         val helloB = PairMsg.Hello(
             deviceId = nodeB.selfId,
@@ -999,6 +1029,7 @@ class PairingTest {
             platform = "desktop",
             inGroup = true,
             hmac = hmacB,
+            handshakeId = handshakeIdB,
         )
         val clientB = io.github.agopalareddy.umm.sync.relay.RelayClient(relayUrl, OkHttpClient())
         toClose.add { runCatching { clientB.close() } }
@@ -1033,7 +1064,18 @@ class PairingTest {
         val ct = cipher.doFinal(jsonPayload)
         val sealed = kotlin.io.encoding.Base64.UrlSafe.encode(nonce + ct)
 
-        val welcomeMsg = PairMsg.Welcome(sealedPayload = sealed)
+        val welcomeTranscript = nodeA.pairing.welcomeTranscript(
+            handshakeId = handshakeIdB,
+            offererDeviceId = unreachableCode.deviceId,
+            joinerDeviceId = nodeB.selfId,
+            sealedPayload = sealed,
+        )
+        val welcomeHmac = nodeA.pairing.computeHmac(kB, welcomeTranscript)
+        val welcomeMsg = PairMsg.Welcome(
+            sealedPayload = sealed,
+            handshakeId = handshakeIdB,
+            hmac = welcomeHmac,
+        )
         val welcomeEvent = NostrEvent.sign(
             keys = nodeB.groupStore.device,
             kind = io.github.agopalareddy.umm.sync.relay.KIND_PAIRING,
@@ -1047,5 +1089,246 @@ class PairingTest {
 
         // Assert nothing was saved on Node A
         assertNull("Node A must not save late welcome", nodeA.groupStore.state.value)
+    }
+
+    @Test
+    fun replayedErrorFromEarlierHandshakeIsIgnored() = runTest(timeout = 20.seconds) {
+        val fakeRelay = FakeRelay()
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return MockResponse.Builder().webSocketUpgrade(fakeRelay).build()
+            }
+        }
+        server.start()
+        toClose.add {
+            fakeRelay.clientSockets.forEach { runCatching { it.close(1000, "close") } }
+            server.close()
+        }
+
+        val relayUrl = "ws://${server.hostName}:${server.port}/"
+        val nodeA = TestNode("NodeA", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+        val nodeB = TestNode("NodeB", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+
+        // Handshake 1 completes between Node A and Node B
+        val offer1 = nodeA.pairing.offer(sendKey = true)
+        val unreachable1 = offer1.code.copy(lan = listOf("192.0.2.1"), port = 54321, relays = listOf(relayUrl))
+        nodeB.pairing.join(unreachable1.encode(), sendKey = true)
+        offer1.result.await()
+
+        assertNotNull(nodeA.groupStore.state.value)
+        assertNotNull(nodeB.groupStore.state.value)
+
+        // Synthesize an authenticated Error from that earlier handshake
+        val oldHandshakeId = "00112233445566778899aabbccddeeff"
+        val peerPubKeyBytes = hexToBytes(offer1.code.publicKey)
+        val agree = nodeB.groupStore.device.agree(peerPubKeyBytes)
+        val salt1 = offer1.code.deviceId.encodeToByteArray() + nodeB.selfId.encodeToByteArray()
+        val k1 = Hkdf.derive(agree + offer1.code.secret.encodeToByteArray(), salt1, "umm-pair", 32)
+        val oldTranscript = nodeA.pairing.errorTranscript(
+            handshakeId = oldHandshakeId,
+            offererDeviceId = offer1.code.deviceId,
+            joinerDeviceId = nodeB.selfId,
+            error = PairingError.USED.name,
+            message = "Earlier error",
+        )
+        val oldHmac = nodeA.pairing.computeHmac(k1, oldTranscript)
+        val oldErrorMsg = PairMsg.Error(
+            error = PairingError.USED,
+            message = "Earlier error",
+            handshakeId = oldHandshakeId,
+            hmac = oldHmac,
+        )
+        val json = Json { ignoreUnknownKeys = true }
+        val oldErrorEvent = NostrEvent.sign(
+            keys = nodeB.groupStore.device,
+            kind = io.github.agopalareddy.umm.sync.relay.KIND_PAIRING,
+            tags = listOf(listOf("p", offer1.code.publicKey.lowercase())),
+            content = json.encodeToString(PairMsg.serializer(), oldErrorMsg),
+            createdAt = 10_000L / 1000L,
+        )
+
+        // Clear both group stores to perform a new handshake
+        nodeA.groupStore.clear()
+        nodeB.groupStore.clear()
+
+        // Start new offer on Node A
+        val offer2 = nodeA.pairing.offer(sendKey = true)
+        val unreachable2 = offer2.code.copy(lan = listOf("192.0.2.1"), port = 54321, relays = listOf(relayUrl))
+
+        // Relay client to publish replayed error
+        val client = io.github.agopalareddy.umm.sync.relay.RelayClient(relayUrl, OkHttpClient())
+        toClose.add { runCatching { client.close() } }
+
+        // Start joiner in background
+        val joinerDeferred = async {
+            nodeB.pairing.join(unreachable2.encode(), sendKey = true)
+        }
+
+        // Replay the old error while handshake 2 is taking place
+        client.publish(oldErrorEvent)
+
+        val offererResult = offer2.result.await()
+        val joinerResult = joinerDeferred.await()
+
+        assertNotNull(offererResult)
+        assertNotNull(joinerResult)
+        assertNotNull(nodeA.groupStore.state.value)
+        assertNotNull(nodeB.groupStore.state.value)
+    }
+
+    @Test
+    fun replayedAckFromEarlierHandshakeIsIgnored() = runTest(timeout = 20.seconds) {
+        val fakeRelay = FakeRelay()
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return MockResponse.Builder().webSocketUpgrade(fakeRelay).build()
+            }
+        }
+        server.start()
+        toClose.add {
+            fakeRelay.clientSockets.forEach { runCatching { it.close(1000, "close") } }
+            server.close()
+        }
+
+        val relayUrl = "ws://${server.hostName}:${server.port}/"
+        val nodeA = TestNode("NodeA", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+        val nodeB = TestNode("NodeB", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+
+        // Node B has a group; Node B will send Welcome to offerer Node A and wait for Ack
+        val groupB = GroupState(
+            groupId = "group-b",
+            key = "key-b",
+            epoch = 0,
+            previousKey = null,
+            previousUntil = 0L,
+            members = listOf(Member(nodeB.selfId, "NodeB", "desktop", nodeB.groupStore.device.publicKey.toHex())),
+            relays = listOf(relayUrl),
+        )
+        nodeB.groupStore.save(groupB)
+
+        // Synthesize an old Ack from Node A to Node B from an earlier handshake
+        val oldHandshakeId = "00112233445566778899aabbccddeeff"
+        val peerPubKeyBytes = hexToBytes(nodeB.groupStore.device.publicKey.toHex())
+        val agree = nodeA.groupStore.device.agree(peerPubKeyBytes)
+        val saltOld = "old-offerer-id".encodeToByteArray() + nodeB.selfId.encodeToByteArray()
+        val kOld = Hkdf.derive(agree + "old-secret".encodeToByteArray(), saltOld, "umm-pair", 32)
+        val oldTranscript = nodeA.pairing.ackTranscript(
+            handshakeId = oldHandshakeId,
+            offererDeviceId = nodeA.selfId,
+            joinerDeviceId = nodeB.selfId,
+            success = true,
+        )
+        val oldHmac = nodeA.pairing.computeHmac(kOld, oldTranscript)
+        val oldAckMsg = PairMsg.Ack(
+            success = true,
+            handshakeId = oldHandshakeId,
+            hmac = oldHmac,
+        )
+        val json = Json { ignoreUnknownKeys = true }
+        val oldAckEvent = NostrEvent.sign(
+            keys = nodeA.groupStore.device,
+            kind = io.github.agopalareddy.umm.sync.relay.KIND_PAIRING,
+            tags = listOf(listOf("p", nodeB.groupStore.device.publicKey.toHex().lowercase())),
+            content = json.encodeToString(PairMsg.serializer(), oldAckMsg),
+            createdAt = 10_000L / 1000L,
+        )
+
+        val offer = nodeA.pairing.offer(sendKey = false)
+        val unreachableCode = offer.code.copy(lan = listOf("192.0.2.1"), port = 54321, relays = listOf(relayUrl))
+
+        val client = io.github.agopalareddy.umm.sync.relay.RelayClient(relayUrl, OkHttpClient())
+        toClose.add { runCatching { client.close() } }
+
+        val joinerDeferred = async {
+            nodeB.pairing.join(unreachableCode.encode(), sendKey = false)
+        }
+
+        // Publish the replayed old Ack
+        client.publish(oldAckEvent)
+
+        val offererResult = offer.result.await()
+        val joinerResult = joinerDeferred.await()
+
+        assertNotNull(offererResult)
+        assertNotNull(joinerResult)
+        assertEquals(groupB.groupId, nodeA.groupStore.state.value?.groupId)
+    }
+
+    @Test
+    fun eventOlderThanSinceBoundIsIgnored() = runTest(timeout = 20.seconds) {
+        val fakeRelay = FakeRelay()
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return MockResponse.Builder().webSocketUpgrade(fakeRelay).build()
+            }
+        }
+        server.start()
+        toClose.add {
+            fakeRelay.clientSockets.forEach { runCatching { it.close(1000, "close") } }
+            server.close()
+        }
+
+        val relayUrl = "ws://${server.hostName}:${server.port}/"
+        val currentTimeMs = 100_000_000L // 100,000 seconds
+        val nodeA = TestNode("NodeA", tmp.newFolder(), now = { currentTimeMs }, relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+        val nodeB = TestNode("NodeB", tmp.newFolder(), now = { currentTimeMs }, relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+
+        val offer = nodeA.pairing.offer(sendKey = true)
+
+        // Handshake start time is 100_000s, since bound is 100_000s - 60s = 99_940s.
+        // Create an old event at 99_900s (< since bound).
+        val handshakeId = "0123456789abcdef0123456789abcdef"
+        val myDeviceIdB = nodeB.selfId
+        val peerPubKeyBytes = hexToBytes(offer.code.publicKey)
+        val agree = nodeB.groupStore.device.agree(peerPubKeyBytes)
+        val salt = offer.code.deviceId.encodeToByteArray() + myDeviceIdB.encodeToByteArray()
+        val kB = Hkdf.derive(agree + offer.code.secret.encodeToByteArray(), salt, "umm-pair", 32)
+        val myPubkeyB = nodeB.groupStore.device.publicKey.toHex()
+        val transcript = nodeA.pairing.helloTranscript(
+            handshakeId = handshakeId,
+            offererDeviceId = offer.code.deviceId,
+            joinerDeviceId = myDeviceIdB,
+            offererPubKey = offer.code.publicKey,
+            joinerPubKey = myPubkeyB,
+            inGroup = false,
+            name = nodeB.groupStore.deviceName,
+            platform = "desktop",
+        )
+        val correctHmac = nodeA.pairing.computeHmac(kB, transcript)
+        val json = Json { ignoreUnknownKeys = true }
+        val helloMsg = PairMsg.Hello(
+            deviceId = myDeviceIdB,
+            name = nodeB.groupStore.deviceName,
+            publicKey = myPubkeyB,
+            platform = "desktop",
+            inGroup = false,
+            hmac = correctHmac,
+            handshakeId = handshakeId,
+        )
+        val oldEvent = NostrEvent.sign(
+            keys = nodeB.groupStore.device,
+            kind = io.github.agopalareddy.umm.sync.relay.KIND_PAIRING,
+            tags = listOf(listOf("p", offer.code.publicKey.lowercase())),
+            content = json.encodeToString(PairMsg.serializer(), helloMsg),
+            createdAt = 99_900L, // older than since bound (99_940L)
+        )
+        fakeRelay.publishedEvents.add(oldEvent)
+
+        kotlinx.coroutines.delay(200)
+
+        // Assert offer result has NOT been completed
+        assertFalse(offer.result.isCompleted)
+
+        // Now join normally with current timestamp (100,000s >= since bound)
+        val unreachableCode = offer.code.copy(lan = listOf("192.0.2.1"), port = 54321, relays = listOf(relayUrl))
+        val joinerResult = nodeB.pairing.join(unreachableCode.encode(), sendKey = true)
+        val offererResult = offer.result.await()
+
+        assertNotNull(offererResult)
+        assertNotNull(joinerResult)
+        assertNotNull(nodeA.groupStore.state.value)
     }
 }
