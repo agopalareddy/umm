@@ -209,7 +209,7 @@ class RelayTransport(
         }
     }
 
-    private suspend fun handleIncomingEvent(event: NostrEvent, state: GroupState, relayUrl: String) {
+    internal suspend fun handleIncomingEvent(event: NostrEvent, state: GroupState, relayUrl: String) {
         if (event.kind != KIND_APP_DATA) return
         if (!event.verify()) return
 
@@ -217,7 +217,10 @@ class RelayTransport(
         if (event.pubkey.equals(myPubkey, ignoreCase = true)) return
 
         val member = state.members.find { it.publicKey.equals(event.pubkey, ignoreCase = true) }
-        if (member == null) return
+        if (member == null) {
+            val withinGrace = state.previousKey != null && (clockSeconds() * 1000L <= state.previousUntil)
+            if (!withinGrace) return
+        }
 
         val cipher = GroupCipher(
             key = decodeKey(state.key),
