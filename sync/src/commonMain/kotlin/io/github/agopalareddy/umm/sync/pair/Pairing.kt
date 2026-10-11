@@ -831,22 +831,8 @@ class Pairing(
                         return@collect
                     }
 
-                    val coordinator = getCoordinator(code.secret)
-                    val handshakeId = msg.handshakeId
-                    if (!coordinator.tryBind(handshakeId)) {
-                        val errEvent = NostrEvent.sign(
-                            keys = group.device,
-                            kind = KIND_PAIRING,
-                            tags = listOf(listOf("p", event.pubkey.lowercase())),
-                            content = json.encodeToString(PairMsg.serializer(), PairMsg.Error(PairingError.USED)),
-                            createdAt = now() / 1000L,
-                        )
-                        client.publish(errEvent)
-                        return@collect
-                    }
-
-                    val peerPubKeyBytes = hexToBytes(msg.publicKey)
-                    val agree = group.device.agree(peerPubKeyBytes)
+                    val peerPubKeyBytes = runCatching { hexToBytes(msg.publicKey) }.getOrNull() ?: return@collect
+                    val agree = runCatching { group.device.agree(peerPubKeyBytes) }.getOrNull() ?: return@collect
                     val myDeviceId = getOwnDeviceId()
                     val salt = code.deviceId.encodeToByteArray() + msg.deviceId.encodeToByteArray()
                     val k = Hkdf.derive(agree + code.secret.encodeToByteArray(), salt, "umm-pair", 32)
@@ -862,12 +848,33 @@ class Pairing(
                         platform = msg.platform,
                     )
                     if (!verifyHmac(k, expectedTranscript, msg.hmac)) {
-                        coordinator.release(handshakeId)
+                        return@collect
+                    }
+
+                    val coordinator = getCoordinator(code.secret)
+                    val handshakeId = msg.handshakeId
+                    if (!coordinator.tryBind(handshakeId)) {
+                        val errTranscript = errorTranscript(
+                            handshakeId = handshakeId,
+                            offererDeviceId = code.deviceId,
+                            joinerDeviceId = msg.deviceId,
+                            error = PairingError.USED.name,
+                            message = PairingError.USED.name,
+                        )
+                        val errMac = computeHmac(k, errTranscript)
                         val errEvent = NostrEvent.sign(
                             keys = group.device,
                             kind = KIND_PAIRING,
                             tags = listOf(listOf("p", event.pubkey.lowercase())),
-                            content = json.encodeToString(PairMsg.serializer(), PairMsg.Error(PairingError.WRONG_SECRET)),
+                            content = json.encodeToString(
+                                PairMsg.serializer(),
+                                PairMsg.Error(
+                                    error = PairingError.USED,
+                                    message = PairingError.USED.name,
+                                    handshakeId = handshakeId,
+                                    hmac = errMac,
+                                ),
+                            ),
                             createdAt = now() / 1000L,
                         )
                         client.publish(errEvent)

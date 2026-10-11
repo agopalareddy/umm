@@ -30,10 +30,12 @@ import io.github.agopalareddy.umm.sync.relay.RelayTransport
 import kotlinx.serialization.json.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
@@ -205,7 +207,12 @@ class PairingTest {
         val clientSockets = CopyOnWriteArrayList<WebSocket>()
         val subscriptions = ConcurrentHashMap<WebSocket, ConcurrentHashMap<String, JsonObject>>()
         val publishedEvents = CopyOnWriteArrayList<NostrEvent>()
+        val subscriptionBarriers = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+        val deliveredEvents = CopyOnWriteArrayList<NostrEvent>()
         private val json = Json { ignoreUnknownKeys = true }
+
+        fun awaitSubscription(subId: String): Deferred<Unit> =
+            subscriptionBarriers.computeIfAbsent(subId) { CompletableDeferred() }
 
         override fun onOpen(webSocket: WebSocket, response: Response) {
             clientSockets.add(webSocket)
@@ -242,6 +249,7 @@ class PairingTest {
                                     add(eventElement)
                                 }
                                 otherSocket.send(eventMsg.toString())
+                                deliveredEvents.add(event)
                             }
                         }
                     }
@@ -250,6 +258,7 @@ class PairingTest {
                     val subId = array.getOrNull(1)?.jsonPrimitive?.content ?: return
                     val filter = array.getOrNull(2)?.jsonObject ?: buildJsonObject {}
                     subscriptions[webSocket]?.put(subId, filter)
+                    subscriptionBarriers[subId]?.complete(Unit)
                     val eoseMsg = buildJsonArray {
                         add("EOSE")
                         add(subId)
@@ -264,6 +273,7 @@ class PairingTest {
                                 add(json.encodeToJsonElement(NostrEvent.serializer(), event))
                             }
                             webSocket.send(eventMsg.toString())
+                            deliveredEvents.add(event)
                         }
                     }
                 }
@@ -586,6 +596,7 @@ class PairingTest {
         val nodeB = TestNode("NodeB", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
 
         val offer = nodeA.pairing.offer(sendKey = true)
+        fakeRelay.awaitSubscription("pair-offer").await()
 
         val handshakeId = "0123456789abcdef0123456789abcdef"
         val myDeviceIdB = nodeB.selfId
@@ -624,8 +635,17 @@ class PairingTest {
             content = json.encodeToString(PairMsg.serializer(), helloMsg),
             sig = "00".repeat(64),
         )
-        fakeRelay.publishedEvents.add(badEvent)
 
+        val relayClient = io.github.agopalareddy.umm.sync.relay.RelayClient(relayUrl, OkHttpClient())
+        toClose.add { runCatching { relayClient.close() } }
+        val pubResult = relayClient.publish(badEvent)
+        assertTrue(pubResult.isSuccess)
+
+        assertTrue(
+            "Expected badEvent to be delivered to subscribers",
+            fakeRelay.deliveredEvents.any { it.id == badEvent.id },
+        )
+        delay(100)
         assertFalse(offer.result.isCompleted)
 
         val unreachableCode = offer.code.copy(lan = listOf("192.0.2.1"), port = 54321, relays = listOf(relayUrl))
@@ -658,6 +678,7 @@ class PairingTest {
         val nodeAttacker = TestNode("Attacker", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
 
         val offer = nodeA.pairing.offer(sendKey = true)
+        fakeRelay.awaitSubscription("pair-offer").await()
 
         val handshakeId = "0123456789abcdef0123456789abcdef"
         val myDeviceIdB = nodeB.selfId
@@ -694,8 +715,17 @@ class PairingTest {
             content = json.encodeToString(PairMsg.serializer(), spoofedHello),
             createdAt = 10_000L / 1000L,
         )
-        fakeRelay.publishedEvents.add(spoofedEvent)
 
+        val relayClient = io.github.agopalareddy.umm.sync.relay.RelayClient(relayUrl, OkHttpClient())
+        toClose.add { runCatching { relayClient.close() } }
+        val pubResult = relayClient.publish(spoofedEvent)
+        assertTrue(pubResult.isSuccess)
+
+        assertTrue(
+            "Expected spoofedEvent to be delivered to subscribers",
+            fakeRelay.deliveredEvents.any { it.id == spoofedEvent.id },
+        )
+        delay(100)
         assertFalse(offer.result.isCompleted)
 
         val unreachableCode = offer.code.copy(lan = listOf("192.0.2.1"), port = 54321, relays = listOf(relayUrl))
@@ -705,6 +735,45 @@ class PairingTest {
         assertNotNull(nodeA.groupStore.state.value)
         assertNotNull(nodeB.groupStore.state.value)
         assertEquals(nodeA.groupStore.state.value!!.groupId, nodeB.groupStore.state.value!!.groupId)
+    }
+
+    @Test
+    fun relayJoinerUsingUsedCodeFailsImmediatelyWithUsedError() = runTest(timeout = 20.seconds) {
+        val fakeRelay = FakeRelay()
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return MockResponse.Builder().webSocketUpgrade(fakeRelay).build()
+            }
+        }
+        server.start()
+        toClose.add {
+            fakeRelay.clientSockets.forEach { runCatching { it.close(1000, "close") } }
+            server.close()
+        }
+
+        val relayUrl = "ws://${server.hostName}:${server.port}/"
+        val nodeA = TestNode("NodeA", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+        val nodeB = TestNode("NodeB", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+
+        val offer = nodeA.pairing.offer(sendKey = false)
+        fakeRelay.awaitSubscription("pair-offer").await()
+
+        // Claim the code on node A's coordinator
+        val coordinator = nodeA.pairing.getCoordinator(offer.code.secret)
+        coordinator.tryBind("earlier-handshake")
+
+        val unreachableCode = offer.code.copy(lan = emptyList(), port = 0, relays = listOf(relayUrl))
+
+        val start = System.currentTimeMillis()
+        try {
+            nodeB.pairing.join(unreachableCode.encode(), sendKey = false)
+            fail("Expected PairingException(USED)")
+        } catch (e: PairingException) {
+            assertEquals(PairingError.USED, e.error)
+        }
+        val elapsed = System.currentTimeMillis() - start
+        assertTrue("Expected used code to fail well before deadline, but took ${elapsed}ms", elapsed < 5_000)
     }
 
     @Test
