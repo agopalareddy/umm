@@ -173,7 +173,8 @@ jobs:
       - name: Checksum release assets
         run: |
           cd dist
-          sha256sum umm-* io.github.agopalareddy.Umm.flatpak > SHA256SUMS.txt
+          # umm-* covers the APK, AAB, tarball and rpm; the deb is named umm_<version>_amd64.deb.
+          sha256sum umm-* umm_* io.github.agopalareddy.Umm.flatpak > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Upload release artifact
