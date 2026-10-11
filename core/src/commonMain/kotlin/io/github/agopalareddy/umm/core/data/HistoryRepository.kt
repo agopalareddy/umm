@@ -1,14 +1,18 @@
 package io.github.agopalareddy.umm.core.data
 
+import androidx.room.immediateTransaction
+import androidx.room.useWriterConnection
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
+import io.github.agopalareddy.umm.core.sync.SyncMeta
 import java.io.File
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 /** Recent dictations. Audio is kept only while a dictation still needs a retry. */
-class HistoryRepository(db: UmmDatabase, private val clock: () -> Long = System::currentTimeMillis) {
+class HistoryRepository(private val db: UmmDatabase, private val clock: () -> Long = System::currentTimeMillis) {
     private val dao = db.historyDao()
+    private val meta = SyncMeta(db)
 
     fun observeRecent(): Flow<List<HistoryItem>> = dao.observeRecent(MAX_ITEMS).map { list -> list.map { it.toItem() } }
 
@@ -16,23 +20,34 @@ class HistoryRepository(db: UmmDatabase, private val clock: () -> Long = System:
 
     suspend fun createPending(
         packageName: String,
+        appLabel: String? = null,
         level: CleanupLevel,
         script: ScriptPreference,
         language: String,
         audioPath: String,
     ): Long {
-        val id = dao.insert(
-            HistoryEntity(
-                createdAt = clock(),
-                packageName = packageName,
-                level = level,
-                script = script,
-                language = language,
-                status = HistoryStatus.PENDING,
-                audioPath = audioPath,
-            ),
-        )
-        removeWithAudio(dao.beyond(MAX_ITEMS))
+        val origin = meta.deviceId()
+        val id = db.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                val insertedId = dao.insert(
+                    HistoryEntity(
+                        originDevice = origin,
+                        originId = 0,
+                        appLabel = appLabel,
+                        createdAt = clock(),
+                        packageName = packageName,
+                        level = level,
+                        script = script,
+                        language = language,
+                        status = HistoryStatus.PENDING,
+                        audioPath = audioPath,
+                    ),
+                )
+                dao.setOriginId(insertedId, insertedId)
+                insertedId
+            }
+        }
+        removeWithAudio(dao.beyond(origin, MAX_ITEMS))
         return id
     }
 

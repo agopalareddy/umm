@@ -8,5 +8,6 @@ import androidx.sqlite.driver.AndroidSQLiteDriver
 fun buildUmmDatabase(context: Context): UmmDatabase =
     Room.databaseBuilder<UmmDatabase>(context, context.getDatabasePath("umm.db").absolutePath)
         .setDriver(AndroidSQLiteDriver())
+        .addMigrations(MIGRATION_2_3)
         .addCallback(SeedCallback)
         .build()

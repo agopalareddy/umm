@@ -26,7 +26,7 @@ class HistoryRepositoryTest {
     private fun audio(): File = tmp.newFile().apply { writeBytes(byteArrayOf(1, 2, 3)) }
 
     private suspend fun create(file: File = audio()) =
-        repo.createPending("com.whatsapp", CleanupLevel.LIGHT, ScriptPreference.LATIN, "auto", file.path)
+        repo.createPending("com.whatsapp", null, CleanupLevel.LIGHT, ScriptPreference.LATIN, "auto", file.path)
 
     @Test fun keepsOnly50() = runTest {
         val files = List(55) { audio() }
@@ -109,5 +109,39 @@ class HistoryRepositoryTest {
         repo.clearAll()
         assertEquals(0, repo.observeRecent().first().size)
         assertFalse(b.exists())
+    }
+
+    @Test fun keepsFiftyPerOrigin() = runTest {
+        val files = List(50) { audio() }
+        files.forEach { create(it) }
+
+        // Insert 10 rows for origin "B"
+        repeat(10) { i ->
+            db.historyDao().insert(
+                HistoryEntity(
+                    originDevice = "B",
+                    originId = i.toLong() + 1,
+                    createdAt = now + i,
+                    packageName = "com.other.app",
+                    level = CleanupLevel.LIGHT,
+                    script = ScriptPreference.LATIN,
+                    language = "auto",
+                    status = HistoryStatus.DONE,
+                ),
+            )
+        }
+
+        // Own 51st insert
+        val own51st = audio()
+        val own51stId = create(own51st)
+
+        val all = db.historyDao().all()
+        val ownRows = all.filter { it.originDevice != "B" }
+        val bRows = all.filter { it.originDevice == "B" }
+
+        assertEquals(50, ownRows.size)
+        assertEquals(10, bRows.size)
+        assertTrue(ownRows.any { it.id == own51stId })
+        assertFalse(files.first().exists()) // oldest own audio deleted
     }
 }

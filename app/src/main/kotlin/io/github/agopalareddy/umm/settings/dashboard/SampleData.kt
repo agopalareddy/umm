@@ -38,6 +38,7 @@ object SampleData {
     /** Writes through its own ungated repository, so it works while recording is off. Same [nowMs] and zone give the same rows. */
     suspend fun seed(db: UmmDatabase, nowMs: Long, zone: ZoneId = ZoneId.systemDefault()) {
         val repo = StatsRepository(db)
+        val deviceId = io.github.agopalareddy.umm.core.sync.SyncMeta(db).deviceId()
         val random = Random(42)
         val today = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
         // A few quiet days, so the streak and the calendar aren't a solid block.
@@ -56,7 +57,9 @@ object SampleData {
             val cost = 0.0004 + audioMs / 60_000.0 * 0.004 + if (cleanup != null) words * 0.00001 else 0.0
             repo.record(
                 StatsEntry(
+                    originDevice = deviceId,
                     historyId = FIRST_ID + i,
+                    appLabel = null,
                     createdAt = at,
                     packageName = weighted(random, apps),
                     level = level,

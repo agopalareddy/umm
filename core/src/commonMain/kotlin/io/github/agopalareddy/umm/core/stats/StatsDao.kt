@@ -10,8 +10,8 @@ internal interface StatsDao {
     @Upsert
     suspend fun upsert(entry: StatsEntry)
 
-    @Query("SELECT * FROM dictation_stats WHERE historyId = :historyId")
-    suspend fun get(historyId: Long): StatsEntry?
+    @Query("SELECT * FROM dictation_stats WHERE originDevice = :originDevice AND historyId = :historyId")
+    suspend fun get(originDevice: String, historyId: Long): StatsEntry?
 
     @Query("SELECT * FROM dictation_stats ORDER BY createdAt")
     suspend fun all(): List<StatsEntry>
@@ -22,6 +22,6 @@ internal interface StatsDao {
     @Query("DELETE FROM dictation_stats")
     suspend fun deleteAll()
 
-    @Query("DELETE FROM dictation_stats WHERE historyId >= :firstId")
-    suspend fun deleteFromHistoryId(firstId: Long)
+    @Query("DELETE FROM dictation_stats WHERE originDevice = :originDevice AND historyId >= :firstId")
+    suspend fun deleteFromHistoryId(originDevice: String, firstId: Long)
 }

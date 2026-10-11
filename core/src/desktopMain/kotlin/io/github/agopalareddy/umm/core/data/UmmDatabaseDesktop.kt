@@ -17,5 +17,6 @@ fun inMemoryUmmDatabase(): UmmDatabase = Room.inMemoryDatabaseBuilder<UmmDatabas
 private fun RoomDatabase.Builder<UmmDatabase>.configured(): UmmDatabase =
     setDriver(BundledSQLiteDriver())
         .setQueryCoroutineContext(Dispatchers.IO)
+        .addMigrations(MIGRATION_2_3)
         .addCallback(SeedCallback)
         .build()

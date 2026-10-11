@@ -27,7 +27,7 @@ class PeriodStatsTest {
         cost: Double? = 0.001,
         ok: Boolean = true,
         createdAt: Long = at(day),
-    ) = StatsEntry(id, createdAt, "com.whatsapp", CleanupLevel.LIGHT, rawWords = words + fillers, cleanWords = words,
+    ) = StatsEntry("dev", id, null, createdAt, "com.whatsapp", CleanupLevel.LIGHT, rawWords = words + fillers, cleanWords = words,
         fillerWords = fillers, audioMs = audioMs, latencyMs = latencyMs, costUsd = cost, sttModel = "stt",
         cleanupModel = "chat", succeeded = ok)
 

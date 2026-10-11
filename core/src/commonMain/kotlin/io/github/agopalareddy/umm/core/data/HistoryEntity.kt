@@ -9,6 +9,9 @@ enum class HistoryStatus { PENDING, DONE, CLEANUP_FAILED, FAILED }
 
 data class HistoryItem(
     val id: Long,
+    val originDevice: String,
+    val originId: Long,
+    val appLabel: String?,
     val createdAt: Long,
     val packageName: String,
     val level: CleanupLevel,
@@ -22,9 +25,17 @@ data class HistoryItem(
     val error: String?,
 )
 
-@Entity(tableName = "history")
+@Entity(
+    tableName = "history",
+    indices = [
+        androidx.room.Index(value = ["originDevice", "originId"], unique = true),
+    ],
+)
 internal data class HistoryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val originDevice: String,
+    val originId: Long = 0,
+    val appLabel: String? = null,
     val createdAt: Long,
     val packageName: String,
     val level: CleanupLevel,
@@ -36,5 +47,20 @@ internal data class HistoryEntity(
     val audioPath: String? = null,
     val error: String? = null,
 ) {
-    fun toItem() = HistoryItem(id, createdAt, packageName, level, script, language, rawText, cleanText, status, audioPath, error)
+    fun toItem() = HistoryItem(
+        id = id,
+        originDevice = originDevice,
+        originId = originId,
+        appLabel = appLabel,
+        createdAt = createdAt,
+        packageName = packageName,
+        level = level,
+        script = script,
+        language = language,
+        rawText = rawText,
+        cleanText = cleanText,
+        status = status,
+        audioPath = audioPath,
+        error = error,
+    )
 }

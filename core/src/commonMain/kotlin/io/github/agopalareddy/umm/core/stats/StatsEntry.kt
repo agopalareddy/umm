@@ -1,13 +1,22 @@
 package io.github.agopalareddy.umm.core.stats
 
 import androidx.room.Entity
-import androidx.room.PrimaryKey
+import androidx.room.Index
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 
 /** One dictation's numbers. Kept for the lifetime of the install, unlike the 50-item history. */
-@Entity(tableName = "dictation_stats")
+@Entity(
+    tableName = "dictation_stats",
+    primaryKeys = ["originDevice", "historyId"],
+    indices = [
+        Index("originDevice"),
+        Index("createdAt"),
+    ],
+)
 data class StatsEntry(
-    @PrimaryKey val historyId: Long,
+    val originDevice: String,
+    val historyId: Long,
+    val appLabel: String? = null,
     val createdAt: Long,
     val packageName: String,
     val level: CleanupLevel,

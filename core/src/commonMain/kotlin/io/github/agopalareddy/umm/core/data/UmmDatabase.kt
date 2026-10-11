@@ -9,10 +9,27 @@ import androidx.sqlite.SQLiteConnection
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
 import io.github.agopalareddy.umm.core.stats.StatsDao
 import io.github.agopalareddy.umm.core.stats.StatsEntry
+import io.github.agopalareddy.umm.core.sync.SyncClearEntity
+import io.github.agopalareddy.umm.core.sync.SyncDao
+import io.github.agopalareddy.umm.core.sync.SyncMeta
+import io.github.agopalareddy.umm.core.sync.SyncMetaEntity
+import io.github.agopalareddy.umm.core.sync.SyncOpEntity
+import io.github.agopalareddy.umm.core.sync.SyncPeerEntity
+import io.github.agopalareddy.umm.core.sync.SyncSettingsHlcEntity
 
 @Database(
-    entities = [CategoryEntity::class, AppAssignmentEntity::class, HistoryEntity::class, StatsEntry::class],
-    version = 2,
+    entities = [
+        CategoryEntity::class,
+        AppAssignmentEntity::class,
+        HistoryEntity::class,
+        StatsEntry::class,
+        SyncMetaEntity::class,
+        SyncOpEntity::class,
+        SyncPeerEntity::class,
+        SyncSettingsHlcEntity::class,
+        SyncClearEntity::class,
+    ],
+    version = 3,
     exportSchema = true,
     autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
@@ -21,6 +38,7 @@ abstract class UmmDatabase : RoomDatabase() {
     internal abstract fun categoryDao(): CategoryDao
     internal abstract fun historyDao(): HistoryDao
     internal abstract fun statsDao(): StatsDao
+    internal abstract fun syncDao(): SyncDao
 }
 
 /** Room's KSP processor generates the `actual` for each target. */
@@ -46,6 +64,12 @@ internal object SeedCallback : RoomDatabase.Callback() {
                 it.bindText(2, category.name)
                 it.step()
             }
+        }
+        val deviceId = SyncMeta.generateDeviceId()
+        connection.prepare("INSERT INTO sync_meta (key, value) VALUES (?, ?)").use {
+            it.bindText(1, SyncMeta.KEY_DEVICE_ID)
+            it.bindText(2, deviceId)
+            it.step()
         }
     }
 }

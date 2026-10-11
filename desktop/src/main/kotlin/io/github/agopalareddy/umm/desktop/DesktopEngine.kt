@@ -171,6 +171,7 @@ class DesktopEngine(
             script = style.script,
             language = LanguageChoice.decode(settings.defaultLanguage),
             silenceTimeoutSec = settings.silenceTimeoutSec,
+            appLabel = apps.label(packageName),
         )
     }
 

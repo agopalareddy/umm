@@ -16,7 +16,7 @@ class DashboardStatsTest {
         LocalDate.parse(day).atTime(hour, 0).atZone(zone).toInstant().toEpochMilli()
 
     private fun entry(id: Long, day: String, ok: Boolean = true) =
-        StatsEntry(id, at(day), "com.whatsapp", CleanupLevel.LIGHT, rawWords = 11, cleanWords = 10, fillerWords = 1,
+        StatsEntry("dev", id, null, at(day), "com.whatsapp", CleanupLevel.LIGHT, rawWords = 11, cleanWords = 10, fillerWords = 1,
             audioMs = 5_000, latencyMs = if (ok) 1_000 else null, costUsd = 0.001, sttModel = "stt",
             cleanupModel = "chat", succeeded = ok)
 
