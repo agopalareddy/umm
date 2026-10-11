@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.SerialName
@@ -52,6 +54,77 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+
+internal enum class HandshakePhase {
+    IDLE,
+    BOUND,
+    COMMITTING,
+    DONE,
+}
+
+internal class PairingCodeCoordinator(
+    private val secret: String,
+    private val isSecretUsed: (String) -> Boolean,
+    private val markSecretUsed: (String) -> Unit,
+) {
+    val mutex = Mutex()
+    var phase: HandshakePhase = HandshakePhase.IDLE
+        private set
+    var currentHandshakeId: String? = null
+        private set
+
+    suspend fun tryBind(handshakeId: String): Boolean = mutex.withLock {
+        if (isSecretUsed(secret)) return false
+        if (phase != HandshakePhase.IDLE) return false
+        phase = HandshakePhase.BOUND
+        currentHandshakeId = handshakeId
+        true
+    }
+
+    suspend fun holdsClaim(handshakeId: String): Boolean = mutex.withLock {
+        (phase == HandshakePhase.BOUND || phase == HandshakePhase.COMMITTING) && currentHandshakeId == handshakeId
+    }
+
+    suspend fun onDeadlineExpiry(handshakeId: String): Boolean = mutex.withLock {
+        if (phase == HandshakePhase.BOUND && currentHandshakeId == handshakeId) {
+            phase = HandshakePhase.IDLE
+            currentHandshakeId = null
+            true
+        } else {
+            false
+        }
+    }
+
+    suspend fun release(handshakeId: String) = mutex.withLock {
+        if (phase == HandshakePhase.BOUND && currentHandshakeId == handshakeId) {
+            phase = HandshakePhase.IDLE
+            currentHandshakeId = null
+        }
+    }
+
+    suspend fun saveAndCommit(
+        handshakeId: String,
+        preSaveHook: (suspend () -> Unit)? = null,
+        saveAction: suspend () -> Unit,
+    ): Boolean = mutex.withLock {
+        if (phase != HandshakePhase.BOUND || currentHandshakeId != handshakeId) {
+            return false
+        }
+        phase = HandshakePhase.COMMITTING
+        try {
+            preSaveHook?.invoke()
+            saveAction()
+            phase = HandshakePhase.DONE
+            currentHandshakeId = null
+            markSecretUsed(secret)
+            true
+        } catch (e: Throwable) {
+            phase = HandshakePhase.IDLE
+            currentHandshakeId = null
+            throw e
+        }
+    }
+}
 
 data class PairedDevice(val name: String, val keyReceived: Boolean)
 
@@ -119,6 +192,7 @@ class Pairing(
     val connectTimeoutMs: Int = 5_000,
     val readTimeoutMs: Int = 15_000,
     val handshakeDeadlineMs: Long = 30_000L,
+    internal var preSaveHook: (suspend () -> Unit)? = null,
 ) {
     private val scope: CoroutineScope get() = relay.scope
 
@@ -205,7 +279,8 @@ class Pairing(
     suspend fun join(code: String, sendKey: Boolean): PairedDevice = withContext(Dispatchers.IO) {
         val pairingCode = PairingCode.decode(code, now())
         val handshakeId = UUID.randomUUID().toString()
-        if (!tryClaim(pairingCode.secret, handshakeId)) {
+        val coordinator = getCoordinator(pairingCode.secret)
+        if (!coordinator.tryBind(handshakeId)) {
             throw PairingException(PairingError.USED)
         }
 
@@ -251,7 +326,7 @@ class Pairing(
             throw PairingException(PairingError.UNREACHABLE, "Unable to reach peer over LAN or relay")
         } finally {
             if (!claimCommitted) {
-                releaseClaim(pairingCode.secret, handshakeId)
+                getCoordinator(pairingCode.secret).release(handshakeId)
             }
         }
     }
@@ -281,7 +356,8 @@ class Pairing(
 
                 val hid = UUID.randomUUID().toString()
                 handshakeId = hid
-                if (!tryClaim(code.secret, hid)) {
+                val coordinator = getCoordinator(code.secret)
+                if (!coordinator.tryBind(hid)) {
                     val err = PairMsg.Error(PairingError.USED)
                     runCatching {
                         FrameCodec.write(output, json.encodeToString(PairMsg.serializer(), err).encodeToByteArray())
@@ -305,6 +381,7 @@ class Pairing(
                     platform = hello.platform,
                 )
                 if (!verifyHmac(k, expectedTranscript, hello.hmac)) {
+                    coordinator.release(hid)
                     val err = PairMsg.Error(PairingError.WRONG_SECRET)
                     FrameCodec.write(output, json.encodeToString(PairMsg.serializer(), err).encodeToByteArray())
                     return@withTimeout
@@ -333,10 +410,11 @@ class Pairing(
                     }
 
                     val payload = openPayload(k, welcome.sealedPayload)
-                    check(holdsClaim(code.secret, hid))
-                    group.save(payload.group)
+                    val saved = coordinator.saveAndCommit(hid, preSaveHook) {
+                        group.save(payload.group)
+                    }
+                    if (!saved) return@withTimeout
                     claimCommitted = true
-                    commitClaim(code.secret, hid)
 
                     val keyRecv = if (payload.apiKey != null) {
                         apiKey.set(payload.apiKey)
@@ -394,10 +472,11 @@ class Pairing(
                     val ackBytes = FrameCodec.read(input)
                     val ack = json.decodeFromString(PairMsg.serializer(), ackBytes.decodeToString())
                     if (ack is PairMsg.Ack) {
-                        check(holdsClaim(code.secret, hid))
-                        group.save(finalGroup)
+                        val saved = coordinator.saveAndCommit(hid, preSaveHook) {
+                            group.save(finalGroup)
+                        }
+                        if (!saved) return@withTimeout
                         claimCommitted = true
-                        commitClaim(code.secret, hid)
 
                         if (completed.compareAndSet(false, true)) {
                             deferred.complete(PairedDevice(name = hello.name, keyReceived = false))
@@ -409,7 +488,7 @@ class Pairing(
         } catch (_: Exception) {
         } finally {
             if (!claimCommitted && handshakeId != null) {
-                releaseClaim(code.secret, handshakeId)
+                getCoordinator(code.secret).release(handshakeId)
             }
             runCatching { socket.close() }
         }
@@ -479,9 +558,11 @@ class Pairing(
                         if (reply.sealedWelcome != null) {
                             // Offerer sent group
                             val payload = openPayload(k, reply.sealedWelcome)
-                            check(holdsClaim(code.secret, handshakeId))
-                            group.save(payload.group)
-                            commitClaim(code.secret, handshakeId)
+                            val coordinator = getCoordinator(code.secret)
+                            val saved = coordinator.saveAndCommit(handshakeId, preSaveHook) {
+                                group.save(payload.group)
+                            }
+                            if (!saved) throw PairingException(PairingError.UNREACHABLE, "Handshake expired")
 
                             val keyRecv = if (payload.apiKey != null) {
                                 apiKey.set(payload.apiKey)
@@ -514,9 +595,11 @@ class Pairing(
                             val ack = json.decodeFromString(PairMsg.serializer(), ackBytes.decodeToString())
                             if (ack !is PairMsg.Ack) throw IOException("Expected Ack")
 
-                            check(holdsClaim(code.secret, handshakeId))
-                            group.save(updatedGroup)
-                            commitClaim(code.secret, handshakeId)
+                            val coordinator = getCoordinator(code.secret)
+                            val saved = coordinator.saveAndCommit(handshakeId, preSaveHook) {
+                                group.save(updatedGroup)
+                            }
+                            if (!saved) throw PairingException(PairingError.UNREACHABLE, "Handshake expired")
                             return@withTimeout PairedDevice(name = code.name, keyReceived = false)
                         }
                     }
@@ -567,13 +650,15 @@ class Pairing(
 
                 if (msg is PairMsg.Welcome) {
                     if (boundPeerPubKey != null && event.pubkey.equals(boundPeerPubKey, ignoreCase = true) && boundSessionKey != null && boundHandshakeId != null) {
-                        handshakeTimerJob?.cancel()
                         val hid = boundHandshakeId!!
                         val sessionKey = boundSessionKey!!
-                        check(holdsClaim(code.secret, hid))
+                        val coordinator = getCoordinator(code.secret)
                         val payload = openPayload(sessionKey, msg.sealedPayload)
-                        group.save(payload.group)
-                        commitClaim(code.secret, hid)
+                        val saved = coordinator.saveAndCommit(hid, preSaveHook) {
+                            group.save(payload.group)
+                        }
+                        if (!saved) return@collect
+                        handshakeTimerJob?.cancel()
                         boundHandshakeId = null
                         boundPeerPubKey = null
                         boundPeerName = null
@@ -610,8 +695,9 @@ class Pairing(
                         return@collect
                     }
 
+                    val coordinator = getCoordinator(code.secret)
                     val handshakeId = UUID.randomUUID().toString()
-                    if (!tryClaim(code.secret, handshakeId)) {
+                    if (!coordinator.tryBind(handshakeId)) {
                         val errEvent = NostrEvent.sign(
                             keys = group.device,
                             kind = KIND_PAIRING,
@@ -639,7 +725,7 @@ class Pairing(
                         platform = msg.platform,
                     )
                     if (!verifyHmac(k, expectedTranscript, msg.hmac)) {
-                        releaseClaim(code.secret, handshakeId)
+                        coordinator.release(handshakeId)
                         val errEvent = NostrEvent.sign(
                             keys = group.device,
                             kind = KIND_PAIRING,
@@ -682,11 +768,12 @@ class Pairing(
                         handshakeTimerJob = scope.launch {
                             delay(handshakeDeadlineMs)
                             if (!completed.get() && boundHandshakeId == handshakeId) {
-                                releaseClaim(code.secret, handshakeId)
-                                boundPeerPubKey = null
-                                boundPeerName = null
-                                boundSessionKey = null
-                                boundHandshakeId = null
+                                if (coordinator.onDeadlineExpiry(handshakeId)) {
+                                    boundPeerPubKey = null
+                                    boundPeerName = null
+                                    boundSessionKey = null
+                                    boundHandshakeId = null
+                                }
                             }
                         }
                     } else {
@@ -735,16 +822,17 @@ class Pairing(
                         )
                         client.publish(confirmEvent)
 
+                        val coordinator = getCoordinator(code.secret)
                         try {
-                            check(holdsClaim(code.secret, handshakeId))
-                            group.save(finalGroup)
-                            commitClaim(code.secret, handshakeId)
-                            if (completed.compareAndSet(false, true)) {
+                            val saved = coordinator.saveAndCommit(handshakeId, preSaveHook) {
+                                group.save(finalGroup)
+                            }
+                            if (saved && completed.compareAndSet(false, true)) {
                                 deferred.complete(PairedDevice(name = msg.name, keyReceived = false))
                                 runCatching { server?.close() }
                             }
                         } catch (e: Throwable) {
-                            releaseClaim(code.secret, handshakeId)
+                            coordinator.release(handshakeId)
                             throw e
                         }
                     }
@@ -753,7 +841,7 @@ class Pairing(
         } catch (_: Exception) {
         } finally {
             handshakeTimerJob?.cancel()
-            boundHandshakeId?.let { releaseClaim(code.secret, it) }
+            boundHandshakeId?.let { getCoordinator(code.secret).release(it) }
             runCatching { client.close() }
         }
     }
@@ -839,10 +927,12 @@ class Pairing(
                                 throw PairingException(PairingError.WRONG_SECRET)
                             }
                             if (msg.sealedWelcome != null) {
-                                check(holdsClaim(code.secret, handshakeId))
+                                val coordinator = getCoordinator(code.secret)
                                 val payload = openPayload(k, msg.sealedWelcome)
-                                group.save(payload.group)
-                                commitClaim(code.secret, handshakeId)
+                                val saved = coordinator.saveAndCommit(handshakeId, preSaveHook) {
+                                    group.save(payload.group)
+                                }
+                                if (!saved) return@collect
 
                                 val keyRecv = if (payload.apiKey != null) {
                                     apiKey.set(payload.apiKey)
@@ -890,9 +980,11 @@ class Pairing(
                         is PairMsg.Ack -> {
                             val updated = pendingUpdatedGroup
                             if (updated != null) {
-                                check(holdsClaim(code.secret, handshakeId))
-                                group.save(updated)
-                                commitClaim(code.secret, handshakeId)
+                                val coordinator = getCoordinator(code.secret)
+                                val saved = coordinator.saveAndCommit(handshakeId, preSaveHook) {
+                                    group.save(updated)
+                                }
+                                if (!saved) return@collect
                                 resultDevice = PairedDevice(name = code.name, keyReceived = false)
                                 throw CancellationException("Done")
                             }
@@ -970,39 +1062,28 @@ class Pairing(
         return ips
     }
 
-    private val claimLock = Any()
-    private val activeClaims = mutableMapOf<String, String>()
+    private val coordinators = ConcurrentHashMap<String, PairingCodeCoordinator>()
 
-    internal fun tryClaim(secret: String, handshakeId: String): Boolean {
-        synchronized(claimLock) {
-            if (isSecretUsed(secret)) return false
-            if (secret in activeClaims) return false
-            activeClaims[secret] = handshakeId
-            return true
+    internal fun getCoordinator(secret: String): PairingCodeCoordinator {
+        return coordinators.computeIfAbsent(secret) {
+            PairingCodeCoordinator(it, ::isSecretUsed, ::markSecretUsed)
         }
     }
 
-    internal fun holdsClaim(secret: String, handshakeId: String): Boolean {
-        synchronized(claimLock) {
-            return activeClaims[secret] == handshakeId
-        }
+    internal fun tryClaim(secret: String, handshakeId: String): Boolean = runBlocking {
+        getCoordinator(secret).tryBind(handshakeId)
     }
 
-    internal fun releaseClaim(secret: String, handshakeId: String) {
-        synchronized(claimLock) {
-            if (activeClaims[secret] == handshakeId) {
-                activeClaims.remove(secret)
-            }
-        }
+    internal fun holdsClaim(secret: String, handshakeId: String): Boolean = runBlocking {
+        getCoordinator(secret).holdsClaim(handshakeId)
     }
 
-    internal fun commitClaim(secret: String, handshakeId: String) {
-        synchronized(claimLock) {
-            if (activeClaims[secret] == handshakeId) {
-                activeClaims.remove(secret)
-                markSecretUsed(secret)
-            }
-        }
+    internal fun releaseClaim(secret: String, handshakeId: String) = runBlocking {
+        getCoordinator(secret).release(handshakeId)
+    }
+
+    internal fun commitClaim(secret: String, handshakeId: String) = runBlocking {
+        getCoordinator(secret).saveAndCommit(handshakeId) {}
     }
 
     private fun isSecretUsed(secret: String): Boolean {
