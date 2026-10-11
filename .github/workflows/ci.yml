@@ -25,7 +25,7 @@ jobs:
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
       - uses: gradle/actions/setup-gradle@v6
       # AGP downloads the missing compile SDK itself once the licenses are accepted.
       - name: Accept Android SDK licenses
@@ -37,7 +37,7 @@ jobs:
           ./gradlew :desktop:createDistributable --console=plain
           desktop/build/compose/binaries/main/app/Umm/bin/Umm --self-check
       - name: Build debug APK
-        run: ./gradlew assembleDebug --console=plain
+        run: ./gradlew assembleDebug :app:check16KbAlignment --console=plain
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v7
@@ -64,7 +64,7 @@ jobs:
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
       - uses: gradle/actions/setup-gradle@v6
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null

@@ -191,7 +191,7 @@ The full [privacy policy](https://agopalareddy.github.io/umm/privacy/) is short.
 
 ## Building from source
 
-You need JDK 17 and the Android SDK.
+You need JDK 21 and the Android SDK.
 
 ```bash
 ./gradlew assembleDebug

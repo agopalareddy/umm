@@ -1,4 +1,6 @@
+import java.io.IOException
 import java.util.Properties
+import java.util.zip.ZipFile
 
 plugins {
     alias(libs.plugins.android.application)
@@ -96,8 +98,8 @@ android {
         getByName("main").assets.srcDir("../models")
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true
@@ -105,7 +107,7 @@ android {
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
 }
 
 dependencies {
@@ -134,4 +136,48 @@ dependencies {
     testImplementation(libs.androidx.work.testing)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.secp256k1.jni.jvm)
+}
+
+// Newer Android devices can run with 16 KB memory pages, where a 64-bit native library aligned to 4 KB does not load.
+tasks.register("check16KbAlignment") {
+    group = "verification"
+    description = "Fails when a 64-bit native library in the debug APK is not aligned for 16 KB pages."
+    dependsOn("assembleDebug")
+    val apk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
+    val scratch = layout.buildDirectory.dir("check16Kb")
+    doLast {
+        val dir = scratch.get().asFile.apply {
+            deleteRecursively()
+            mkdirs()
+        }
+        val tooSmall = mutableListOf<String>()
+        var checked = 0
+        ZipFile(apk.get().asFile).use { zip ->
+            val libraries = zip.entries().asSequence().filter { it.name.startsWith("lib/") && it.name.endsWith(".so") }
+            for (entry in libraries) {
+                val abi = entry.name.split('/')[1]
+                if (abi != "arm64-v8a" && abi != "x86_64") continue
+                val file = File(dir, entry.name.replace('/', '_'))
+                zip.getInputStream(entry).use { input -> file.outputStream().use { input.copyTo(it) } }
+                val process = try {
+                    ProcessBuilder("readelf", "-lW", file.path).redirectErrorStream(true).start()
+                } catch (e: IOException) {
+                    throw GradleException("check16KbAlignment needs readelf (binutils) on the PATH", e)
+                }
+                val output = process.inputStream.bufferedReader().readText()
+                if (process.waitFor() != 0) throw GradleException("readelf failed on ${entry.name}: $output")
+                val alignments = output.lineSequence()
+                    .filter { it.trimStart().startsWith("LOAD") }
+                    .map { it.trim().substringAfterLast(' ').removePrefix("0x").toLong(16) }
+                    .toList()
+                if (alignments.isEmpty()) throw GradleException("no LOAD segments found in ${entry.name}")
+                val smallest = alignments.min()
+                println("${entry.name}: LOAD alignment 0x${smallest.toString(16)}")
+                checked++
+                if (smallest < 0x4000) tooSmall += "${entry.name} (0x${smallest.toString(16)})"
+            }
+        }
+        if (tooSmall.isNotEmpty()) throw GradleException("not aligned for 16 KB pages: $tooSmall")
+        println("$checked native libraries checked")
+    }
 }

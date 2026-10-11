@@ -7,7 +7,7 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
     // Room generates an `actual object` for UmmDatabaseConstructor on each target.
     compilerOptions { freeCompilerArgs.add("-Xexpect-actual-classes") }
 
