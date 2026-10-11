@@ -89,7 +89,7 @@ class DesktopGraph(
         val store = keyring ?: InMemoryKeyValueStore()
         GroupStore(store, PassThroughCipher)
     }
-    val opLog by lazy { OpLog(database, syncMeta, hybridClock, active = { groupStore.state.value != null }) }
+    val opLog by lazy { OpLog(database, syncMeta, hybridClock, active = { groupStore.state.value != null }, onRecorded = { syncEngine.onLocalChange() }) }
     val categories by lazy { CategoryRepository(database, opLog) }
     val history by lazy { HistoryRepository(database, clock, opLog) }
     val settings by lazy { SettingsRepository(buildSettingsStore(File(paths.configDir, "settings.preferences_pb")), opLog) }

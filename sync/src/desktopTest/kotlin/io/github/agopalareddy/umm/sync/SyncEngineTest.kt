@@ -9,6 +9,7 @@ import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
 import io.github.agopalareddy.umm.core.data.Category
 import io.github.agopalareddy.umm.core.data.SettingsRepository
 import io.github.agopalareddy.umm.core.data.inMemoryUmmDatabase
+import io.github.agopalareddy.umm.core.sync.DataKind
 import io.github.agopalareddy.umm.core.sync.HybridClock
 import io.github.agopalareddy.umm.core.sync.Member
 import io.github.agopalareddy.umm.core.sync.OpApplier
@@ -26,7 +27,11 @@ import io.github.agopalareddy.umm.sync.lan.LanPeer
 import io.github.agopalareddy.umm.sync.lan.LanTransport
 import io.github.agopalareddy.umm.sync.pair.Pairing
 import io.github.agopalareddy.umm.sync.relay.RelayTransport
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -151,15 +156,16 @@ class SyncEngineTest {
         val scope: CoroutineScope,
         tmpFolder: File,
         var currentTime: Long = 1_000_000L,
+        var isLogActive: (() -> Boolean) = { true },
     ) {
-        val db = inMemoryUmmDatabase()
+        val db = inMemoryUmmDatabase(scope.coroutineContext)
         val meta = SyncMeta(db)
         val clock = HybridClock { currentTime }
         val dataStore = PreferenceDataStoreFactory.create { File(tmpFolder, "test.preferences_pb") }
         val store = FakeKeyValueStore()
         val groupStore = GroupStore(store, FakeCipher())
         val apiKeyStore = ApiKeyStore(store, FakeCipher())
-        val log = OpLog(db, meta, clock, active = { true })
+        val log = OpLog(db, meta, clock, active = { isLogActive() })
         val settings = SettingsRepository(dataStore, recorder = log)
         val membership = Membership(groupStore, log, now = { currentTime })
         val applier = OpApplier(db, log, settings, clock, onGroupOp = { membership.onGroupOp(it) })
@@ -409,6 +415,197 @@ class SyncEngineTest {
             assertTrue(env.relay.started)
             assertTrue(env.groupStore.state.value!!.lanEnabled)
             assertTrue(env.groupStore.state.value!!.relayEnabled)
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun recordHistoryDeleteTriggersSyncNowAfterDebounce() = runTest(timeout = 20.seconds) {
+        val env = TestEnv(this, tmp.newFolder())
+        try {
+            val engine = env.engine
+            val myPubkey = env.groupStore.device.publicKey.joinToString("") { "%02x".format(it) }
+            env.groupStore.save(
+                GroupState(
+                    groupId = "grp-1",
+                    key = "key1",
+                    epoch = 0,
+                    previousKey = null,
+                    previousUntil = 0L,
+                    members = listOf(Member("d1", "My Device", "desktop", myPubkey)),
+                ),
+            )
+            engine.start()
+            runCurrent()
+
+            assertEquals(0, env.relay.publishCount)
+
+            env.log.record(SyncOp.HistoryDelete("dev1", 1L))
+            runCurrent()
+            assertEquals(0, env.relay.publishCount)
+
+            advanceTimeBy(2100)
+            assertEquals(1, env.relay.publishCount)
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun recordClearBeforeTriggersSyncNowAfterDebounce() = runTest(timeout = 20.seconds) {
+        val env = TestEnv(this, tmp.newFolder())
+        try {
+            val engine = env.engine
+            val myPubkey = env.groupStore.device.publicKey.joinToString("") { "%02x".format(it) }
+            env.groupStore.save(
+                GroupState(
+                    groupId = "grp-1",
+                    key = "key1",
+                    epoch = 0,
+                    previousKey = null,
+                    previousUntil = 0L,
+                    members = listOf(Member("d1", "My Device", "desktop", myPubkey)),
+                ),
+            )
+            engine.start()
+            runCurrent()
+
+            assertEquals(0, env.relay.publishCount)
+
+            env.log.record(SyncOp.ClearBefore(DataKind.HISTORY, 1000L, null))
+            runCurrent()
+            assertEquals(0, env.relay.publishCount)
+
+            advanceTimeBy(2100)
+            assertEquals(1, env.relay.publishCount)
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun recordSettingSetTriggersSyncNowAfterDebounce() = runTest(timeout = 20.seconds) {
+        val env = TestEnv(this, tmp.newFolder())
+        try {
+            val engine = env.engine
+            val myPubkey = env.groupStore.device.publicKey.joinToString("") { "%02x".format(it) }
+            env.groupStore.save(
+                GroupState(
+                    groupId = "grp-1",
+                    key = "key1",
+                    epoch = 0,
+                    previousKey = null,
+                    previousUntil = 0L,
+                    members = listOf(Member("d1", "My Device", "desktop", myPubkey)),
+                ),
+            )
+            engine.start()
+            runCurrent()
+
+            assertEquals(0, env.relay.publishCount)
+
+            env.log.record(SyncOp.SettingSet("default_level", "POLISHED"))
+            runCurrent()
+            assertEquals(0, env.relay.publishCount)
+
+            advanceTimeBy(2100)
+            assertEquals(1, env.relay.publishCount)
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun tenOpsInBurstLeadToOneSync() = runTest(timeout = 20.seconds) {
+        val env = TestEnv(this, tmp.newFolder())
+        try {
+            val engine = env.engine
+            val myPubkey = env.groupStore.device.publicKey.joinToString("") { "%02x".format(it) }
+            env.groupStore.save(
+                GroupState(
+                    groupId = "grp-1",
+                    key = "key1",
+                    epoch = 0,
+                    previousKey = null,
+                    previousUntil = 0L,
+                    members = listOf(Member("d1", "My Device", "desktop", myPubkey)),
+                ),
+            )
+            engine.start()
+            runCurrent()
+
+            assertEquals(0, env.relay.publishCount)
+
+            for (i in 1..10) {
+                env.log.record(SyncOp.SettingSet("key$i", "val$i"))
+            }
+            runCurrent()
+            assertEquals(0, env.relay.publishCount)
+
+            advanceTimeBy(2100)
+            assertEquals(1, env.relay.publishCount)
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun opAppliedFromPeerLeadsToNoSync() = runTest(timeout = 20.seconds) {
+        val env = TestEnv(this, tmp.newFolder())
+        try {
+            val engine = env.engine
+            val myPubkey = env.groupStore.device.publicKey.joinToString("") { "%02x".format(it) }
+            env.groupStore.save(
+                GroupState(
+                    groupId = "grp-1",
+                    key = "key1",
+                    epoch = 0,
+                    previousKey = null,
+                    previousUntil = 0L,
+                    members = listOf(Member("d1", "My Device", "desktop", myPubkey)),
+                ),
+            )
+            engine.start()
+            runCurrent()
+
+            assertEquals(0, env.relay.publishCount)
+
+            env.applier.apply(
+                listOf(
+                    OpEnvelope(
+                        origin = "peer-device",
+                        seq = 1L,
+                        hlc = 2000L,
+                        op = SyncOp.SettingSet("default_level", "RAW"),
+                    ),
+                ),
+            )
+            runCurrent()
+            advanceTimeBy(5000)
+
+            assertEquals(0, env.relay.publishCount)
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun syncInactiveRecordsNothingAndTriggersNothing() = runTest(timeout = 20.seconds) {
+        val env = TestEnv(this, tmp.newFolder(), isLogActive = { false })
+        try {
+            val engine = env.engine
+            engine.start()
+            runCurrent()
+
+            assertEquals(0, env.relay.publishCount)
+
+            env.log.record(SyncOp.HistoryDelete("dev1", 1L))
+            runCurrent()
+            advanceTimeBy(5000)
+
+            assertEquals(0, env.relay.publishCount)
+            assertTrue(env.log.since(emptyMap()).isEmpty())
         } finally {
             env.close()
         }

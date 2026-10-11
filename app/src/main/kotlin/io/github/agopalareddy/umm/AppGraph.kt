@@ -87,7 +87,7 @@ class AppGraph(
             defaultName = Build.MODEL,
         )
     }
-    val opLog by lazy { OpLog(database, syncMeta, hybridClock, active = { groupStore.state.value != null }) }
+    val opLog by lazy { OpLog(database, syncMeta, hybridClock, active = { groupStore.state.value != null }, onRecorded = { syncEngine.onLocalChange() }) }
     val categories by lazy { CategoryRepository(database, opLog) }
     val history by lazy { HistoryRepository(database, clock, opLog) }
     val settings by lazy { SettingsRepository(app.settingsStore, opLog) }
@@ -234,7 +234,6 @@ class AppGraph(
                             Toast.makeText(app, "Cleanup failed; inserted the raw transcript", Toast.LENGTH_SHORT).show()
                         }
                     }
-                    syncEngine.onLocalChange()
                 }
             }
         }

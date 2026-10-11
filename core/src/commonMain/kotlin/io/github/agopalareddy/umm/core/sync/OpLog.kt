@@ -13,6 +13,7 @@ class OpLog(
     private val meta: SyncMeta,
     private val clock: HybridClock,
     private val active: suspend () -> Boolean,
+    var onRecorded: (() -> Unit)? = null,
 ) : ChangeRecorder {
 
     private val json = Json {
@@ -52,6 +53,7 @@ class OpLog(
                 }
             }
         }
+        onRecorded?.invoke()
     }
 
     suspend fun store(envelope: OpEnvelope): Boolean = db.useWriterConnection { transactor ->

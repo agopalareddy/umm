@@ -63,6 +63,7 @@ class SyncEngine(
     private var lanWatchJob: Job? = null
 
     init {
+        log.onRecorded = { onLocalChange() }
         updateDevices(group.state.value)
     }
 

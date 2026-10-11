@@ -150,10 +150,6 @@ class DesktopEngine(
                 if (listening && !wasListening) sounds.start()
                 if (!listening && wasListening) sounds.stop()
                 wasListening = listening
-
-                if (state is DesktopState.Inserted || state is DesktopState.Copied || state is DesktopState.Failed) {
-                    graph.syncEngine.onLocalChange()
-                }
             }
         }
         bindHotkey()
