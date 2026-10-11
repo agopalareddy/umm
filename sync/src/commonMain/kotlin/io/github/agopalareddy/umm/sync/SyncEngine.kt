@@ -120,6 +120,17 @@ class SyncEngine(
                         _status.value = SyncStatus.Idle(lastSyncTime, lastSyncVia)
                     }
                     updateDevices(st)
+                    // Once there is someone to sync with: what this device had before pairing goes out as changes.
+                    if (st.members.size > 1) {
+                        try {
+                            val recorded = log.recordExistingRows(st.groupId)
+                            if (recorded > 0) syncLog.log("recorded $recorded rows from before pairing as changes")
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            syncLog.log("could not record the rows from before pairing: ${e.message}")
+                        }
+                    }
                 }
             }
         }

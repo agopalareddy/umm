@@ -61,6 +61,24 @@ class OpLog(
         onRecorded?.invoke()
     }
 
+    /**
+     * Records this device's own history and stats rows as changes, once per group. Rows made before the device was
+     * paired have no change in the log, and only changes travel through relays, so without this they would reach
+     * the other devices over Wi-Fi alone. Returns how many rows were recorded.
+     */
+    suspend fun recordExistingRows(groupId: String): Int {
+        if (!active()) return 0
+        val dao = db.syncDao()
+        if (dao.getMeta(KEY_ROWS_RECORDED) == groupId) return 0
+        val origin = meta.deviceId()
+        val history = db.historyDao().all().filter { it.originDevice == origin }.map { it.toSynced() }
+        val stats = db.statsDao().all().map { it.toSynced() }.filter { it.originDevice == origin }
+        history.forEach { record(SyncOp.HistoryUpsert(it)) }
+        stats.forEach { record(SyncOp.StatsUpsert(it)) }
+        dao.putMeta(SyncMetaEntity(KEY_ROWS_RECORDED, groupId))
+        return history.size + stats.size
+    }
+
     suspend fun store(envelope: OpEnvelope): Boolean = db.useWriterConnection { transactor ->
         transactor.immediateTransaction {
             // Marks that were never stored start from the ops held, so they are read before this op is added.
@@ -206,6 +224,7 @@ class OpLog(
 
     private companion object {
         const val KEY_MARKS = "complete_marks"
+        const val KEY_ROWS_RECORDED = "rows_recorded_for_group"
         val markJson = Json
         val markSerializer = MapSerializer(String.serializer(), Long.serializer())
     }

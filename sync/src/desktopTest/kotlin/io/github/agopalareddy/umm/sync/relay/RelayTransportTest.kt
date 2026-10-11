@@ -10,6 +10,7 @@ import io.github.agopalareddy.umm.core.data.HistoryStatus
 import io.github.agopalareddy.umm.core.data.SettingsRepository
 import io.github.agopalareddy.umm.core.data.inMemoryUmmDatabase
 import io.github.agopalareddy.umm.core.stats.StatsRepository
+import io.github.agopalareddy.umm.core.sync.ChangeRecorder
 import io.github.agopalareddy.umm.core.sync.HybridClock
 import io.github.agopalareddy.umm.core.sync.Member
 import io.github.agopalareddy.umm.core.sync.OpApplier
@@ -472,6 +473,43 @@ class RelayTransportTest {
             transportB.handleIncomingEvent(first, state, wsUrl)
             assertEquals(3, deviceB.log.since(emptyMap()).size)
             assertEquals(3L, deviceB.log.highWaterMarks()[deviceA.selfId])
+        }
+    }
+
+    @Test
+    fun rowsFromBeforePairingTravelThroughTheRelay() = runTest(timeout = 30.seconds) {
+        val deviceA = newDevice("DeviceA")
+        val deviceB = newDevice("DeviceB")
+
+        // What B dictated before it was paired: rows with no change in the log.
+        val beforePairing = HistoryRepository(deviceB.db, clock = { 1_700_000_000_000L }, recorder = ChangeRecorder.None)
+        repeat(3) { index ->
+            val id = beforePairing.createPending(
+                packageName = "org.notes",
+                appLabel = "Notes",
+                level = CleanupLevel.POLISHED,
+                script = ScriptPreference.LATIN,
+                language = "en",
+                audioPath = "dummy.wav",
+            )
+            beforePairing.markDone(id, raw = "old $index", clean = "Old $index")
+        }
+        assertEquals(0, deviceB.log.since(emptyMap()).size)
+
+        pair(deviceA, deviceB)
+        deviceA.startedTransport()
+        withContext(Dispatchers.IO) {
+            assertEquals(3, deviceB.log.recordExistingRows("test-group"))
+            assertEquals("the rows are recorded once per group", 0, deviceB.log.recordExistingRows("test-group"))
+            deviceB.transport(httpClient).also { toClose.add { it.stop() } }.publishPending()
+
+            withTimeout(10.seconds) {
+                while (deviceA.history.observeRecent().first().size < 3) delay(50)
+            }
+            assertEquals(
+                setOf("Old 0", "Old 1", "Old 2"),
+                deviceA.history.observeRecent().first().map { it.cleanText }.toSet(),
+            )
         }
     }
 
