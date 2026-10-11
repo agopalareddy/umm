@@ -172,6 +172,9 @@ class DictationControllerTest {
 
     @Before fun setUp() {
         graph = DesktopGraph(XdgPaths(env = emptyMap(), home = tmp.root), emptyMap(), api, recommendationsUrl = UNREACHABLE)
+        // The app starts sync at launch, which loads the device key (and its native library) before any dictation.
+        // Without that the first press here pays for it inside the controller's short start window.
+        graph.groupStore.state.value
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         pipeline = graph.pipeline(audio)
         controller = DictationController(
