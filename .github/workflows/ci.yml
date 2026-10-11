@@ -32,6 +32,10 @@ jobs:
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
       - name: Unit tests
         run: ./gradlew :core:testAndroidHostTest :core:desktopTest :ui:desktopTest :desktop:test :linux:test :app:testDebugUnitTest --console=plain
+      - name: Desktop app image self-check
+        run: |
+          ./gradlew :desktop:createDistributable --console=plain
+          desktop/build/compose/binaries/main/app/Umm/bin/Umm --self-check
       - name: Build debug APK
         run: ./gradlew assembleDebug --console=plain
       - name: Upload test reports
