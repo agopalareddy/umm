@@ -12,7 +12,7 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 
 @OptIn(ExperimentalEncodingApi::class)
 class GroupStore(
-    private val store: KeyValueStore,
+    val store: KeyValueStore,
     private val cipher: SecretCipher,
 ) {
     val device: DeviceKeys = run {

@@ -36,6 +36,7 @@ kotlin {
             implementation(libs.junit)
             implementation(libs.kotlinx.coroutines.test)
             implementation(libs.turbine)
+            implementation(libs.okhttp.mockwebserver)
         }
         getByName("androidHostTest").dependencies {
             implementation(libs.junit)

@@ -11,7 +11,15 @@ data class GroupState(
     val previousKey: String?,
     val previousUntil: Long,
     val members: List<Member>,
-    val relays: List<String>,
+    val relays: List<String> = DEFAULT_RELAYS,
     val lanEnabled: Boolean = true,
     val relayEnabled: Boolean = true,
-)
+) {
+    companion object {
+        val DEFAULT_RELAYS = listOf(
+            "wss://relay.damus.io",
+            "wss://nos.lol",
+            "wss://relay.primal.net",
+        )
+    }
+}
