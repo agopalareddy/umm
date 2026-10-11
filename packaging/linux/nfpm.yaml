@@ -3,18 +3,20 @@ arch: "amd64"
 platform: "linux"
 version: "${VERSION}"
 release: "1"
-maintainer: "agr@agreddy.com"
+maintainer: "Aadarsha Gopala Reddy <agr@agreddy.com>"
 description: "Voice dictation with your own OpenRouter key"
 homepage: "https://github.com/agopalareddy/umm"
 license: "PolyForm-Noncommercial-1.0.0"
 
+# Paths are relative to the repository root, where the Gradle task runs nfpm. nfpm does not expand
+# environment variables in `src`, so the app image and the generated desktop file are named directly.
 contents:
-  - src: "${APP_IMAGE_DIR}"
+  - src: "desktop/build/compose/binaries/main/app/Umm"
     dst: "/opt/umm"
   - src: "/opt/umm/bin/Umm"
     dst: "/usr/bin/umm"
     type: "symlink"
-  - src: "${DESKTOP_FILE}"
+  - src: "desktop/build/packaging/io.github.agopalareddy.Umm.desktop"
     dst: "/usr/share/applications/io.github.agopalareddy.Umm.desktop"
   - src: "packaging/linux/io.github.agopalareddy.Umm.svg"
     dst: "/usr/share/icons/hicolor/scalable/apps/io.github.agopalareddy.Umm.svg"

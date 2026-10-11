@@ -120,7 +120,6 @@ fun registerNfpmPackageTask(packager: String, outputFileName: String, taskName: 
         val distDir = layout.buildDirectory.dir("dist").get().asFile
         val packagingDir = layout.buildDirectory.dir("packaging").get().asFile
         val systemDesktopFile = File(packagingDir, "$appId.desktop")
-        val appImageDir = layout.buildDirectory.dir("compose/binaries/main/app/Umm").get().asFile
 
         doFirst {
             val nfpmFound = runCatching {
@@ -151,8 +150,6 @@ fun registerNfpmPackageTask(packager: String, outputFileName: String, taskName: 
             File(distDir, outputFileName).absolutePath,
         )
         environment("VERSION", appVersionName)
-        environment("APP_IMAGE_DIR", appImageDir.absolutePath)
-        environment("DESKTOP_FILE", systemDesktopFile.absolutePath)
     }
 
 registerNfpmPackageTask("deb", "umm_${appVersionName}_amd64.deb", "packageLinuxDeb")
