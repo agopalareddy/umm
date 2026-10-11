@@ -8,7 +8,7 @@
 [![Android 10+](https://img.shields.io/badge/Android-10%2B-3ddc84)](#dependencies)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg)](https://github.com/RichardLitt/standard-readme)
 
-A voice keyboard for Android that types a cleaned-up version of what you say, using your own OpenRouter key.
+A voice typing app for Android and Linux desktop that types a cleaned-up version of what you say, using your own OpenRouter key.
 
 Switch to Umm in any text field and talk. Filler words, false starts, and self-corrections come out; lists become
 bullets in email; Hinglish stays Hinglish. It is named after the filler word it deletes.
@@ -17,10 +17,13 @@ bullets in email; Hinglish stays Hinglish. It is named after the filler word it 
 
 - [Background](#background)
 - [Install](#install)
+  - [Android](#android)
+  - [Linux](#linux)
   - [Dependencies](#dependencies)
   - [Updating](#updating)
 - [Usage](#usage)
   - [Floating button](#floating-button)
+- [Sync](#sync)
 - [How it works](#how-it-works)
 - [Privacy](#privacy)
 - [Building from source](#building-from-source)
@@ -59,27 +62,61 @@ every install without a new release.
 
 ## Install
 
+### Android
+
 Download the latest `umm-<version>.apk` from [Releases](https://github.com/agopalareddy/umm/releases/latest) on
 your phone, open it, and allow installs from your browser or files app when Android asks.
 
 Or install it from a computer with USB debugging on:
 
 ```bash
-adb install umm-1.1.0.apk
+adb install umm-<version>.apk
 ```
 
 Then open Umm and follow the three setup steps: enable the keyboard, allow the microphone, and connect OpenRouter.
 "Connect with OpenRouter" signs you in and creates a key for Umm; you can also paste a key you already have.
 
+### Linux
+
+Download the package for your distribution from [Releases](https://github.com/agopalareddy/umm/releases/latest):
+
+- **Tarball (`.tar.gz`):** Extract the release tarball and run the included installer:
+  ```bash
+  tar -xzf umm-<version>-linux-x86_64.tar.gz
+  cd umm-<version>
+  ./install.sh                # installs to ~/.local for the current user
+  sudo ./install.sh --system  # or system-wide to /opt/umm
+  ```
+  To uninstall, run `./uninstall.sh` (or `sudo ./uninstall.sh --system`).
+- **Debian / Ubuntu (`.deb`):**
+  ```bash
+  sudo apt install ./umm_<version>_amd64.deb
+  ```
+- **Fedora / RHEL (`.rpm`):**
+  ```bash
+  sudo dnf install ./umm-<version>.x86_64.rpm
+  ```
+- **Flatpak:**
+  ```bash
+  flatpak install --user io.github.agopalareddy.Umm.flatpak
+  ```
+- **Arch Linux (AUR):**
+  An `umm-bin` package will be available in the AUR soon. Until then, build and install using the PKGBUILD in `packaging/aur/umm-bin/`:
+  ```bash
+  cd packaging/aur/umm-bin
+  makepkg -si
+  ```
+
 ### Dependencies
 
-- A phone running Android 10 or newer.
+- **Android:** A phone running Android 10 or newer.
+- **Linux:** x86_64 Linux with a Wayland or X11 desktop session (tested on GNOME and KDE Plasma). The packaged runtime includes its own Java environment.
 - An [OpenRouter](https://openrouter.ai) account with a few dollars of credit.
 
 ### Updating
 
-Install the new APK over the old one. Your settings, history, and stats stay. Each release lists the SHA-256 of the
-signing certificate; updates only install over a copy signed with the same key.
+On Android, install the new APK over the old one; settings, history, and stats stay. Each release lists the SHA-256 of the signing certificate.
+On Linux, install the updated `.deb` / `.rpm` / `.flatpak` package, or re-run `./install.sh` from the new tarball.
 
 ## Usage
 
@@ -115,6 +152,16 @@ You can also dictate using an optional floating button without switching away fr
 
 The floating button automatically hides over password fields and never records without an active text field.
 
+## Sync
+
+Umm can sync your dictation history, usage statistics, and shared settings across your devices (Android phones and Linux desktops) without a central Umm server or account.
+
+- **Pairing:** In Settings → Sync, tap **Pair a device** to display a QR code and pairing code. On your other device, tap **Pair a device** and scan the QR code (Android) or paste the pairing code (Android and desktop). You can optionally choose to share your OpenRouter key during pairing so you don't have to enter it again.
+- **End-to-end encrypted:** All sync data is encrypted with AES-256-GCM using an authenticated group key shared only among your paired devices. Public relays and network eavesdroppers cannot read your data.
+- **Direct Wi-Fi & Nostr relays:** Devices sync directly over your local network using mDNS when connected to the same Wi-Fi. When on different networks, they sync asynchronously through public Nostr relays. Both transports are enabled by default and can be toggled individually in Sync settings.
+- **Scope:** History (up to 50 items per device), word and cost statistics, and shared preferences (cleanup levels, language choices, silence timeout) stay in sync. Audio recordings are never synced. Deletions propagate to all devices in the group.
+- **Stopping sync:** Tap **Leave group** in Settings → Sync to remove a device and stop syncing. You can also turn off the Wi-Fi or Relays switches individually.
+
 ## How it works
 
 1. The keyboard records mono AAC audio and detects speech and silence on the phone. Silent recordings are never
@@ -136,14 +183,15 @@ The full [privacy policy](https://agopalareddy.github.io/umm/privacy/) is short.
 - Audio and text go only to OpenRouter, with your key. Turn on "Zero data retention only" in Settings → Models to
   use only providers that don't keep your data. If your OpenRouter account already requires it, Umm detects that,
   tells you, and switches automatically.
-- Your key is encrypted on the phone with an Android Keystore key and is never logged.
+- Your key is encrypted on your device with an Android Keystore key or system keyring and is never logged.
 - The optional floating button uses Android's Accessibility permission to see the selected text field and its app and to insert text. It never reads the text of password fields and never stores screen content. Only your speech and its transcript go to OpenRouter.
-- History, stats, and any audio kept for a retry stay on the phone. Retry audio is deleted once it succeeds, or
-  after 7 days. In Settings → Stats you can hide stats on Home, stop recording them, or delete them.
+- History, stats, and any audio kept for a retry stay on the device. Retry audio is deleted once it succeeds, or
+  after 7 days. Audio recordings never sync between devices.
+- Sync between your devices is end-to-end encrypted with AES-256-GCM. Public Nostr relays only see encrypted blobs and pseudonymous keys. You can turn sync off or leave a group at any time. In Settings → Stats you can hide stats on Home, stop recording them, or delete them.
 
 ## Building from source
 
-You need JDK 17 and the Android SDK.
+You need JDK 21 and the Android SDK.
 
 ```bash
 ./gradlew assembleDebug

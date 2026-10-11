@@ -22,7 +22,7 @@ class EngagementTest {
         fillers: Int = 1,
         audioMs: Long = 5_000,
         ok: Boolean = true,
-    ) = StatsEntry(id, at(day), "com.whatsapp", CleanupLevel.LIGHT, rawWords = words + fillers, cleanWords = words,
+    ) = StatsEntry("dev", id, null, at(day), "com.whatsapp", CleanupLevel.LIGHT, rawWords = words + fillers, cleanWords = words,
         fillerWords = fillers, audioMs = audioMs, latencyMs = 1_000, costUsd = 0.001, sttModel = "stt",
         cleanupModel = "chat", succeeded = ok)
 

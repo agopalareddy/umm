@@ -10,6 +10,9 @@ class XdgPaths(
     val dataDir: File by lazy { base("XDG_DATA_HOME", ".local/share").resolve("umm").also { it.mkdirs() } }
     val configDir: File by lazy { base("XDG_CONFIG_HOME", ".config").resolve("umm").also { it.mkdirs() } }
 
+    /** Logs and other state that is neither settings nor user data. */
+    val stateDir: File by lazy { base("XDG_STATE_HOME", ".local/state").resolve("umm").also { it.mkdirs() } }
+
     /** Empty or relative values are invalid per the XDG spec and fall back to the default. */
     private fun base(variable: String, default: String): File =
         env[variable]?.let(::File)?.takeIf { it.isAbsolute } ?: File(home, default)

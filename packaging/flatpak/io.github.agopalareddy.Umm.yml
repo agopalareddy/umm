@@ -3,11 +3,11 @@ runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
-  - org.freedesktop.Sdk.Extension.openjdk17
+  - org.freedesktop.Sdk.Extension.openjdk21
 command: umm
 
 finish-args:
-  # Java 17's AWT draws through X11 only, so the app needs the X11 socket on Wayland sessions too (XWayland).
+  # OpenJDK's AWT draws through X11 only, so the app needs the X11 socket on Wayland sessions too (XWayland).
   # With fallback-x11 the sandbox has no DISPLAY there and the app dies with a HeadlessException at start.
   - --socket=x11
   - --socket=wayland
@@ -22,9 +22,9 @@ finish-args:
   - --talk-name=org.kde.KWin
 
 build-options:
-  append-path: /usr/lib/sdk/openjdk17/bin
+  append-path: /usr/lib/sdk/openjdk21/bin
   env:
-    JAVA_HOME: /usr/lib/sdk/openjdk17
+    JAVA_HOME: /usr/lib/sdk/openjdk21
 
 modules:
   - name: umm

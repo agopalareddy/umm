@@ -23,7 +23,7 @@ class CostsTest {
         stt: String? = "stt-a",
         cleanup: String? = "chat-a",
         ok: Boolean = true,
-    ) = StatsEntry(id, at(day), "com.whatsapp", CleanupLevel.LIGHT, rawWords = 11, cleanWords = 10,
+    ) = StatsEntry("dev", id, null, at(day), "com.whatsapp", CleanupLevel.LIGHT, rawWords = 11, cleanWords = 10,
         fillerWords = 1, audioMs = 5_000, latencyMs = if (ok) 1_000 else null, costUsd = cost,
         sttModel = stt, cleanupModel = cleanup, succeeded = ok)
 

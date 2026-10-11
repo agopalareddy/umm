@@ -18,7 +18,9 @@ import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -65,12 +67,24 @@ fun SettingsHome(
         val silence = settings.silenceTimeoutSec?.let { "stop after $it s of silence" } ?: "tap to stop"
         NavRow(Icons.Default.Mic, "Dictation", "${settings.defaultLevel.title()} by default · $silence") { onOpen(Routes.DICTATION) }
         extraSettings.forEach { entry -> NavRow(entry.icon, entry.title, entry.subtitle) { onOpen(entry.route) } }
+        if (platform.systemAppearance() == null) {
+            val sync = LocalUmm.current.sync
+            val syncStatus by sync?.status?.collectAsStateWithLifecycle(null) ?: remember { mutableStateOf(null) }
+            val syncSubtitle = when (syncStatus) {
+                null, is io.github.agopalareddy.umm.sync.SyncStatus.NotPaired -> "Not paired"
+                is io.github.agopalareddy.umm.sync.SyncStatus.Syncing -> "Syncing…"
+                is io.github.agopalareddy.umm.sync.SyncStatus.Error -> "Sync failed"
+                is io.github.agopalareddy.umm.sync.SyncStatus.Idle -> "Paired"
+            }
+            NavRow(Icons.Default.Sync, "Sync", syncSubtitle) { onOpen(Routes.SYNC) }
+        }
         val languages = settings.keyboardLanguages.joinToString { LANGUAGES[it] ?: it }
         NavRow(Icons.Default.Translate, "Languages", languages) { onOpen(Routes.LANGUAGES) }
         NavRow(Icons.Default.Category, "App categories", "Cleanup level and script per app") { onOpen(Routes.CATEGORIES) }
         NavRow(Icons.Default.AutoAwesome, "Models", settings.modelMode.label() + if (settings.zdrOnly) " · zero data retention" else "") { onOpen(Routes.MODELS) }
         NavRow(Icons.Default.Palette, "Appearance", settings.themeMode.label() + if (settings.dynamicColor) " · dynamic theme" else "") { onOpen(Routes.APPEARANCE) }
         NavRow(Icons.Default.BarChart, "Stats", settings.statsSummary()) { onOpen(Routes.STATS) }
+        NavRow(Icons.Default.NewReleases, "What's new", null) { onOpen(Routes.WHATS_NEW) }
         NavRow(Icons.Default.Info, "About", "Version ${platform.appVersion()} · source on GitHub") {
             platform.openUrl("https://github.com/agopalareddy/umm")
         }

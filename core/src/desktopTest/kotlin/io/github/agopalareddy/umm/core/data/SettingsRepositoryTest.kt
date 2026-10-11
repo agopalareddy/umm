@@ -3,18 +3,23 @@ package io.github.agopalareddy.umm.core.data
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.stats.DashboardRange
+import io.github.agopalareddy.umm.core.sync.ChangeRecorder
+import io.github.agopalareddy.umm.core.sync.SyncOp
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 class SettingsRepositoryTest {
+
     @get:Rule val tmp = TemporaryFolder()
 
     private fun TestScope.repo() = SettingsRepository(
@@ -125,4 +130,21 @@ class SettingsRepositoryTest {
         repo.writeCache("recommended", "{}", 5)
         assertEquals("{}" to 5L, repo.readCache("recommended"))
     }
+
+    @Test fun recordsOnlySharedChanges() = runTest {
+        val recorded = mutableListOf<SyncOp>()
+        val recorder = ChangeRecorder { recorded.add(it) }
+        val repo = SettingsRepository(
+            PreferenceDataStoreFactory.create(scope = backgroundScope) { File(tmp.root, "sync_settings.preferences_pb") },
+            recorder = recorder,
+        )
+
+        repo.update { it.copy(defaultLevel = CleanupLevel.FORMATTED) }
+        assertEquals(listOf(SyncOp.SettingSet("default_level", "FORMATTED")), recorded)
+
+        recorded.clear()
+        repo.update { it.copy(themeMode = ThemeMode.DARK) }
+        assertTrue(recorded.isEmpty())
+    }
 }
+

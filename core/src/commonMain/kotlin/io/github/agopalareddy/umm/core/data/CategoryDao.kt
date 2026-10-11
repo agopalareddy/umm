@@ -10,6 +10,9 @@ internal interface CategoryDao {
     @Query("SELECT * FROM categories")
     fun observeAll(): Flow<List<CategoryEntity>>
 
+    @Query("SELECT * FROM categories")
+    suspend fun all(): List<CategoryEntity>
+
     @Query("SELECT * FROM categories WHERE category = :category")
     suspend fun get(category: Category): CategoryEntity?
 
@@ -21,6 +24,9 @@ internal interface CategoryDao {
 
     @Query("SELECT packageName FROM app_assignments WHERE category = :category ORDER BY packageName")
     suspend fun appsIn(category: Category): List<String>
+
+    @Query("SELECT * FROM app_assignments")
+    suspend fun allAssignments(): List<AppAssignmentEntity>
 
     @Upsert
     suspend fun assign(entity: AppAssignmentEntity)

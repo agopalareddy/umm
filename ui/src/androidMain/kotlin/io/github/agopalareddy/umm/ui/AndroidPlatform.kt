@@ -13,7 +13,11 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 
-class AndroidPlatform(private val context: Context) : Platform {
+class AndroidPlatform(
+    private val context: Context,
+    private val scanCode: ((suspend () -> String?)?) = null,
+) : Platform {
+    override fun scanPairingCode(): (suspend () -> String?)? = scanCode
     override fun openUrl(url: String) {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }

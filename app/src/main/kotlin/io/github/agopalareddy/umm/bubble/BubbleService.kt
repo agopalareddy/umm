@@ -413,11 +413,15 @@ class BubbleService : AccessibilityService() {
                 return@launch
             }
             val style = LevelResolver.resolve(null, config, settings.defaultLevel)
+            val appLabel = runCatching {
+                val info = packageManager.getApplicationInfo(packageName, 0)
+                packageManager.getApplicationLabel(info).toString()
+            }.getOrNull()
             pipeline.reset()
             pipeline.start(
                 DictationRequest(
                     packageName, style.level, style.script, LanguageChoice.decode(settings.defaultLanguage),
-                    settings.silenceTimeoutSec, origin, continuous = !silenceOn,
+                    settings.silenceTimeoutSec, origin, continuous = !silenceOn, appLabel = appLabel,
                 ),
             )
             latch.expect(PipelineView.RECORDING, SystemClock.uptimeMillis())
@@ -624,7 +628,9 @@ class BubbleService : AccessibilityService() {
             release()
         }
 
-        override fun onInserted() = insertion.onInserted()
+        override fun onInserted() {
+            insertion.onInserted()
+        }
 
         private fun release() {
             delivery.detach(this)

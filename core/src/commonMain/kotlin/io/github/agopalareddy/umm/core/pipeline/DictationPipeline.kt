@@ -103,7 +103,7 @@ class DictationPipeline(
                 return@launch
             }
             val audioMs = stats?.get(historyId)?.audioMs ?: 0
-            process(historyId, file, item.level, item.script, LanguageChoice.decode(item.language), origin, item.packageName, audioMs)
+            process(historyId, file, item.level, item.script, LanguageChoice.decode(item.language), origin, item.packageName, item.appLabel, audioMs)
         }
     }
 
@@ -172,9 +172,9 @@ class DictationPipeline(
                 discard(file, DictationState.NoSpeech)
             else -> {
                 val id = history.createPending(
-                    request.packageName, request.level, request.script, request.language.encode(), file.path,
+                    request.packageName, request.appLabel, request.level, request.script, request.language.encode(), file.path,
                 )
-                process(id, file, request.level, request.script, request.language, request.origin, request.packageName, elapsedMs)
+                process(id, file, request.level, request.script, request.language, request.origin, request.packageName, request.appLabel, elapsedMs)
             }
         }
     }
@@ -187,6 +187,7 @@ class DictationPipeline(
         language: LanguageChoice,
         origin: Long,
         packageName: String,
+        appLabel: String?,
         audioMs: Long,
     ) {
         _state.value = DictationState.Transcribing
@@ -207,7 +208,7 @@ class DictationPipeline(
         } catch (e: Exception) {
             val reason = FailureReason.of(e)
             history.markFailed(id, reason.name)
-            recordStats(id, packageName, requestedLevel, raw = "", clean = "", audioMs, latencyMs = null, costUsd, null, null, succeeded = false)
+            recordStats(id, packageName, appLabel, requestedLevel, raw = "", clean = "", audioMs, latencyMs = null, costUsd, null, null, succeeded = false)
             _state.value = DictationState.Failed(id, reason, origin)
             return
         }
@@ -220,7 +221,7 @@ class DictationPipeline(
         val level = levelOverride ?: requestedLevel
         if (level == CleanupLevel.RAW) {
             finish(id, raw, null, level, requestedLevel)
-            recordStats(id, packageName, level, raw, raw, audioMs, clock() - startedAt, costUsd, sttModel, null, succeeded = true)
+            recordStats(id, packageName, appLabel, level, raw, raw, audioMs, clock() - startedAt, costUsd, sttModel, null, succeeded = true)
             _state.value = DictationState.Done(id, raw, cleanupFailed = false, origin = origin)
             return
         }
@@ -232,7 +233,7 @@ class DictationPipeline(
             throw e
         } catch (e: Exception) {
             history.markCleanupFailed(id, raw, FailureReason.of(e).name)
-            recordStats(id, packageName, level, raw, raw, audioMs, clock() - startedAt, costUsd, sttModel, null, succeeded = true)
+            recordStats(id, packageName, appLabel, level, raw, raw, audioMs, clock() - startedAt, costUsd, sttModel, null, succeeded = true)
             _state.value = DictationState.Done(id, raw, cleanupFailed = true, origin = origin)
             return
         }
@@ -245,13 +246,14 @@ class DictationPipeline(
         }
         finish(id, raw, clean, level, requestedLevel)
         val totalCost = if (costUsd == null && completion.costUsd == null) null else (costUsd ?: 0.0) + (completion.costUsd ?: 0.0)
-        recordStats(id, packageName, level, raw, clean, audioMs, clock() - startedAt, totalCost, sttModel, cleanupModel, succeeded = true)
+        recordStats(id, packageName, appLabel, level, raw, clean, audioMs, clock() - startedAt, totalCost, sttModel, cleanupModel, succeeded = true)
         _state.value = DictationState.Done(id, clean, cleanupFailed = false, origin = origin)
     }
 
     private suspend fun recordStats(
         id: Long,
         packageName: String,
+        appLabel: String?,
         level: CleanupLevel,
         raw: String,
         clean: String,
@@ -262,9 +264,12 @@ class DictationPipeline(
         cleanupModel: String?,
         succeeded: Boolean,
     ) {
+        val origin = history.get(id)?.originDevice ?: ""
         stats?.record(
             StatsEntry(
+                originDevice = origin,
                 historyId = id,
+                appLabel = appLabel,
                 createdAt = clock(),
                 packageName = packageName,
                 level = level,

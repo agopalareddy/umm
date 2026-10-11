@@ -19,6 +19,13 @@ jobs:
       code: ${{ steps.version.outputs.code }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
+      - uses: actions/checkout@v7
+
+      # The "What's new" page and the release notes come from CHANGELOG.md, so a release needs its section there.
+      - name: Check the changelog covers this release
+        if: github.ref_type == 'tag'
+        run: scripts/changelog-section.sh "${GITHUB_REF_NAME#v}" > /dev/null
+
       - name: Work out the version
         id: version
         run: |
@@ -45,7 +52,7 @@ jobs:
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
       - uses: gradle/actions/setup-gradle@v6
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
@@ -96,7 +103,7 @@ jobs:
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
       - uses: gradle/actions/setup-gradle@v6
 
       - name: Install packaging tools
@@ -107,7 +114,7 @@ jobs:
           sudo flatpak install -y flathub \
             org.freedesktop.Platform//25.08 \
             org.freedesktop.Sdk//25.08 \
-            org.freedesktop.Sdk.Extension.openjdk17//25.08
+            org.freedesktop.Sdk.Extension.openjdk21//25.08
           NFPM_VERSION="2.41.3"
           NFPM_SHA256="22aa6d3bc2ec239d62d3d190bcb036a47f2b24e0c3c6edfccebb6a55fbb2078e"
           curl -sLO "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
@@ -188,7 +195,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cat > notes.md <<NOTES
+          {
+            echo "### What's new"
+            echo
+            scripts/changelog-section.sh "${{ needs.version.outputs.name }}"
+            echo
+          } > notes.md
+          cat >> notes.md <<NOTES
           ### Android
 
           1. Download \`umm-${{ needs.version.outputs.name }}.apk\` below on your Android phone (Android 10 or newer).

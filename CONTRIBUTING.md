@@ -17,7 +17,7 @@ Please don't paste your OpenRouter key, even a revoked one. For privacy or secur
 
 ## Development setup
 
-You need JDK 17, the Android SDK (compile SDK 37), and a phone or emulator running Android 10 or newer.
+You need JDK 21, the Android SDK (compile SDK 37), and a phone or emulator running Android 10 or newer.
 
 1. Clone the repo and put an OpenRouter key in `.env` at the repo root:
 

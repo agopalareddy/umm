@@ -7,15 +7,19 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 
+import kotlin.coroutines.CoroutineContext
+
 fun buildUmmDatabase(file: File): UmmDatabase {
     file.parentFile?.mkdirs()
     return Room.databaseBuilder<UmmDatabase>(file.absolutePath).configured()
 }
 
-fun inMemoryUmmDatabase(): UmmDatabase = Room.inMemoryDatabaseBuilder<UmmDatabase>().configured()
+fun inMemoryUmmDatabase(coroutineContext: CoroutineContext = Dispatchers.IO): UmmDatabase =
+    Room.inMemoryDatabaseBuilder<UmmDatabase>().configured(coroutineContext)
 
-private fun RoomDatabase.Builder<UmmDatabase>.configured(): UmmDatabase =
+private fun RoomDatabase.Builder<UmmDatabase>.configured(coroutineContext: CoroutineContext = Dispatchers.IO): UmmDatabase =
     setDriver(BundledSQLiteDriver())
-        .setQueryCoroutineContext(Dispatchers.IO)
+        .setQueryCoroutineContext(coroutineContext)
+        .addMigrations(MIGRATION_2_3)
         .addCallback(SeedCallback)
         .build()

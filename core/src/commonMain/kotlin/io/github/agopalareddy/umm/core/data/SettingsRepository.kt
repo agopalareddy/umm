@@ -10,9 +10,14 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.stats.DashboardRange
+import io.github.agopalareddy.umm.core.sync.ChangeRecorder
+import io.github.agopalareddy.umm.core.sync.SharedSettings
+import io.github.agopalareddy.umm.core.sync.SyncOp
+import androidx.datastore.preferences.core.MutablePreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+
 
 enum class ModelMode { RECOMMENDED, NEWEST_STT, MANUAL }
 
@@ -58,39 +63,73 @@ data class UmmSettings(
     val disclosureAcceptedAt: Long = 0,
 )
 
-class SettingsRepository(private val dataStore: DataStore<Preferences>) {
+class SettingsRepository(
+    private val dataStore: DataStore<Preferences>,
+    private val recorder: ChangeRecorder = ChangeRecorder.None,
+) {
+
+
 
     val settings: Flow<UmmSettings> = dataStore.data.map { it.toSettings() }
 
     suspend fun update(transform: (UmmSettings) -> UmmSettings) {
+        var oldSettings: UmmSettings? = null
+        var nextSettings: UmmSettings? = null
         dataStore.edit { prefs ->
-            val next = transform(prefs.toSettings())
-            prefs[DEFAULT_LEVEL] = next.defaultLevel.name
-            // 0 is stored for Off so that "missing" can keep meaning "default".
-            prefs[SILENCE_TIMEOUT] = next.silenceTimeoutSec?.coerceIn(1, 10) ?: OFF
-            prefs[SWITCH_BACK] = next.switchBackAfterInsert
-            prefs[DEFAULT_LANGUAGE] = next.defaultLanguage
-            prefs[KEYBOARD_LANGUAGES] = next.keyboardLanguages.joinToString(",")
-            prefs[MODEL_MODE] = next.modelMode.name
-            next.manualSttModel?.let { prefs[MANUAL_STT] = it } ?: prefs.remove(MANUAL_STT)
-            next.manualCleanupModel?.let { prefs[MANUAL_CLEANUP] = it } ?: prefs.remove(MANUAL_CLEANUP)
-            prefs[THEME_MODE] = next.themeMode.name
-            prefs[DYNAMIC_COLOR] = next.dynamicColor
-            prefs[ZDR_ONLY] = next.zdrOnly
-            prefs[STATS_VISIBLE] = next.statsVisible
-            prefs[STATS_RECORDING] = next.statsRecording
-            prefs[DASHBOARD_RANGE] = next.dashboardRange.name
-            prefs[DASHBOARD_ORDER] = next.dashboardOrder.joinToString(",")
-            prefs[DASHBOARD_HIDDEN] = next.dashboardHidden.joinToString(",")
-            prefs[BUBBLE_ENABLED] = next.bubbleEnabled
-            prefs[BUBBLE_VISIBILITY] = next.bubbleVisibility.name
-            prefs[BUBBLE_SIZE] = next.bubbleSize.name
-            prefs[BUBBLE_EDGE] = next.bubbleEdge.name
-            prefs[BUBBLE_Y_PORTRAIT] = next.bubbleYPortrait.coerceIn(0f, 1f)
-            prefs[BUBBLE_Y_LANDSCAPE] = next.bubbleYLandscape.coerceIn(0f, 1f)
-            prefs[DISCLOSURE_ACCEPTED_AT] = next.disclosureAcceptedAt
+            val current = prefs.toSettings()
+            oldSettings = current
+            val next = transform(current)
+            nextSettings = next
+            prefs.writeSettings(next)
+        }
+        val old = oldSettings
+        val next = nextSettings
+        if (old != null && next != null && old != next) {
+            for (key in SharedSettings.keys) {
+                val oldValue = SharedSettings.read(old, key)
+                val nextValue = SharedSettings.read(next, key)
+                if (oldValue != nextValue) {
+                    recorder.record(SyncOp.SettingSet(key, nextValue))
+                }
+            }
         }
     }
+
+    internal suspend fun applyShared(key: String, value: String) {
+        dataStore.edit { prefs ->
+            val current = prefs.toSettings()
+            val next = SharedSettings.write(current, key, value)
+            prefs.writeSettings(next)
+        }
+    }
+
+    private fun MutablePreferences.writeSettings(next: UmmSettings) {
+        this[DEFAULT_LEVEL] = next.defaultLevel.name
+        // 0 is stored for Off so that "missing" can keep meaning "default".
+        this[SILENCE_TIMEOUT] = next.silenceTimeoutSec?.coerceIn(1, 10) ?: OFF
+        this[SWITCH_BACK] = next.switchBackAfterInsert
+        this[DEFAULT_LANGUAGE] = next.defaultLanguage
+        this[KEYBOARD_LANGUAGES] = next.keyboardLanguages.joinToString(",")
+        this[MODEL_MODE] = next.modelMode.name
+        next.manualSttModel?.let { this[MANUAL_STT] = it } ?: this.remove(MANUAL_STT)
+        next.manualCleanupModel?.let { this[MANUAL_CLEANUP] = it } ?: this.remove(MANUAL_CLEANUP)
+        this[THEME_MODE] = next.themeMode.name
+        this[DYNAMIC_COLOR] = next.dynamicColor
+        this[ZDR_ONLY] = next.zdrOnly
+        this[STATS_VISIBLE] = next.statsVisible
+        this[STATS_RECORDING] = next.statsRecording
+        this[DASHBOARD_RANGE] = next.dashboardRange.name
+        this[DASHBOARD_ORDER] = next.dashboardOrder.joinToString(",")
+        this[DASHBOARD_HIDDEN] = next.dashboardHidden.joinToString(",")
+        this[BUBBLE_ENABLED] = next.bubbleEnabled
+        this[BUBBLE_VISIBILITY] = next.bubbleVisibility.name
+        this[BUBBLE_SIZE] = next.bubbleSize.name
+        this[BUBBLE_EDGE] = next.bubbleEdge.name
+        this[BUBBLE_Y_PORTRAIT] = next.bubbleYPortrait.coerceIn(0f, 1f)
+        this[BUBBLE_Y_LANDSCAPE] = next.bubbleYLandscape.coerceIn(0f, 1f)
+        this[DISCLOSURE_ACCEPTED_AT] = next.disclosureAcceptedAt
+    }
+
 
     suspend fun readCache(name: String): Pair<String, Long>? {
         val prefs = dataStore.data.first()

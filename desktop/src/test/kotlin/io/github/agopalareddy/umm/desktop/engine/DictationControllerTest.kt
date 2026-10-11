@@ -61,8 +61,13 @@ class DictationControllerTest {
             recordings.incrementAndGet()
             stopped = false
             file.writeBytes(byteArrayOf(1, 2, 3))
+            // Two quieter samples for the silence detector to learn the room, then speech. A flat level reads as
+            // background noise, and the pipeline then gives up with "no speech" after 80 samples, which at this pace
+            // is under a second: a test that was slower than that to stop the recording failed on a busy machine.
+            // The quieter level is still above the "room-quiet" peak, so a recording stopped at once is kept.
+            var samples = 0
             while (!stopped) {
-                emit(8000)
+                emit(if (samples++ < 2) 300 else 8000)
                 delay(10)
             }
         }
@@ -172,6 +177,9 @@ class DictationControllerTest {
 
     @Before fun setUp() {
         graph = DesktopGraph(XdgPaths(env = emptyMap(), home = tmp.root), emptyMap(), api, recommendationsUrl = UNREACHABLE)
+        // The app starts sync at launch, which loads the device key (and its native library) before any dictation.
+        // Without that the first press here pays for it inside the controller's short start window.
+        graph.groupStore.state.value
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         pipeline = graph.pipeline(audio)
         controller = DictationController(

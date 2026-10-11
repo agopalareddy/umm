@@ -113,7 +113,16 @@ class DesktopEngine(
     init {
         // Scan the app folders now, off the UI thread, so the first History or Categories render doesn't.
         graph.scope.launch(Dispatchers.IO) { apps.all() }
-        graph.scope.launch { graph.desktopSettings.prefs.collect { prefs = it } }
+        graph.scope.launch {
+            var syncStarted = false
+            graph.desktopSettings.prefs.collect { p ->
+                prefs = p
+                if (p.setupDone && !syncStarted) {
+                    syncStarted = true
+                    graph.syncEngine.start()
+                }
+            }
+        }
     }
 
     /** Shows the tray icon, binds the shortcut, and starts mirroring the dictation state to the tray and sounds. */
@@ -171,6 +180,7 @@ class DesktopEngine(
             script = style.script,
             language = LanguageChoice.decode(settings.defaultLanguage),
             silenceTimeoutSec = settings.silenceTimeoutSec,
+            appLabel = apps.label(packageName),
         )
     }
 

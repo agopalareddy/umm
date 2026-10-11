@@ -12,16 +12,26 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import io.github.agopalareddy.umm.core.sync.ChangeRecorder
 import org.junit.Test
 
 class StatsRepositoryTest {
     private val db = inMemoryUmmDatabase()
     private val repo = StatsRepository(db)
 
+    private var deviceId: String = ""
+
+    @org.junit.Before fun setUp() = kotlinx.coroutines.runBlocking {
+        deviceId = io.github.agopalareddy.umm.core.sync.SyncMeta(db).deviceId()
+    }
+
     @After fun tearDown() = db.close()
 
-    private fun entry(id: Long, ok: Boolean) = StatsEntry(id, 1_000, "com.whatsapp", CleanupLevel.LIGHT, 5, 4, 1, 3_000,
-        if (ok) 900 else null, if (ok) 0.001 else null, "stt", "chat", ok)
+    private fun entry(id: Long, ok: Boolean) = StatsEntry(
+        deviceId, id, null, 1_000, "com.whatsapp", CleanupLevel.LIGHT, 5, 4, 1, 3_000,
+        if (ok) 900 else null, if (ok) 0.001 else null, "stt", "chat", ok,
+    )
 
     @Test fun recordsAndReplacesByHistoryId() = runTest {
         repo.record(entry(1, ok = false))
@@ -85,5 +95,18 @@ class StatsRepositoryTest {
     // The flow computes on Dispatchers.Default, so real time passes; poll instead of advancing the virtual clock.
     private suspend fun awaitSize(list: List<*>, size: Int) = withContext(Dispatchers.Default) {
         withTimeout(10_000) { while (list.size < size) delay(10) }
+    }
+
+    @Test fun recordWithFailingRecorderRollsBack() = runTest {
+        val failingRecorder = ChangeRecorder { throw RuntimeException("Recorder failed") }
+        val repoWithFailingRecorder = StatsRepository(db, recorder = failingRecorder)
+        try {
+            repoWithFailingRecorder.record(entry(1, ok = true))
+            org.junit.Assert.fail("Expected exception")
+        } catch (e: RuntimeException) {
+            assertEquals("Recorder failed", e.message)
+        }
+        assertEquals(emptyList<StatsEntry>(), repo.all())
+        assertNull(repo.get(1))
     }
 }

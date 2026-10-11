@@ -21,9 +21,27 @@ import io.github.agopalareddy.umm.core.policy.ModelPlan
 import io.github.agopalareddy.umm.core.policy.ModelSelector
 import io.github.agopalareddy.umm.core.policy.RecommendationRepository
 import io.github.agopalareddy.umm.core.stats.StatsRepository
+import io.github.agopalareddy.umm.core.sync.HybridClock
+import io.github.agopalareddy.umm.core.sync.OpApplier
+import io.github.agopalareddy.umm.core.sync.OpLog
+import io.github.agopalareddy.umm.core.sync.SyncMeta
+import io.github.agopalareddy.umm.core.sync.buildSnapshot
+import io.github.agopalareddy.umm.sync.FileSyncLog
+import io.github.agopalareddy.umm.sync.SyncEngine
+import io.github.agopalareddy.umm.sync.SyncSession
+import io.github.agopalareddy.umm.sync.crypto.GroupCipher
+import io.github.agopalareddy.umm.sync.group.GroupStore
+import io.github.agopalareddy.umm.sync.group.Membership
+import io.github.agopalareddy.umm.sync.lan.JmdnsDiscovery
+import io.github.agopalareddy.umm.sync.lan.LanTransport
+import io.github.agopalareddy.umm.sync.pair.Pairing
+import io.github.agopalareddy.umm.sync.relay.RelayTransport
 import io.github.agopalareddy.umm.ui.Platform
 import io.github.agopalareddy.umm.ui.UmmServices
 import java.io.File
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -66,13 +84,102 @@ class DesktopGraph(
     val openRouter: OpenRouterApi = api ?: OpenRouterClient(OpenRouterClient.DEFAULT_BASE_URL, http) { apiKeyStore.get() }
 
     val database by lazy { buildUmmDatabase(File(paths.dataDir, "umm.db")) }
-    val categories by lazy { CategoryRepository(database) }
-    val history by lazy { HistoryRepository(database, clock) }
-    val settings by lazy { SettingsRepository(buildSettingsStore(File(paths.configDir, "settings.preferences_pb"))) }
+    val syncMeta by lazy { SyncMeta(database) }
+    val hybridClock by lazy { HybridClock(clock) }
+    val groupStore by lazy {
+        val store = keyring ?: InMemoryKeyValueStore()
+        GroupStore(store, PassThroughCipher)
+    }
+    val opLog by lazy { OpLog(database, syncMeta, hybridClock, active = { groupStore.state.value != null }, onRecorded = { syncEngine.onLocalChange() }) }
+    val categories by lazy { CategoryRepository(database, opLog) }
+    val history by lazy { HistoryRepository(database, clock, opLog) }
+    val settings by lazy { SettingsRepository(buildSettingsStore(File(paths.configDir, "settings.preferences_pb")), opLog) }
     val desktopSettings by lazy { DesktopSettings(buildSettingsStore(File(paths.configDir, "desktop.preferences_pb"))) }
-    val stats by lazy { StatsRepository(database) { settings.settings.first().statsRecording } }
+    val stats by lazy { StatsRepository(database, { settings.settings.first().statsRecording }, opLog) }
+
+    val selfId by lazy { runBlocking { syncMeta.deviceId() } }
+    val membership by lazy { Membership(groupStore, opLog, clock) }
+    val opApplier by lazy { OpApplier(database, opLog, settings, hybridClock, onGroupOp = { membership.onGroupOp(it) }) }
+    val discovery by lazy { JmdnsDiscovery() }
+    val syncSession by lazy {
+        SyncSession(
+            log = opLog,
+            applier = opApplier,
+            snapshot = { buildSnapshot(database, opLog, settings, groupStore.state.value?.members ?: emptyList()) },
+            cipher = ::groupCipher,
+            selfId = selfId,
+        )
+    }
+    val lanTransport by lazy {
+        LanTransport(
+            session = syncSession,
+            discovery = discovery,
+            group = groupStore,
+            selfId = selfId,
+            scope = scope,
+            db = database,
+        )
+    }
+    val syncLog by lazy { FileSyncLog(File(paths.stateDir, "sync.log")) }
+    val relayTransport by lazy {
+        RelayTransport(
+            group = groupStore,
+            log = opLog,
+            applier = opApplier,
+            http = http,
+            scope = scope,
+            clockSeconds = { clock() / 1000L },
+            syncLog = syncLog,
+        )
+    }
+    val pairing by lazy {
+        Pairing(
+            group = groupStore,
+            apiKey = apiKeyStore,
+            lan = lanTransport,
+            relay = relayTransport,
+            applier = opApplier,
+            snapshot = { buildSnapshot(database, opLog, settings, groupStore.state.value?.members ?: emptyList()) },
+            now = clock,
+        )
+    }
+    val syncEngine: SyncEngine by lazy {
+        SyncEngine(
+            group = groupStore,
+            lan = lanTransport,
+            relay = relayTransport,
+            pairing = pairing,
+            membership = membership,
+            log = opLog,
+            scope = scope,
+            now = clock,
+            syncLog = syncLog,
+        )
+    }
+
+    @OptIn(ExperimentalEncodingApi::class)
+    private fun groupCipher(): GroupCipher {
+        val st = groupStore.state.value ?: throw IllegalStateException("No group")
+        val keyBytes = decodeKey(st.key)
+        val prevKeyBytes = st.previousKey?.let { decodeKey(it) }
+        return GroupCipher(
+            key = keyBytes,
+            epoch = st.epoch,
+            previousKey = prevKeyBytes,
+            previousUntil = st.previousUntil,
+            clock = clock,
+        )
+    }
+
+    @OptIn(ExperimentalEncodingApi::class)
+    private fun decodeKey(str: String): ByteArray {
+        return runCatching { Base64.UrlSafe.decode(str) }.getOrNull()
+            ?: runCatching { Base64.decode(str) }.getOrNull()
+            ?: str.encodeToByteArray().copyOf(32)
+    }
 
     val recommendations by lazy {
+
         RecommendationRepository(
             http,
             recommendationsUrl,
@@ -116,9 +223,12 @@ class DesktopGraph(
         lazyPipeline = lazy { pipeline(NoMicrophone) },
         modelPlan = ::modelPlan,
         platform = platform,
+        sync = syncEngine,
     )
 
     fun close() {
+        runCatching { syncEngine.stop() }
+        runCatching { discovery.close() }
         scope.cancel()
         database.close()
     }

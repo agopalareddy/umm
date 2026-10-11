@@ -24,7 +24,7 @@ class HabitsTest {
         level: CleanupLevel = CleanupLevel.LIGHT,
         latencyMs: Long? = 1_000,
         ok: Boolean = true,
-    ) = StatsEntry(id, at(day, hour), pkg, level, rawWords = 11, cleanWords = 10, fillerWords = 1,
+    ) = StatsEntry("dev", id, null, at(day, hour), pkg, level, rawWords = 11, cleanWords = 10, fillerWords = 1,
         audioMs = 5_000, latencyMs = if (ok) latencyMs else null, costUsd = 0.001, sttModel = "stt",
         cleanupModel = "chat", succeeded = ok)
 

@@ -193,9 +193,12 @@ class UmmInputMethodService : InputMethodService(), LifecycleOwner, SavedStateRe
             val settings = graph.settings.settings.first()
             val level = resolve(ui.levelOverride, config)
             if (!delivery.isCurrent(origin)) return@launch
-            ui = ui.copy(level = level)
+            val appLabel = runCatching {
+                val info = packageManager.getApplicationInfo(ui.packageName, 0)
+                packageManager.getApplicationLabel(info).toString()
+            }.getOrNull()
             pipeline.start(
-                DictationRequest(ui.packageName, level, config.script, ui.language, settings.silenceTimeoutSec, origin, continuous),
+                DictationRequest(ui.packageName, level, config.script, ui.language, settings.silenceTimeoutSec, origin, continuous, appLabel = appLabel),
             )
         }
     }

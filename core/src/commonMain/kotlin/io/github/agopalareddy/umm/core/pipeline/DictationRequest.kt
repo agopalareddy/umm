@@ -15,4 +15,5 @@ data class DictationRequest(
     val origin: Long = 0,
     /** Start without silence detection: record until stop() (or the duration cap). */
     val continuous: Boolean = false,
+    val appLabel: String? = null,
 )

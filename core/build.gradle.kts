@@ -7,7 +7,7 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
     // Room generates an `actual object` for UmmDatabaseConstructor on each target.
     compilerOptions { freeCompilerArgs.add("-Xexpect-actual-classes") }
 
@@ -39,6 +39,7 @@ kotlin {
         }
         getByName("desktopTest").dependencies {
             implementation(libs.junit)
+            implementation(libs.room.testing)
             implementation(libs.kotlinx.coroutines.test)
             implementation(libs.okhttp.mockwebserver)
             implementation(libs.turbine)

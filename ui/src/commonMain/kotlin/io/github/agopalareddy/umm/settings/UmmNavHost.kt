@@ -27,8 +27,10 @@ object Routes {
     const val CATEGORIES = "settings/categories"
     const val MODELS = "settings/models"
     const val STATS = "settings/stats"
+    const val SYNC = "settings/sync"
     const val HISTORY = "history"
     const val ABOUT = "about"
+    const val WHATS_NEW = "about/whats-new"
 }
 
 /** A platform-only Settings row, shown after Dictation. */
@@ -78,9 +80,11 @@ fun UmmNavHost(
         composable(Routes.LANGUAGES) { LanguagesPage(settings, back, change) }
         composable(Routes.APPEARANCE) { AppearancePage(settings, back, change) }
         composable(Routes.STATS) { StatsPage(settings, back, change, sampleData) }
+        composable(Routes.SYNC) { SyncPage(back) }
         composable(Routes.CATEGORIES) { CategoriesScreen(back) }
         composable(Routes.MODELS) { ModelsScreen(back) }
         composable(Routes.HISTORY) { HistoryScreen(back) }
-        composable(Routes.ABOUT) { AboutPage(back) }
+        composable(Routes.ABOUT) { AboutPage(back, open) }
+        composable(Routes.WHATS_NEW) { WhatsNewPage(back) }
     }
 }

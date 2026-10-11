@@ -88,7 +88,13 @@ class DictationController(
                     val packageName = focus.focusedAppId() ?: "desktop"
                     val dictation = request(packageName)
                     ensureActive()
-                    if (!startPipeline(dictation)) {
+                    if (startPipeline(dictation)) {
+                        // The state collector can miss this recording's first states and then be handed one equal
+                        // to the last it saw from the recording before (a state flow never repeats a value), which
+                        // would leave the status on Idle while recording. So say it here as well.
+                        val listening = pipeline.state.value as? DictationState.Listening
+                        if (listening != null && phase == Phase.RECORDING) _state.value = DesktopState.Listening(listening.amplitude)
+                    } else {
                         notifier.notify(START_FAILED, "Try the shortcut again.")
                         _state.value = DesktopState.Failed(START_FAILED)
                         phase = Phase.IDLE

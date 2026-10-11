@@ -1,10 +1,19 @@
 package io.github.agopalareddy.umm.core.data
 
+import androidx.room.immediateTransaction
+import androidx.room.useWriterConnection
 import io.github.agopalareddy.umm.core.cleanup.ScriptPreference
+import io.github.agopalareddy.umm.core.sync.ChangeRecorder
+import io.github.agopalareddy.umm.core.sync.SyncOp
 import kotlinx.coroutines.flow.Flow
+
 import kotlinx.coroutines.flow.map
 
-class CategoryRepository(db: UmmDatabase) {
+class CategoryRepository(
+    private val db: UmmDatabase,
+    private val recorder: ChangeRecorder = ChangeRecorder.None,
+) {
+
     private val dao = db.categoryDao()
 
     fun observeAll(): Flow<List<CategoryConfig>> = dao.observeAll().map { list ->
@@ -20,8 +29,13 @@ class CategoryRepository(db: UmmDatabase) {
 
     /** Assigning to [Category.OTHER] removes the app's assignment. */
     suspend fun assign(packageName: String, category: Category) {
-        if (category == Category.OTHER) dao.unassign(packageName)
-        else dao.assign(AppAssignmentEntity(packageName, category))
+        db.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                if (category == Category.OTHER) dao.unassign(packageName)
+                else dao.assign(AppAssignmentEntity(packageName, category))
+                recorder.record(SyncOp.AppAssign(packageName, category))
+            }
+        }
     }
 
     suspend fun appsIn(category: Category): List<String> = dao.appsIn(category)
@@ -30,8 +44,14 @@ class CategoryRepository(db: UmmDatabase) {
     val seededApps: Set<String> get() = Seeds.apps.keys
 
     suspend fun update(config: CategoryConfig) {
-        dao.upsert(CategoryEntity(config.category, config.level, config.script))
+        db.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                dao.upsert(CategoryEntity(config.category, config.level, config.script))
+                recorder.record(SyncOp.CategorySet(config.category, config.level, config.script))
+            }
+        }
     }
+
 
     private fun CategoryEntity.toConfig() = CategoryConfig(category, level, script)
 }

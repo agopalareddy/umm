@@ -1,6 +1,7 @@
 package io.github.agopalareddy.umm.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -33,8 +34,11 @@ class SampleDataActions(val load: suspend () -> Unit, val remove: suspend () -> 
 @Composable
 fun StatsPage(settings: UmmSettings, onBack: () -> Unit, onChange: SettingsChange, sampleData: SampleDataActions? = null) {
     val stats = LocalUmm.current.stats
+    val sync = LocalUmm.current.sync
+    val isPaired = sync?.group?.state?.collectAsStateWithLifecycle()?.value != null
     val scope = rememberCoroutineScope()
     var confirmDelete by remember { mutableStateOf(false) }
+    var deleteScope by remember { mutableStateOf("this") }
     Page("Stats", onBack) {
         Section("Home") {
             SwitchRow(checked = settings.statsVisible, onCheckedChange = { on -> onChange { it.copy(statsVisible = on) } }) {
@@ -69,8 +73,34 @@ fun StatsPage(settings: UmmSettings, onBack: () -> Unit, onChange: SettingsChang
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             title = { Text("Delete stats data?") },
-            text = { Text("This removes every recorded dictation from Stats. Your History is not affected.") },
-            confirmButton = { TextButton(onClick = { confirmDelete = false; scope.launch { stats.deleteAll() } }) { Text("Delete") } },
+            text = {
+                if (isPaired) {
+                    Column {
+                        Text("Choose which stats to remove. Your History is not affected.")
+                        Spacer(Modifier.height(8.dp))
+                        RadioRow(selected = deleteScope == "this", onClick = { deleteScope = "this" }) {
+                            Text("This device's stats")
+                        }
+                        RadioRow(selected = deleteScope == "all", onClick = { deleteScope = "all" }) {
+                            Text("All devices' stats")
+                        }
+                    }
+                } else {
+                    Text("This removes every recorded dictation from Stats. Your History is not affected.")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    scope.launch {
+                        if (isPaired && deleteScope == "this") {
+                            stats.clearThisDevice()
+                        } else {
+                            stats.clear(origin = null)
+                        }
+                    }
+                }) { Text("Delete") }
+            },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
         )
     }

@@ -3,6 +3,7 @@ package io.github.agopalareddy.umm.desktop
 import androidx.compose.ui.graphics.ImageBitmap
 import io.github.agopalareddy.umm.core.data.CategoryRepository
 import io.github.agopalareddy.umm.core.data.inMemoryUmmDatabase
+import io.github.agopalareddy.umm.sync.crypto.DeviceKeys
 import java.security.KeyPairGenerator
 import java.util.ServiceLoader
 import javax.crypto.Cipher
@@ -59,6 +60,13 @@ object SelfCheck {
             check(pair.public != null && pair.private != null) { "EC key pair generation failed" }
         }
 
+        check("secp256k1") {
+            val keys = DeviceKeys.generate()
+            val msg = ByteArray(32) { 42 }
+            val sig = keys.sign(msg)
+            check(DeviceKeys.verify(keys.publicKey, msg, sig)) { "secp256k1 sign/verify failed" }
+        }
+
         check("tls") {
             val ssl = SSLContext.getInstance("TLS")
             ssl.init(null, null, null)
@@ -78,9 +86,19 @@ object SelfCheck {
             Class.forName("com.sun.security.auth.module.UnixSystem")
         }
 
+        check("jmdns") {
+            val jmdns = javax.jmdns.JmDNS.create()
+            jmdns.close()
+        }
+
         check("compose") {
             val bitmap = ImageBitmap(1, 1)
             check(bitmap.width == 1 && bitmap.height == 1) { "ImageBitmap allocation failed" }
+        }
+
+        check("zxing") {
+            val matrix = io.github.agopalareddy.umm.ui.qrMatrix("self-check")
+            check(matrix.isNotEmpty()) { "qrMatrix failed" }
         }
 
         return failures

@@ -40,6 +40,9 @@ interface Platform {
 
     /** A line for the Categories page when per-app levels don't apply here, or null when they do. */
     fun perAppLevelsNote(): String? = null
+
+    /** Launches the platform pairing code scanner; returns null on platforms without one. */
+    fun scanPairingCode(): (suspend () -> String?)? = null
 }
 
 /** [dark] null means no preference; [accentArgb] null means no accent color. */

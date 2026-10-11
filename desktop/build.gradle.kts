@@ -5,8 +5,11 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
 }
+
+// jpackage and jlink come from the JDK that builds the image; without this Compose uses the JDK that runs Gradle.
+val packagingJdk = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
 
 val appVersionName = providers.gradleProperty("versionName").getOrElse("0.1.0-dev")
 val packageVersionDigits = appVersionName.substringBefore("-")
@@ -21,6 +24,7 @@ tasks.withType<Jar>().configureEach {
 compose.desktop {
     application {
         mainClass = "io.github.agopalareddy.umm.desktop.MainKt"
+        javaHome = packagingJdk.get().metadata.installationPath.asFile.absolutePath
         nativeDistributions {
             packageName = "Umm"
             packageVersion = packageVersionDigits
@@ -161,6 +165,7 @@ sourceSets.main {
 }
 
 dependencies {
+    implementation(project(":sync"))
     implementation(project(":ui"))
     implementation(project(":linux"))
     implementation(compose.desktop.currentOs)
