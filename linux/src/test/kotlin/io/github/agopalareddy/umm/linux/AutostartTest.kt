@@ -59,7 +59,7 @@ class AutostartTest {
 
     @Test fun backgroundPortalFlagLifecycle() {
         val flag = File(tmp.root, "flag")
-        val portal = BackgroundPortal({ error("unused") }, flag)
+        val portal = BackgroundPortal(flagFile = flag, request = { emptyMap() })
         assertFalse(portal.isEnabled())
         flag.writeText("true\n")
         assertTrue(portal.isEnabled())

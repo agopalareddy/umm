@@ -2,6 +2,7 @@ package io.github.agopalareddy.umm.linux
 
 import io.github.agopalareddy.umm.linux.portal.Background
 import io.github.agopalareddy.umm.linux.portal.Portal
+import io.github.agopalareddy.umm.linux.portal.PortalException
 import java.io.File
 import org.freedesktop.dbus.types.Variant
 
@@ -13,8 +14,18 @@ import org.freedesktop.dbus.types.Variant
  * Because the portal cannot be queried for the current status, [isEnabled] reads a persisted flag.
  */
 class BackgroundPortal(
-    private val portal: () -> Portal,
+    portal: () -> Portal = { error("Portal not configured") },
     private val flagFile: File = defaultFlagFile(),
+    private val request: (autostart: Boolean) -> Map<String, Variant<*>> = { autostart ->
+        val p = portal()
+        val background = p.portalObject<Background>()
+        val options = mapOf(
+            "reason" to Variant("Voice dictation"),
+            "autostart" to Variant(autostart),
+            "commandline" to Variant(arrayOf("umm", "--background")),
+        )
+        p.request(options) { background.RequestBackground("", it) }
+    },
 ) : LoginStart {
 
     constructor(portal: Portal, flagFile: File = defaultFlagFile()) : this({ portal }, flagFile)
@@ -22,18 +33,16 @@ class BackgroundPortal(
     override fun isEnabled(): Boolean = flagFile.isFile
 
     override fun enable(exec: String) {
-        val background = portal().portalObject<Background>()
-        val options = mapOf(
-            "reason" to Variant("Voice dictation"),
-            "autostart" to Variant(true),
-            "commandline" to Variant(arrayOf("umm", "--background")),
-        )
-        portal().request(options) { background.RequestBackground("", it) }
+        val response = request(true)
+        if (response["autostart"]?.value == false) {
+            throw PortalException(1)
+        }
         flagFile.parentFile?.mkdirs()
         flagFile.writeText("true\n")
     }
 
     override fun disable() {
+        request(false)
         flagFile.delete()
     }
 
