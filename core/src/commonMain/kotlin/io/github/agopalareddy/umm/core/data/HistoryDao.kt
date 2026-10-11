@@ -8,10 +8,10 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 internal interface HistoryDao {
-    @Query("SELECT * FROM history WHERE (:origin IS NULL OR originDevice = :origin) ORDER BY id DESC LIMIT :limit")
+    @Query("SELECT * FROM history WHERE (:origin IS NULL OR originDevice = :origin) ORDER BY createdAt DESC, id DESC LIMIT :limit")
     fun observeRecent(limit: Int, origin: String?): Flow<List<HistoryEntity>>
 
-    @Query("SELECT * FROM history ORDER BY id DESC LIMIT :limit")
+    @Query("SELECT * FROM history ORDER BY createdAt DESC, id DESC LIMIT :limit")
     fun observeRecent(limit: Int): Flow<List<HistoryEntity>>
 
     @Query("SELECT * FROM history WHERE id = :id")
@@ -29,7 +29,7 @@ internal interface HistoryDao {
     @Query("UPDATE history SET originId = :originId WHERE id = :id")
     suspend fun setOriginId(id: Long, originId: Long)
 
-    @Query("SELECT * FROM history WHERE originDevice = :originDevice ORDER BY id DESC LIMIT -1 OFFSET :keep")
+    @Query("SELECT * FROM history WHERE originDevice = :originDevice ORDER BY createdAt DESC, id DESC LIMIT -1 OFFSET :keep")
     suspend fun beyond(originDevice: String, keep: Int): List<HistoryEntity>
 
     @Query("SELECT * FROM history WHERE audioPath IS NOT NULL AND createdAt < :cutoff")

@@ -357,4 +357,147 @@ class OpApplierTest {
         val opsForAAfter = a.log.since(emptyMap()).filter { it.origin == a.deviceId() }
         assertEquals(0, opsForAAfter.size)
     }
+
+    @Test
+    fun lateArrivalWithOlderCreatedAt_orderedByTime_andTrimmedWhenOverLimit() = runTest {
+        val a = createDevice("A")
+        val b = createDevice("B")
+
+        // Device A creates two newer local entries at t=2000 and t=3000
+        a.wall = 2000
+        val audioA1 = File(tmp.root, "a1.wav").apply { writeText("audio") }
+        val idA1 = a.history.createPending("com.app", level = CleanupLevel.LIGHT, script = ScriptPreference.LATIN, language = "en", audioPath = audioA1.absolutePath)
+        a.history.markDone(idA1, "two", "Two")
+
+        a.wall = 3000
+        val audioA2 = File(tmp.root, "a2.wav").apply { writeText("audio") }
+        val idA2 = a.history.createPending("com.app", level = CleanupLevel.LIGHT, script = ScriptPreference.LATIN, language = "en", audioPath = audioA2.absolutePath)
+        a.history.markDone(idA2, "three", "Three")
+
+        // Device B creates an older entry at t=1000
+        b.wall = 1000
+        val audioB = File(tmp.root, "b.wav").apply { writeText("audio") }
+        val idB = b.history.createPending("com.app", level = CleanupLevel.LIGHT, script = ScriptPreference.LATIN, language = "en", audioPath = audioB.absolutePath)
+        b.history.markDone(idB, "one", "One")
+
+        // Device A applies B's older entry (inserted into A with higher id)
+        a.apply(b.since(a.marks))
+
+        val recent = a.history.observeRecent().first()
+        assertEquals(3, recent.size)
+        // Must be in time order: 3000, 2000, 1000
+        assertEquals(listOf(3000L, 2000L, 1000L), recent.map { it.createdAt })
+
+        // Now test trimming for origin B: fill origin B up to 50 entries with t=1001..1050
+        for (i in 1..50) {
+            b.wall = 1000L + i
+            val audioBi = File(tmp.root, "b_$i.wav").apply { writeText("audio") }
+            val idBi = b.history.createPending("com.app", level = CleanupLevel.LIGHT, script = ScriptPreference.LATIN, language = "en", audioPath = audioBi.absolutePath)
+            b.history.markDone(idBi, "msg$i", "Msg$i")
+        }
+        // Device A applies B's new entries; now B has 51 total entries (t=1000 and t=1001..1050)
+        a.apply(b.since(a.marks))
+
+        val bItemsOnA = a.history.observeRecent(origin = b.deviceId()).first()
+        assertEquals(50, bItemsOnA.size)
+        // Oldest item (t=1000) was trimmed, newest 50 (t=1001..1050) remain
+        assertEquals((1050L downTo 1001L).toList(), bItemsOnA.map { it.createdAt })
+        assertFalse(bItemsOnA.any { it.createdAt == 1000L })
+    }
+
+    @Test
+    fun devicesApplyingSameOpsInDifferentOrder_endWithSameRowsInSameOrder() = runTest {
+        val devA = createDevice("DEV_A")
+        val devB = createDevice("DEV_B")
+
+        // Create 3 ops from different origins/times
+        val op1 = OpEnvelope(
+            origin = "origin_X",
+            seq = 1,
+            hlc = 100,
+            op = SyncOp.HistoryUpsert(
+                SyncedHistory(
+                    originDevice = "origin_X",
+                    originId = 1,
+                    appLabel = null,
+                    createdAt = 1000L,
+                    packageName = "com.x",
+                    level = CleanupLevel.LIGHT,
+                    script = ScriptPreference.LATIN,
+                    language = "en",
+                    status = HistoryStatus.DONE,
+                    rawText = "x1",
+                    cleanText = "Clean X1",
+                    error = null,
+                ),
+            ),
+        )
+
+        val op2 = OpEnvelope(
+            origin = "origin_Y",
+            seq = 1,
+            hlc = 200,
+            op = SyncOp.HistoryUpsert(
+                SyncedHistory(
+                    originDevice = "origin_Y",
+                    originId = 1,
+                    appLabel = null,
+                    createdAt = 3000L,
+                    packageName = "com.y",
+                    level = CleanupLevel.LIGHT,
+                    script = ScriptPreference.LATIN,
+                    language = "en",
+                    status = HistoryStatus.DONE,
+                    rawText = "y1",
+                    cleanText = "Clean Y1",
+                    error = null,
+                ),
+            ),
+        )
+
+        val op3 = OpEnvelope(
+            origin = "origin_X",
+            seq = 2,
+            hlc = 300,
+            op = SyncOp.HistoryUpsert(
+                SyncedHistory(
+                    originDevice = "origin_X",
+                    originId = 2,
+                    appLabel = null,
+                    createdAt = 2000L,
+                    packageName = "com.x",
+                    level = CleanupLevel.LIGHT,
+                    script = ScriptPreference.LATIN,
+                    language = "en",
+                    status = HistoryStatus.DONE,
+                    rawText = "x2",
+                    cleanText = "Clean X2",
+                    error = null,
+                ),
+            ),
+        )
+
+        // Device A applies in order [op1, op2, op3]
+        devA.apply(listOf(op1, op2, op3))
+
+        // Device B applies in order [op3, op2, op1]
+        // Note: OpApplier.apply internally sorts incoming batch by (origin, seq), so let's apply in separate batches
+        devB.apply(listOf(op3))
+        devB.apply(listOf(op2))
+        devB.apply(listOf(op1))
+
+        val listA = devA.history.observeRecent().first()
+        val listB = devB.history.observeRecent().first()
+
+        assertEquals(3, listA.size)
+        assertEquals(3, listB.size)
+        // Both devices must have the exact same rows in the exact same time order (3000, 2000, 1000)
+        assertEquals(listOf(3000L, 2000L, 1000L), listA.map { it.createdAt })
+        assertEquals(listOf(3000L, 2000L, 1000L), listB.map { it.createdAt })
+        assertEquals(
+            listA.map { Triple(it.originDevice, it.originId, it.cleanText) },
+            listB.map { Triple(it.originDevice, it.originId, it.cleanText) },
+        )
+    }
 }
+
