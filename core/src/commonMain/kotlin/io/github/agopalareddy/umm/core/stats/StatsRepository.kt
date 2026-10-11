@@ -1,5 +1,7 @@
 package io.github.agopalareddy.umm.core.stats
 
+import androidx.room.immediateTransaction
+import androidx.room.useWriterConnection
 import io.github.agopalareddy.umm.core.data.UmmDatabase
 import io.github.agopalareddy.umm.core.sync.ChangeRecorder
 import io.github.agopalareddy.umm.core.sync.SyncMeta
@@ -24,8 +26,12 @@ class StatsRepository(
     /** Upserts by composite key (originDevice, historyId), so a successful retry replaces the failed attempt. Writes nothing while recording is off. */
     suspend fun record(entry: StatsEntry) {
         if (enabled()) {
-            dao.upsert(entry)
-            recorder.record(SyncOp.StatsUpsert(entry.toSynced()))
+            db.useWriterConnection { transactor ->
+                transactor.immediateTransaction {
+                    dao.upsert(entry)
+                    recorder.record(SyncOp.StatsUpsert(entry.toSynced()))
+                }
+            }
         }
     }
 
@@ -38,8 +44,12 @@ class StatsRepository(
 
     /** Deletes stats before [before], optionally scoped to [origin], and records ClearBefore. */
     suspend fun clear(origin: String? = null, before: Long = System.currentTimeMillis() + 10_000L) {
-        dao.deleteBefore(before, origin)
-        recorder.record(SyncOp.ClearBefore(DataKind.STATS, before, origin))
+        db.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                dao.deleteBefore(before, origin)
+                recorder.record(SyncOp.ClearBefore(DataKind.STATS, before, origin))
+            }
+        }
     }
 
     suspend fun clearThisDevice(before: Long = System.currentTimeMillis() + 10_000L) {

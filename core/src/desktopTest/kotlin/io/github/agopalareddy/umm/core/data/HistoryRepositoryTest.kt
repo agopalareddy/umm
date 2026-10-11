@@ -186,5 +186,58 @@ class HistoryRepositoryTest {
         assertEquals(now, clear.before)
         assertNull(clear.origin)
     }
+
+    @Test fun markDoneWithFailingRecorderRollsBackAndKeepsAudio() = runTest {
+        val failingRecorder = ChangeRecorder { throw RuntimeException("Recorder failed") }
+        val repoWithFailingRecorder = HistoryRepository(db, clock = { now }, recorder = failingRecorder)
+        val file = audio()
+        val id = repoWithFailingRecorder.createPending("com.whatsapp", null, CleanupLevel.LIGHT, ScriptPreference.LATIN, "auto", file.path)
+        try {
+            repoWithFailingRecorder.markDone(id, "raw", "clean")
+            org.junit.Assert.fail("Expected exception")
+        } catch (e: RuntimeException) {
+            assertEquals("Recorder failed", e.message)
+        }
+        val item = repoWithFailingRecorder.get(id)!!
+        assertEquals(HistoryStatus.PENDING, item.status)
+        assertNull(item.rawText)
+        assertNull(item.cleanText)
+        assertEquals(file.path, item.audioPath)
+        assertTrue(file.exists())
+    }
+
+    @Test fun deleteWithFailingRecorderRollsBackAndKeepsAudio() = runTest {
+        val failingRecorder = ChangeRecorder { throw RuntimeException("Recorder failed") }
+        val file = audio()
+        val id = repo.createPending("com.whatsapp", null, CleanupLevel.LIGHT, ScriptPreference.LATIN, "auto", file.path)
+        val repoWithFailingRecorder = HistoryRepository(db, clock = { now }, recorder = failingRecorder)
+        try {
+            repoWithFailingRecorder.delete(id)
+            org.junit.Assert.fail("Expected exception")
+        } catch (e: RuntimeException) {
+            assertEquals("Recorder failed", e.message)
+        }
+        val item = repo.get(id)
+        org.junit.Assert.assertNotNull(item)
+        assertTrue(file.exists())
+    }
+
+    @Test fun clearAllWithFailingRecorderRollsBackAndKeepsAudio() = runTest {
+        val failingRecorder = ChangeRecorder { throw RuntimeException("Recorder failed") }
+        val file1 = audio()
+        val file2 = audio()
+        repo.createPending("com.whatsapp", null, CleanupLevel.LIGHT, ScriptPreference.LATIN, "auto", file1.path)
+        repo.createPending("com.whatsapp", null, CleanupLevel.LIGHT, ScriptPreference.LATIN, "auto", file2.path)
+        val repoWithFailingRecorder = HistoryRepository(db, clock = { now }, recorder = failingRecorder)
+        try {
+            repoWithFailingRecorder.clearAll()
+            org.junit.Assert.fail("Expected exception")
+        } catch (e: RuntimeException) {
+            assertEquals("Recorder failed", e.message)
+        }
+        assertEquals(2, repo.observeRecent().first().size)
+        assertTrue(file1.exists())
+        assertTrue(file2.exists())
+    }
 }
 

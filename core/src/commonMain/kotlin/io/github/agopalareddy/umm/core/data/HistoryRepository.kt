@@ -39,6 +39,7 @@ class HistoryRepository(
         audioPath: String,
     ): Long {
         val origin = meta.deviceId()
+        val toDeleteAudio = mutableListOf<String>()
         val id = db.useWriterConnection { transactor ->
             transactor.immediateTransaction {
                 val insertedId = dao.insert(
@@ -56,20 +57,23 @@ class HistoryRepository(
                     ),
                 )
                 dao.setOriginId(insertedId, insertedId)
+                val beyond = dao.beyond(origin, MAX_ITEMS)
+                if (beyond.isNotEmpty()) {
+                    beyond.forEach { it.audioPath?.let(toDeleteAudio::add) }
+                    dao.delete(beyond.map { it.id })
+                }
                 insertedId
             }
         }
-        removeWithAudio(dao.beyond(origin, MAX_ITEMS))
+        toDeleteAudio.forEach { File(it).delete() }
         return id
     }
 
     suspend fun markDone(id: Long, raw: String, clean: String?) = edit(id) {
-        deleteAudio(it)
         it.copy(status = HistoryStatus.DONE, rawText = raw, cleanText = clean, audioPath = null, error = null)
     }
 
     suspend fun markCleanupFailed(id: Long, raw: String, error: String) = edit(id) {
-        deleteAudio(it)
         it.copy(status = HistoryStatus.CLEANUP_FAILED, rawText = raw, audioPath = null, error = error)
     }
 
@@ -82,42 +86,61 @@ class HistoryRepository(
     }
 
     suspend fun delete(id: Long) {
-        val item = dao.get(id) ?: return
-        removeWithAudio(listOf(item))
-        recorder.record(SyncOp.HistoryDelete(item.originDevice, item.originId))
+        var audioToDelete: String? = null
+        db.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                val item = dao.get(id) ?: return@immediateTransaction
+                dao.delete(listOf(item.id))
+                recorder.record(SyncOp.HistoryDelete(item.originDevice, item.originId))
+                audioToDelete = item.audioPath
+            }
+        }
+        audioToDelete?.let { File(it).delete() }
     }
 
     suspend fun clearAll() {
-        dao.all().forEach(::deleteAudio)
-        dao.deleteAll()
-        recorder.record(SyncOp.ClearBefore(DataKind.HISTORY, clock(), null))
+        val audioToDelete = mutableListOf<String>()
+        db.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                val all = dao.all()
+                all.forEach { it.audioPath?.let(audioToDelete::add) }
+                dao.deleteAll()
+                recorder.record(SyncOp.ClearBefore(DataKind.HISTORY, clock(), null))
+            }
+        }
+        audioToDelete.forEach { File(it).delete() }
     }
 
     suspend fun purgeExpiredAudio(maxAgeMs: Long = 7L * 24 * 3600 * 1000) {
-        dao.withAudioOlderThan(clock() - maxAgeMs).forEach { entity ->
-            deleteAudio(entity)
-            dao.update(entity.copy(audioPath = null))
+        val audioToDelete = mutableListOf<String>()
+        db.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                val expired = dao.withAudioOlderThan(clock() - maxAgeMs)
+                expired.forEach { entity ->
+                    entity.audioPath?.let(audioToDelete::add)
+                    dao.update(entity.copy(audioPath = null))
+                }
+            }
         }
+        audioToDelete.forEach { File(it).delete() }
     }
 
     private suspend fun edit(id: Long, change: (HistoryEntity) -> HistoryEntity) {
-        val current = dao.get(id) ?: return
-        val updated = change(current)
-        dao.update(updated)
-        if (updated.status != HistoryStatus.PENDING) {
-            recorder.record(SyncOp.HistoryUpsert(updated.toSynced()))
+        var audioToDelete: String? = null
+        db.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                val current = dao.get(id) ?: return@immediateTransaction
+                val updated = change(current)
+                dao.update(updated)
+                if (updated.status != HistoryStatus.PENDING) {
+                    recorder.record(SyncOp.HistoryUpsert(updated.toSynced()))
+                }
+                if (current.audioPath != null && updated.audioPath == null) {
+                    audioToDelete = current.audioPath
+                }
+            }
         }
-    }
-
-
-    private suspend fun removeWithAudio(entities: List<HistoryEntity>) {
-        if (entities.isEmpty()) return
-        entities.forEach(::deleteAudio)
-        dao.delete(entities.map { it.id })
-    }
-
-    private fun deleteAudio(entity: HistoryEntity) {
-        entity.audioPath?.let { File(it).delete() }
+        audioToDelete?.let { File(it).delete() }
     }
 
     private companion object {

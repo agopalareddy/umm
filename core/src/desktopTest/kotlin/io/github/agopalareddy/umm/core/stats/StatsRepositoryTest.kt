@@ -12,6 +12,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import io.github.agopalareddy.umm.core.sync.ChangeRecorder
 import org.junit.Test
 
 class StatsRepositoryTest {
@@ -93,5 +95,18 @@ class StatsRepositoryTest {
     // The flow computes on Dispatchers.Default, so real time passes; poll instead of advancing the virtual clock.
     private suspend fun awaitSize(list: List<*>, size: Int) = withContext(Dispatchers.Default) {
         withTimeout(10_000) { while (list.size < size) delay(10) }
+    }
+
+    @Test fun recordWithFailingRecorderRollsBack() = runTest {
+        val failingRecorder = ChangeRecorder { throw RuntimeException("Recorder failed") }
+        val repoWithFailingRecorder = StatsRepository(db, recorder = failingRecorder)
+        try {
+            repoWithFailingRecorder.record(entry(1, ok = true))
+            org.junit.Assert.fail("Expected exception")
+        } catch (e: RuntimeException) {
+            assertEquals("Recorder failed", e.message)
+        }
+        assertEquals(emptyList<StatsEntry>(), repo.all())
+        assertNull(repo.get(1))
     }
 }
