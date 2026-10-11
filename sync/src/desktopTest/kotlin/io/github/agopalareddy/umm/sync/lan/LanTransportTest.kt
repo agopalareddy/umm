@@ -27,7 +27,6 @@ import io.github.agopalareddy.umm.sync.pair.Pairing
 import io.github.agopalareddy.umm.sync.relay.RelayTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
@@ -253,10 +252,9 @@ class LanTransportTest {
         val silentPeer = LanPeer("silent-device", InetAddress.getByName("127.0.0.1"), silentPort)
         devA.discovery.emitPeer(silentPeer)
 
-        var attempts = 0
-        while (devA.transport.peers.value.none { it.deviceId == "silent-device" } && attempts++ < 50) {
-            delay(20)
-        }
+        // Wait on the flow itself: a delay() loop here takes no real time under runTest, so on a slow machine the
+        // peer was not listed yet when the sync ran.
+        devA.transport.peers.first { peers -> peers.any { it.deviceId == "silent-device" } }
 
         // syncNow() to silent peer returns within deadline without throwing
         devA.engine.syncNow()
@@ -275,10 +273,7 @@ class LanTransportTest {
         val peerB = LanPeer(devB.selfId, InetAddress.getByName("127.0.0.1"), portB)
         devA.discovery.emitPeer(peerB)
 
-        attempts = 0
-        while (devA.transport.peers.value.none { it.deviceId == devB.selfId } && attempts++ < 50) {
-            delay(20)
-        }
+        devA.transport.peers.first { peers -> peers.any { it.deviceId == devB.selfId } }
 
         // Second syncNow() succeeds
         devA.engine.syncNow()

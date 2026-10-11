@@ -45,6 +45,10 @@ jobs:
           name: test-reports
           path: |
             core/build/reports/tests/
+            sync/build/reports/tests/
+            ui/build/reports/tests/
+            desktop/build/reports/tests/
+            linux/build/reports/tests/
             app/build/reports/tests/
       - name: Upload debug APK
         uses: actions/upload-artifact@v7
