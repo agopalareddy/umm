@@ -14,6 +14,7 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 class GroupStore(
     val store: KeyValueStore,
     private val cipher: SecretCipher,
+    private val defaultName: String? = null,
 ) {
     val device: DeviceKeys = run {
         val stored = store.getString(KEY_DEVICE_PRIV)
@@ -62,7 +63,8 @@ class GroupStore(
     }
 
     private fun defaultDeviceName(): String {
-        return System.getenv("HOSTNAME")?.takeIf { it.isNotBlank() }
+        return defaultName?.takeIf { it.isNotBlank() }
+            ?: System.getenv("HOSTNAME")?.takeIf { it.isNotBlank() }
             ?: runCatching { java.io.File("/etc/hostname").readText().trim() }.getOrNull()?.takeIf { it.isNotEmpty() }
             ?: runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrNull()?.takeIf { it.isNotEmpty() }
             ?: System.getProperty("user.name")

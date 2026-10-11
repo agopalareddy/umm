@@ -216,6 +216,7 @@ class UmmInputMethodService : InputMethodService(), LifecycleOwner, SavedStateRe
 
         override fun onInserted() {
             ui = ui.copy(levelOverride = null)
+            graph.syncEngine.onLocalChange()
             lifecycleScope.launch {
                 if (graph.settings.settings.first().switchBackAfterInsert) switchToPreviousInputMethod()
             }

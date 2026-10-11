@@ -116,6 +116,9 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.process)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.play.services.code.scanner)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.browser)
     implementation(platform(libs.compose.bom))
@@ -127,5 +130,8 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.work.testing)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.secp256k1.jni.jvm)
 }

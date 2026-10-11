@@ -43,6 +43,7 @@ kotlin {
             implementation(libs.robolectric)
             implementation(libs.androidx.test.core)
             implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.secp256k1.jni.jvm)
         }
     }
 }

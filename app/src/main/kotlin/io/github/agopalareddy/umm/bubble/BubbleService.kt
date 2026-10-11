@@ -628,7 +628,10 @@ class BubbleService : AccessibilityService() {
             release()
         }
 
-        override fun onInserted() = insertion.onInserted()
+        override fun onInserted() {
+            insertion.onInserted()
+            graph.syncEngine.onLocalChange()
+        }
 
         private fun release() {
             delivery.detach(this)
