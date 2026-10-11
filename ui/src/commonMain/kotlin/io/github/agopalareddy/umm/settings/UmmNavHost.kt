@@ -27,6 +27,7 @@ object Routes {
     const val CATEGORIES = "settings/categories"
     const val MODELS = "settings/models"
     const val STATS = "settings/stats"
+    const val SYNC = "settings/sync"
     const val HISTORY = "history"
     const val ABOUT = "about"
 }
@@ -78,6 +79,7 @@ fun UmmNavHost(
         composable(Routes.LANGUAGES) { LanguagesPage(settings, back, change) }
         composable(Routes.APPEARANCE) { AppearancePage(settings, back, change) }
         composable(Routes.STATS) { StatsPage(settings, back, change, sampleData) }
+        composable(Routes.SYNC) { SyncPage(back) }
         composable(Routes.CATEGORIES) { CategoriesScreen(back) }
         composable(Routes.MODELS) { ModelsScreen(back) }
         composable(Routes.HISTORY) { HistoryScreen(back) }

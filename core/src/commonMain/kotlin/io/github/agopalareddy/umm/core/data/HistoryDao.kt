@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 internal interface HistoryDao {
+    @Query("SELECT * FROM history WHERE (:origin IS NULL OR originDevice = :origin) ORDER BY id DESC LIMIT :limit")
+    fun observeRecent(limit: Int, origin: String?): Flow<List<HistoryEntity>>
+
     @Query("SELECT * FROM history ORDER BY id DESC LIMIT :limit")
     fun observeRecent(limit: Int): Flow<List<HistoryEntity>>
 

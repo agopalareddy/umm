@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilterChip
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -64,9 +65,12 @@ fun HomeScreen(home: HomeSetup, onOpen: (String) -> Unit) {
             today = LocalDate.now()
         }
     }
+    val sync = umm.sync
+    val devices by sync?.devices?.collectAsStateWithLifecycle(emptyList()) ?: remember { mutableStateOf(emptyList()) }
+    var selectedDevice by rememberSaveable { mutableStateOf<String?>(null) }
     // No range while settings load or the dashboard is hidden, so nothing is computed.
     val range = settings?.takeIf { it.statsVisible }?.dashboardRange
-    val stats by remember(range, today) { range?.let { umm.stats.observeDashboard(it) } ?: emptyFlow() }
+    val stats by remember(range, today, selectedDevice) { range?.let { umm.stats.observeDashboard(it, origin = selectedDevice) } ?: emptyFlow() }
         .collectAsStateWithLifecycle(null)
     var plan by remember { mutableStateOf<ModelPlan?>(null) }
     val zdr by remember { umm.dataPolicy.observe() }.collectAsStateWithLifecycle(null)
@@ -137,6 +141,25 @@ fun HomeScreen(home: HomeSetup, onOpen: (String) -> Unit) {
         settings?.let { current ->
             if (current.statsVisible) {
                 Spacer(Modifier.height(24.dp))
+                if (devices.size > 1) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        FilterChip(
+                            selected = selectedDevice == null,
+                            onClick = { selectedDevice = null },
+                            label = { Text("All") },
+                        )
+                        devices.forEach { dev ->
+                            FilterChip(
+                                selected = selectedDevice == dev.member.deviceId,
+                                onClick = { selectedDevice = dev.member.deviceId },
+                                label = { Text(dev.member.name) },
+                            )
+                        }
+                    }
+                }
                 Dashboard(stats, current, change)
             }
         }

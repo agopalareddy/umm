@@ -24,7 +24,9 @@ class HistoryRepository(
     private val dao = db.historyDao()
     private val meta = SyncMeta(db)
 
-    fun observeRecent(): Flow<List<HistoryItem>> = dao.observeRecent(MAX_ITEMS).map { list -> list.map { it.toItem() } }
+    fun observeRecent(origin: String? = null): Flow<List<HistoryItem>> =
+        (if (origin == null) dao.observeRecent(MAX_ITEMS) else dao.observeRecent(MAX_ITEMS, origin))
+            .map { list -> list.map { it.toItem() } }
 
     suspend fun get(id: Long): HistoryItem? = dao.get(id)?.toItem()
 

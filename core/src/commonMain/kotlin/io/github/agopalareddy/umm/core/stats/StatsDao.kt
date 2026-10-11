@@ -16,6 +16,9 @@ internal interface StatsDao {
     @Query("SELECT * FROM dictation_stats ORDER BY createdAt")
     suspend fun all(): List<StatsEntry>
 
+    @Query("SELECT * FROM dictation_stats WHERE (:origin IS NULL OR originDevice = :origin) ORDER BY createdAt")
+    fun observeAll(origin: String?): Flow<List<StatsEntry>>
+
     @Query("SELECT * FROM dictation_stats ORDER BY createdAt")
     fun observeAll(): Flow<List<StatsEntry>>
 

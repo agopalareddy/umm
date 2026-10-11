@@ -7,6 +7,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import io.github.agopalareddy.umm.core.data.inMemoryUmmDatabase
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
 
 class DashboardStatsTest {
     private val zone = ZoneOffset.UTC
@@ -35,5 +38,24 @@ class DashboardStatsTest {
         assertEquals(1, stats.habits.attempts)
         // Lifetime facts still see the old row.
         assertEquals(20.0 / 80_000, stats.engagement.novelShare, 1e-9)
+    }
+
+    @Test fun originFilter() = runTest {
+        val db = inMemoryUmmDatabase()
+        try {
+            val dao = db.statsDao()
+            dao.upsert(StatsEntry("phone", 1, null, nowMs, "com.whatsapp", CleanupLevel.LIGHT, rawWords = 10, cleanWords = 10, fillerWords = 0, audioMs = 1000, latencyMs = 100, costUsd = 0.01, sttModel = "stt", cleanupModel = "chat", succeeded = true))
+            dao.upsert(StatsEntry("laptop", 2, null, nowMs, "com.whatsapp", CleanupLevel.LIGHT, rawWords = 25, cleanWords = 25, fillerWords = 0, audioMs = 2000, latencyMs = 200, costUsd = 0.02, sttModel = "stt", cleanupModel = "chat", succeeded = true))
+            val repo = StatsRepository(db)
+            val filtered = repo.observeDashboard(DashboardRange.ALL, origin = "phone").first()
+            assertEquals(1, filtered.period.current.dictations)
+            assertEquals(10, filtered.period.current.words)
+
+            val all = repo.observeDashboard(DashboardRange.ALL, origin = null).first()
+            assertEquals(2, all.period.current.dictations)
+            assertEquals(35, all.period.current.words)
+        } finally {
+            db.close()
+        }
     }
 }

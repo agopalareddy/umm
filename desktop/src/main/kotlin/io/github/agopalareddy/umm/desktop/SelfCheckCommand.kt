@@ -96,6 +96,11 @@ object SelfCheck {
             check(bitmap.width == 1 && bitmap.height == 1) { "ImageBitmap allocation failed" }
         }
 
+        check("zxing") {
+            val matrix = io.github.agopalareddy.umm.ui.qrMatrix("self-check")
+            check(matrix.isNotEmpty()) { "qrMatrix failed" }
+        }
+
         return failures
     }
 }

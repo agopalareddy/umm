@@ -12,6 +12,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -28,6 +29,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
 import io.github.agopalareddy.umm.core.data.HistoryItem
 import io.github.agopalareddy.umm.core.data.HistoryStatus
+import io.github.agopalareddy.umm.sync.DeviceInfo
 import io.github.agopalareddy.umm.ui.LocalUmm
 import io.github.agopalareddy.umm.ui.relativeTime
 import kotlinx.coroutines.launch
@@ -35,17 +37,39 @@ import kotlinx.coroutines.launch
 @Composable
 fun HistoryScreen(onBack: () -> Unit) {
     val history = LocalUmm.current.history
-    val items by history.observeRecent().collectAsStateWithLifecycle(emptyList())
+    val sync = LocalUmm.current.sync
+    val devices by sync?.devices?.collectAsStateWithLifecycle(emptyList()) ?: remember { mutableStateOf(emptyList()) }
+    var selectedOrigin by remember { mutableStateOf<String?>(null) }
+    val items by remember(selectedOrigin) { history.observeRecent(selectedOrigin) }.collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
     var confirmClear by remember { mutableStateOf(false) }
 
     Page("History", onBack, scrollable = false) {
+        if (devices.size > 1) {
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    selected = selectedOrigin == null,
+                    onClick = { selectedOrigin = null },
+                    label = { Text("All") },
+                )
+                devices.forEach { dev ->
+                    FilterChip(
+                        selected = selectedOrigin == dev.member.deviceId,
+                        onClick = { selectedOrigin = dev.member.deviceId },
+                        label = { Text(dev.member.name) },
+                    )
+                }
+            }
+        }
         if (items.isNotEmpty()) {
             TextButton(onClick = { confirmClear = true }, modifier = Modifier.align(Alignment.End)) { Text("Clear all") }
         }
         if (items.isEmpty()) Text("Your recent dictations will appear here.")
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(items, key = { it.id }) { HistoryCard(it) }
+            items(items, key = { it.id }) { HistoryCard(it, devices) }
         }
     }
     if (confirmClear) {
@@ -60,9 +84,12 @@ fun HistoryScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun HistoryCard(item: HistoryItem) {
+private fun HistoryCard(item: HistoryItem, devices: List<DeviceInfo>) {
     val umm = LocalUmm.current
     val scope = rememberCoroutineScope()
+    val dev = devices.find { it.member.deviceId == item.originDevice }
+    val isSelf = dev?.isSelf ?: true
+    val fromSuffix = if (!isSelf) " · from ${dev.member.name}" else ""
     var levelMenu by remember { mutableStateOf(false) }
     var reporting by remember { mutableStateOf(false) }
     if (reporting) ReportDialog(item) { reporting = false }
@@ -70,7 +97,7 @@ private fun HistoryCard(item: HistoryItem) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             val time = relativeTime(item.createdAt, System.currentTimeMillis())
-            Text("$time · ${umm.platform.appLabel(item.packageName)} · ${item.level.title()} · ${item.status.label()}", style = MaterialTheme.typography.bodySmall)
+            Text("$time · ${umm.platform.appLabel(item.packageName)} · ${item.level.title()} · ${item.status.label()}$fromSuffix", style = MaterialTheme.typography.bodySmall)
             Text(text ?: "(not transcribed)", style = MaterialTheme.typography.bodyLarge)
             Row {
                 if (text != null) TextButton(onClick = {
@@ -91,7 +118,7 @@ private fun HistoryCard(item: HistoryItem) {
                         }
                     }
                 }
-                if (item.status == HistoryStatus.FAILED && item.audioPath != null) {
+                if (isSelf && item.status == HistoryStatus.FAILED && item.audioPath != null) {
                     TextButton(onClick = { umm.pipeline.reset(); umm.pipeline.retry(item.id) }) { Text("Retry") }
                 }
                 if (item.cleanText != null) TextButton(onClick = { reporting = true }) { Text("Report") }

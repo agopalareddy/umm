@@ -11,6 +11,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -151,6 +152,7 @@ private fun sidebarItems() = listOf(
     SidebarItem(Icons.Rounded.Translate, "Languages", Routes.LANGUAGES),
     SidebarItem(Icons.Rounded.Palette, "Appearance", Routes.APPEARANCE),
     SidebarItem(Icons.Rounded.AccountCircle, "Account", Routes.ACCOUNT),
+    SidebarItem(Icons.Rounded.Sync, "Sync", Routes.SYNC),
     SidebarItem(Icons.Rounded.Computer, "Desktop", DesktopRoutes.SETTINGS),
     SidebarItem(Icons.Rounded.Info, "About", Routes.ABOUT),
 )

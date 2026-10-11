@@ -4,6 +4,7 @@ import io.github.agopalareddy.umm.core.data.UmmDatabase
 import io.github.agopalareddy.umm.core.sync.ChangeRecorder
 import io.github.agopalareddy.umm.core.sync.SyncMeta
 import io.github.agopalareddy.umm.core.sync.SyncOp
+import io.github.agopalareddy.umm.core.sync.DataKind
 import io.github.agopalareddy.umm.core.sync.toSynced
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
@@ -35,16 +36,28 @@ class StatsRepository(
 
     suspend fun deleteAll() = dao.deleteAll()
 
+    /** Deletes stats before [before], optionally scoped to [origin], and records ClearBefore. */
+    suspend fun clear(origin: String? = null, before: Long = System.currentTimeMillis() + 10_000L) {
+        dao.deleteBefore(before, origin)
+        recorder.record(SyncOp.ClearBefore(DataKind.STATS, before, origin))
+    }
+
+    suspend fun clearThisDevice(before: Long = System.currentTimeMillis() + 10_000L) {
+        clear(meta.deviceId(), before)
+    }
+
     /** Deletes the rows whose history ID is [firstId] or higher on this device (the debug sample data). */
     suspend fun deleteFromHistoryId(firstId: Long) = dao.deleteFromHistoryId(meta.deviceId(), firstId)
 
-    fun observeAll(): Flow<List<StatsEntry>> = dao.observeAll()
+    fun observeAll(origin: String? = null): Flow<List<StatsEntry>> =
+        if (origin == null) dao.observeAll() else dao.observeAll(origin)
 
     /** Recomputed on every table change, off the main thread. */
     fun observeDashboard(
         range: DashboardRange,
+        origin: String? = null,
         clock: () -> Long = System::currentTimeMillis,
         zone: ZoneId = ZoneId.systemDefault(),
     ): Flow<DashboardStats> =
-        dao.observeAll().map { DashboardStats.from(it, range, clock(), zone) }.flowOn(Dispatchers.Default)
+        observeAll(origin).map { DashboardStats.from(it, range, clock(), zone) }.flowOn(Dispatchers.Default)
 }

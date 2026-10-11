@@ -26,6 +26,7 @@ kotlin {
             api(libs.jb.material.icons.extended)
             api(libs.jb.navigation.compose)
             api(libs.jb.lifecycle.runtime.compose)
+            implementation(libs.zxing.core)
         }
         getByName("desktopTest").dependencies {
             implementation(libs.junit)
