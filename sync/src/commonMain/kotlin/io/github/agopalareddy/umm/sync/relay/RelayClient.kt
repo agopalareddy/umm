@@ -217,10 +217,11 @@ class RelayClient(
      * Sends the subscription's REQ again on the live socket, so the relay replays what it stores and ends with a new
      * [RelayItem.StoredEventsEnd]. False when there is no live subscription with this id.
      */
-    fun refresh(id: String): Boolean {
-        val filter = subscriptionFilters[id] ?: return false
+    fun refresh(id: String, newFilter: JsonObject? = null): Boolean {
         val ws = synchronized(lock) { webSocket } ?: return false
         if (!subscriptions.containsKey(id)) return false
+        if (newFilter != null) subscriptionFilters[id] = newFilter
+        val filter = subscriptionFilters[id] ?: return false
         val reqMsg = buildJsonArray {
             add("REQ")
             add(id)

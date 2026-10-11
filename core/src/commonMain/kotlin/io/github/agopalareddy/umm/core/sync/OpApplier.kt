@@ -66,7 +66,16 @@ class OpApplier(
         return newlyApplied
     }
 
-    suspend fun applySnapshot(snapshot: Snapshot) {
+    /**
+     * [whole] says the snapshot is the sender's full state (as at pairing), so this device is then where the sender's
+     * marks are. A sync session that sends only some origins' rows passes false and settles the marks itself.
+     */
+    suspend fun applySnapshot(snapshot: Snapshot, whole: Boolean = true) {
+        applySnapshotRows(snapshot)
+        if (whole) log.markComplete(snapshot.marks)
+    }
+
+    private suspend fun applySnapshotRows(snapshot: Snapshot) {
         val marksJson = Json.encodeToString(snapshot.marks)
         db.syncDao().putPeer(
             SyncPeerEntity(

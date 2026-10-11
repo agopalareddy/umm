@@ -55,7 +55,10 @@ class OpApplierTest {
 
         suspend fun deviceId(): String = meta.deviceId()
         suspend fun since(marks: Map<String, Long>): List<OpEnvelope> = log.since(marks)
-        suspend fun apply(envelopes: List<OpEnvelope>): Int = applier.apply(envelopes)
+        /** A complete exchange, as a sync session does it: the ops, then the marks they bring this device to. */
+        suspend fun apply(envelopes: List<OpEnvelope>): Int = applier.apply(envelopes).also {
+            log.markComplete(envelopes.groupBy { it.origin }.mapValues { (_, ops) -> ops.maxOf { it.seq } })
+        }
 
         fun close() {
             db.close()

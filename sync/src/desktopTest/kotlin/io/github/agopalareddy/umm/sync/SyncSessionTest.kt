@@ -219,22 +219,15 @@ class SyncSessionTest {
         val devA = createDevice("devA", this, key = sharedKey)
         val devC = createDevice("devC", this, key = sharedKey)
 
-        devA.log.record(
-            SyncOp.HistoryUpsert(
-                SyncedHistory(
-                    originDevice = devA.meta.deviceId(),
-                    originId = 1L,
-                    appLabel = "Notes",
-                    createdAt = 1000L,
-                    packageName = "org.notes",
-                    level = CleanupLevel.POLISHED,
-                    script = ScriptPreference.LATIN,
-                    language = "en",
-                    cleanText = "Hello from A",
-                    status = HistoryStatus.DONE,
-                )
-            )
+        val id = devA.history.createPending(
+            packageName = "org.notes",
+            appLabel = "Notes",
+            level = CleanupLevel.POLISHED,
+            script = ScriptPreference.LATIN,
+            language = "en",
+            audioPath = "",
         )
+        devA.history.markDone(id, raw = "hello from a", clean = "Hello from A")
 
         val wires = InMemoryWirePair()
         val cJob = async { devC.session.run(wires.wireA, initiator = true) }
@@ -247,6 +240,35 @@ class SyncSessionTest {
         val snapC = buildSnapshot(devC.db, devC.log, devC.settings, members = emptyList())
 
         assertEquals(snapA.history, snapC.history)
+        assertEquals(1, snapC.history.size)
+        // The ops come with the snapshot, so C holds them and stands where A stands.
+        assertEquals(devA.log.highWaterMarks(), devC.log.highWaterMarks())
+        assertEquals(devA.log.since(emptyMap()), devC.log.since(emptyMap()))
+    }
+
+    @Test
+    fun anOpThatArrivedAheadOfAMissedOneDoesNotHideIt() = runTest {
+        val sharedKey = ByteArray(32) { 42 }
+        val devA = createDevice("devA", this, key = sharedKey)
+        val devB = createDevice("devB", this, key = sharedKey)
+        devA.insertPreExisting(1, 0)
+        runSession(devA, devB)
+
+        // A records two deletes; only the second reaches B, the way a relay can deliver one batch and lose another.
+        devA.log.record(SyncOp.HistoryDelete("some-other-device", 1L))
+        devA.log.record(SyncOp.HistoryDelete("some-other-device", 2L))
+        val both = devA.log.since(devB.log.highWaterMarks()).filter { it.origin == devA.deviceId() }
+        assertEquals(2, both.size)
+        devB.applier.apply(listOf(both.last()))
+
+        val before = devB.log.highWaterMarks()[devA.deviceId()] ?: 0L
+        assertTrue("B's mark must stay before the missed op", before < both.first().seq)
+
+        runSession(devA, devB)
+
+        assertEquals(devA.log.since(emptyMap()), devB.log.since(emptyMap()))
+        assertEquals(devA.log.highWaterMarks()[devA.deviceId()], devB.log.highWaterMarks()[devA.deviceId()])
+        assertEquals(SessionResult(0, 0), runSession(devA, devB))
     }
 
     @Test

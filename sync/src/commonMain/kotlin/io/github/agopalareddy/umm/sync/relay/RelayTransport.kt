@@ -74,6 +74,13 @@ open class RelayTransport(
     private val publishMutex = Mutex()
     private val storedEventsEnds = ConcurrentHashMap<String, MutableStateFlow<Long>>()
     private val reconnectSignals = ConcurrentHashMap<String, Channel<Unit>>()
+    private val subscribedAuthors = ConcurrentHashMap<String, List<String>>()
+
+    /** Per origin, the (after, through) of batches that arrived ahead of one still missing. */
+    private val waitingRanges = ConcurrentHashMap<String, MutableList<Pair<Long, Long>>>()
+
+    /** Per relay and origin, the mark at which a full replay was last asked for, so one gap asks once. */
+    private val replayAskedAt = ConcurrentHashMap<String, Long>()
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -146,6 +153,7 @@ open class RelayTransport(
                 var totalPublished = 0
                 var firstErr: String? = null
 
+                var publishedThrough = lastSeq
                 for (batch in batches) {
                     val content = encodeBatch(batch, cipher)
                     val firstSeq = batch.first().seq
@@ -153,6 +161,9 @@ open class RelayTransport(
                     val groupHashStr = groupHash(state.groupId)
                     val tags = listOf(
                         listOf("d", "umm:$groupHashStr:$firstSeq-$lastBatchSeq"),
+                        // The batch is every op this device keeps after this seq, so a receiver can tell a batch
+                        // it missed from seq numbers this device gave up on purpose (superseded or pruned ops).
+                        listOf(TAG_AFTER, publishedThrough.toString()),
                         listOf("expiration", (clockSeconds() + expirationSeconds).toString())
                     )
                     val event = NostrEvent.sign(
@@ -165,6 +176,7 @@ open class RelayTransport(
                     val res = client.publish(event)
                     if (res.isSuccess) {
                         group.store.putString(lastSeqKey, lastBatchSeq.toString())
+                        publishedThrough = lastBatchSeq
                         totalPublished += batch.size
                         syncLog.log("relay ${relayHost(relayUrl)}: published seq $firstSeq-$lastBatchSeq")
                     } else {
@@ -236,14 +248,8 @@ open class RelayTransport(
                 while (true) {
                     val client = getOrCreateClient(relayUrl)
                     try {
-                        val filter = buildJsonObject {
-                            put("kinds", buildJsonArray { add(KIND_APP_DATA) })
-                            put("authors", buildJsonArray { authors.forEach { add(it) } })
-                            val lastSeen = lastSeenPerRelay[relayUrl]
-                            if (lastSeen != null && lastSeen > 0L) {
-                                put("since", (lastSeen - 3600L).coerceAtLeast(0L))
-                            }
-                        }
+                        subscribedAuthors[relayUrl] = authors
+                        val filter = subscriptionFilter(authors, since = lastSeenPerRelay[relayUrl])
 
                         client.subscribeItems(SUBSCRIPTION_ID, filter).collect { item ->
                             when (item) {
@@ -304,6 +310,8 @@ open class RelayTransport(
         const val SUBSCRIPTION_ID = "umm-sync"
         const val MAX_BACKOFF_MS = 300_000L
         const val CATCH_UP_MS = 10_000L
+        const val TAG_AFTER = "after"
+        const val MAX_WAITING_RANGES = 256
     }
 
     private fun storedEventsEnds(relayUrl: String) = storedEventsEnds.computeIfAbsent(relayUrl) { MutableStateFlow(0L) }
@@ -348,6 +356,43 @@ open class RelayTransport(
             syncLog.log("relay $host: received seq $range from ${member?.name ?: "a former member"}, $applied new")
         }
         lastSeenPerRelay[relayUrl] = maxOf(lastSeenPerRelay[relayUrl] ?: 0L, event.created_at)
+
+        if (member != null && envelopes.isNotEmpty() && envelopes.all { it.origin == member.deviceId }) {
+            // Events from before the tag existed say nothing about what came before their first op.
+            val after = event.tags.firstOrNull { it.firstOrNull() == TAG_AFTER }?.getOrNull(1)?.toLongOrNull()
+                ?: (envelopes.minOf { it.seq } - 1L)
+            settleMark(member.deviceId, member.name, after, envelopes.maxOf { it.seq }, relayUrl)
+        }
+    }
+
+    /**
+     * Moves the origin's mark over every batch that continues from it; a relay replays stored batches in any order,
+     * so the ones that do not continue yet are kept. When some stay stuck, a batch in between never arrived here:
+     * the relay is asked once for everything it stores, and what it no longer has comes at the next Wi-Fi session,
+     * which sends everything after the mark.
+     */
+    private suspend fun settleMark(origin: String, name: String, after: Long, through: Long, relayUrl: String) {
+        val ranges = waitingRanges.computeIfAbsent(origin) { mutableListOf() }
+        synchronized(ranges) {
+            ranges += after to through
+            if (ranges.size > MAX_WAITING_RANGES) ranges.removeAt(0)
+        }
+        while (true) {
+            val next = synchronized(ranges) { ranges.minByOrNull { it.first } } ?: return
+            if (!log.advanceIfContiguous(origin, next.first, next.second)) break
+            synchronized(ranges) { ranges.remove(next) }
+        }
+        val mark = log.highWaterMarks()[origin] ?: 0L
+        if (replayAskedAt.put("$relayUrl|$origin", mark) == mark) return
+        val authors = subscribedAuthors[relayUrl] ?: return
+        syncLog.log("relay ${relayHost(relayUrl)}: a batch from $name after seq $mark is missing; asking for all it stores")
+        clients[relayUrl]?.refresh(SUBSCRIPTION_ID, subscriptionFilter(authors, since = null))
+    }
+
+    private fun subscriptionFilter(authors: List<String>, since: Long?) = buildJsonObject {
+        put("kinds", buildJsonArray { add(KIND_APP_DATA) })
+        put("authors", buildJsonArray { authors.forEach { add(it) } })
+        if (since != null && since > 0L) put("since", (since - 3600L).coerceAtLeast(0L))
     }
 
     private fun getOrCreateClient(relayUrl: String): RelayClient {

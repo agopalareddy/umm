@@ -215,7 +215,8 @@ class LanTransportTest {
 
         val result = devA.transport.syncWith(peerB)
         assertNotNull(result)
-        assertEquals(1, result!!.sent)
+        // A device that has nothing yet gets the row in the snapshot and the op that made it.
+        assertEquals(2, result!!.sent)
 
         val bHistory = devB.history.observeRecent().first()
         assertEquals(1, bHistory.size)

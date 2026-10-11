@@ -448,6 +448,34 @@ class RelayTransportTest {
     }
 
     @Test
+    fun aBatchThatArrivesAheadOfAMissedOneDoesNotMoveTheMark() = runTest(timeout = 30.seconds) {
+        val deviceA = newDevice("DeviceA")
+        val deviceB = newDevice("DeviceB")
+        pair(deviceA, deviceB)
+
+        val transportA = deviceA.transport(httpClient).also { toClose.add { it.stop() } }
+        withContext(Dispatchers.IO) {
+            deviceA.log.record(SyncOp.HistoryDelete(deviceA.selfId, 1L))
+            transportA.publishPending()
+            deviceA.log.record(SyncOp.HistoryDelete(deviceA.selfId, 2L))
+            deviceA.log.record(SyncOp.HistoryDelete(deviceA.selfId, 3L))
+            transportA.publishPending()
+            val (first, second) = fakeRelay.publishedEvents.toList()
+
+            val transportB = deviceB.transport(httpClient).also { toClose.add { it.stop() } }
+            val state = deviceB.groupStore.state.value!!
+
+            transportB.handleIncomingEvent(second, state, wsUrl)
+            assertEquals(2, deviceB.log.since(emptyMap()).size)
+            assertEquals("the first batch is still missing", null, deviceB.log.highWaterMarks()[deviceA.selfId])
+
+            transportB.handleIncomingEvent(first, state, wsUrl)
+            assertEquals(3, deviceB.log.since(emptyMap()).size)
+            assertEquals(3L, deviceB.log.highWaterMarks()[deviceA.selfId])
+        }
+    }
+
+    @Test
     fun aMemberAddedLaterIsHeardWithoutARestart() = runTest(timeout = 30.seconds) {
         val deviceA = newDevice("DeviceA")
         val deviceB = newDevice("DeviceB")

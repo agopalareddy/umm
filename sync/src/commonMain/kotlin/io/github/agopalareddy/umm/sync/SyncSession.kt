@@ -145,17 +145,20 @@ class SyncSession(
             val peerWatermarks = peerHello.watermarks
 
             val isNewPeer = peerMarks.isEmpty() && peerWatermarks.isEmpty()
-            val hasPrunedMarks = marks.isNotEmpty() && marks.keys.any { origin ->
+            // Ops the peer still needs that this device no longer holds (pruned, or it got them as a snapshot itself)
+            // can only be made up for with the full state.
+            val hasPrunedMarks = marks.any { (origin, mark) ->
                 val peerMark = peerMarks[origin] ?: 0L
-                val oldestKept = oldest[origin] ?: 1L
-                oldestKept > 1L && peerMark < oldestKept
+                val firstHeld = oldest[origin] ?: (mark + 1L)
+                peerMark + 1L < firstHeld
             }
 
             val needsFullSnapshot = isNewPeer || hasPrunedMarks
             val outgoingOps = log.since(peerMarks)
 
             if (needsFullSnapshot) {
-                return SessionMessage.SyncData(snapshot = snap, ops = emptyList())
+                // The ops go along so that the peer holds them too and can pass them on.
+                return SessionMessage.SyncData(snapshot = snap, ops = outgoingOps)
             }
 
             // An origin whose rows the outgoing ops add or change differs for that reason; those ops settle it, and
@@ -202,7 +205,7 @@ class SyncSession(
                 is SessionMessage.SyncData -> {
                     var count = 0
                     if (msg.snapshot != null) {
-                        applier.applySnapshot(msg.snapshot)
+                        applier.applySnapshot(msg.snapshot, whole = false)
                         count += msg.snapshot.history.size + msg.snapshot.stats.size
                     }
                     if (msg.ops.isNotEmpty()) {
@@ -236,6 +239,8 @@ class SyncSession(
 
             val incomingData = receiveMsg(wire)
             receivedCount = applyIncoming(incomingData)
+            // The peer sent everything it holds beyond this device's marks, so this device is now where the peer is.
+            log.markComplete(peerHello.marks)
 
             sendMsg(wire, SessionMessage.Done)
             val peerDone = receiveMsg(wire)
@@ -252,6 +257,7 @@ class SyncSession(
 
             val incomingData = receiveMsg(wire)
             receivedCount = applyIncoming(incomingData)
+            log.markComplete(peerHello.marks)
 
             val outgoing = decideOutgoing(peerHello)
             sentCount = when (outgoing) {
