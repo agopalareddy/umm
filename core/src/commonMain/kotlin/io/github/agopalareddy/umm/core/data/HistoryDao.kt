@@ -14,6 +14,9 @@ internal interface HistoryDao {
     @Query("SELECT * FROM history WHERE id = :id")
     suspend fun get(id: Long): HistoryEntity?
 
+    @Query("SELECT * FROM history WHERE originDevice = :originDevice AND originId = :originId")
+    suspend fun getByOrigin(originDevice: String, originId: Long): HistoryEntity?
+
     @Insert
     suspend fun insert(entity: HistoryEntity): Long
 
@@ -28,6 +31,9 @@ internal interface HistoryDao {
 
     @Query("SELECT * FROM history WHERE audioPath IS NOT NULL AND createdAt < :cutoff")
     suspend fun withAudioOlderThan(cutoff: Long): List<HistoryEntity>
+
+    @Query("SELECT * FROM history WHERE createdAt < :before AND (:origin IS NULL OR originDevice = :origin)")
+    suspend fun getBefore(before: Long, origin: String?): List<HistoryEntity>
 
     @Query("SELECT * FROM history")
     suspend fun all(): List<HistoryEntity>

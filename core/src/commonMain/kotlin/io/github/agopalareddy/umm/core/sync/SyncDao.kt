@@ -51,4 +51,25 @@ internal interface SyncDao {
 
     @Query("SELECT originDevice, MAX(seq) AS maxSeq FROM sync_ops GROUP BY originDevice")
     suspend fun highWaterMarks(): List<HighWaterMark>
+
+    @Upsert
+    suspend fun putClear(clear: SyncClearEntity)
+
+    @Query("SELECT * FROM sync_clears WHERE data = :data AND origin = :origin")
+    suspend fun getClear(data: String, origin: String): SyncClearEntity?
+
+    @Query("SELECT * FROM sync_clears")
+    suspend fun allClears(): List<SyncClearEntity>
+
+    @Query("SELECT * FROM sync_clears WHERE data = :data")
+    suspend fun clearsForData(data: String): List<SyncClearEntity>
+
+    @Upsert
+    suspend fun putPeer(peer: SyncPeerEntity)
+
+    @Query("SELECT * FROM sync_peers WHERE deviceId = :deviceId")
+    suspend fun getPeer(deviceId: String): SyncPeerEntity?
+
+    @Query("SELECT * FROM sync_peers")
+    suspend fun allPeers(): List<SyncPeerEntity>
 }

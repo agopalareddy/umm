@@ -44,8 +44,11 @@ class OpLog(
             val hlc = clock.tick()
             val envelope = OpEnvelope(origin, seq, hlc, op)
             storeInternal(envelope)
-            if (op is SyncOp.SettingSet) {
-                dao.putSettingsHlc(SyncSettingsHlcEntity(op.key, hlc, origin))
+            when (op) {
+                is SyncOp.SettingSet -> dao.putSettingsHlc(SyncSettingsHlcEntity(op.key, hlc, origin))
+                is SyncOp.CategorySet -> dao.putSettingsHlc(SyncSettingsHlcEntity("category:${op.category.name}", hlc, origin))
+                is SyncOp.AppAssign -> dao.putSettingsHlc(SyncSettingsHlcEntity("app:${op.packageName}", hlc, origin))
+                else -> Unit
             }
         }
     }

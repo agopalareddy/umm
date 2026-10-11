@@ -24,4 +24,7 @@ internal interface StatsDao {
 
     @Query("DELETE FROM dictation_stats WHERE originDevice = :originDevice AND historyId >= :firstId")
     suspend fun deleteFromHistoryId(originDevice: String, firstId: Long)
+
+    @Query("DELETE FROM dictation_stats WHERE createdAt < :before AND (:origin IS NULL OR originDevice = :origin)")
+    suspend fun deleteBefore(before: Long, origin: String?)
 }
