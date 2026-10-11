@@ -129,7 +129,9 @@ jobs:
         run: |
           sed -i 's/\${VERSION:-0.1.0}/${{ needs.version.outputs.name }}/' packaging/flatpak/io.github.agopalareddy.Umm.yml
           flatpak-builder --repo=repo --force-clean build-flatpak packaging/flatpak/io.github.agopalareddy.Umm.yml
-          flatpak build-bundle repo io.github.agopalareddy.Umm.flatpak io.github.agopalareddy.Umm
+          # --runtime-repo lets `flatpak install` fetch the runtime for people who have not set up Flathub.
+          flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            repo io.github.agopalareddy.Umm.flatpak io.github.agopalareddy.Umm
 
       - name: Prepare Linux distribution artifacts
         run: |
