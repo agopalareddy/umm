@@ -202,7 +202,9 @@ class SyncEngine(
                 }
             }
             if (state.relayEnabled) {
-                relayResults = relay.publishPending()
+                val published = relay.publishPending()
+                val caughtUp = relay.catchUp()
+                relayResults = published.map { it.copy(caughtUp = caughtUp[it.url] == true) }
             }
 
             val syncResult = SyncResult(lanPeers = lanResults, relays = relayResults)

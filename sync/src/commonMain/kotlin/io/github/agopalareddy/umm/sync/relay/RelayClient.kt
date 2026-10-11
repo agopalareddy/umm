@@ -3,11 +3,15 @@ package io.github.agopalareddy.umm.sync.relay
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -24,12 +28,16 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RelayClient(
     val url: String,
-    val http: OkHttpClient,
+    http: OkHttpClient,
 ) : AutoCloseable {
+
+    /** Pings notice a socket that died silently (a sleeping phone, a NAT timeout); without them it would wait forever. */
+    val http: OkHttpClient = http.newBuilder().pingInterval(PING_SECONDS, TimeUnit.SECONDS).build()
 
     private val lock = Any()
     private var webSocket: WebSocket? = null
@@ -51,7 +59,7 @@ class RelayClient(
     }
 
     private val pendingPublishes = ConcurrentHashMap<String, CompletableDeferred<Result<Unit>>>()
-    private val subscriptions = ConcurrentHashMap<String, ProducerScope<NostrEvent>>()
+    private val subscriptions = ConcurrentHashMap<String, ProducerScope<RelayItem>>()
     private val subscriptionFilters = ConcurrentHashMap<String, JsonObject>()
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -157,10 +165,11 @@ class RelayClient(
                 } catch (_: Exception) {
                     return
                 }
-                subscriptions[subId]?.trySend(event)
+                subscriptions[subId]?.trySend(RelayItem.Event(event))
             }
             "EOSE" -> {
-                // End of stored events per NIP-01
+                val subId = array.getOrNull(1)?.jsonPrimitive?.content ?: return
+                subscriptions[subId]?.trySend(RelayItem.StoredEventsEnd)
             }
             "CLOSED" -> {
                 val subId = array.getOrNull(1)?.jsonPrimitive?.content ?: return
@@ -201,7 +210,33 @@ class RelayClient(
         }
     }
 
-    fun subscribe(id: String, filter: JsonObject): Flow<NostrEvent> = callbackFlow {
+    fun subscribe(id: String, filter: JsonObject): Flow<NostrEvent> =
+        subscribeItems(id, filter).filterIsInstance<RelayItem.Event>().map { it.event }
+
+    /**
+     * Sends the subscription's REQ again on the live socket, so the relay replays what it stores and ends with a new
+     * [RelayItem.StoredEventsEnd]. False when there is no live subscription with this id.
+     */
+    fun refresh(id: String): Boolean {
+        val filter = subscriptionFilters[id] ?: return false
+        val ws = synchronized(lock) { webSocket } ?: return false
+        if (!subscriptions.containsKey(id)) return false
+        val reqMsg = buildJsonArray {
+            add("REQ")
+            add(id)
+            add(filter)
+        }
+        return ws.send(reqMsg.toString())
+    }
+
+    /** Drops the socket without closing the client; subscriptions end with an error and the owner reconnects. */
+    fun dropConnection() {
+        val ws = synchronized(lock) { webSocket }
+        ws?.cancel()
+    }
+
+    /** Events in the relay's order, with a marker where the stored events end. Nothing is dropped under a burst. */
+    fun subscribeItems(id: String, filter: JsonObject): Flow<RelayItem> = callbackFlow {
         val ws = try {
             withContext(Dispatchers.IO) { ensureConnected() }
         } catch (e: Exception) {
@@ -233,7 +268,7 @@ class RelayClient(
             }
             ws.send(closeMsg.toString())
         }
-    }.flowOn(Dispatchers.IO)
+    }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
 
     override fun close() {
         synchronized(lock) {
@@ -244,4 +279,15 @@ class RelayClient(
         }
         onConnectionFailed(IOException("Client closed"))
     }
+
+    private companion object {
+        const val PING_SECONDS = 30L
+    }
+}
+
+sealed interface RelayItem {
+    data class Event(val event: NostrEvent) : RelayItem
+
+    /** The relay's EOSE: everything it had stored for the subscription has been sent. */
+    data object StoredEventsEnd : RelayItem
 }

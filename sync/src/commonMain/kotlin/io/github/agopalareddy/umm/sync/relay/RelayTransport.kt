@@ -7,19 +7,27 @@ import io.github.agopalareddy.umm.sync.crypto.GroupCipher
 import io.github.agopalareddy.umm.sync.group.GroupState
 import io.github.agopalareddy.umm.sync.group.GroupStore
 import io.github.agopalareddy.umm.sync.lan.groupHash
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.add
@@ -40,6 +48,8 @@ data class RelaySyncResult(
     val connected: Boolean,
     val opsPublished: Int = 0,
     val error: String? = null,
+    /** The relay replayed what it stores during this sync; false when it did not answer in time or was not asked. */
+    val caughtUp: Boolean = false,
 )
 
 open class RelayTransport(
@@ -58,6 +68,8 @@ open class RelayTransport(
     private val lastSeenPerRelay = ConcurrentHashMap<String, Long>()
     private var groupWatchJob: Job? = null
     private val publishMutex = Mutex()
+    private val storedEventsEnds = ConcurrentHashMap<String, MutableStateFlow<Long>>()
+    private val reconnectSignals = ConcurrentHashMap<String, Channel<Unit>>()
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -196,53 +208,100 @@ open class RelayTransport(
         }
     }
 
+    /**
+     * One subscription per relay for as long as the relay stays in the group's list. It is rebuilt when the other
+     * members change (the filter names their keys), and after a lost connection with a growing pause that
+     * [catchUp] can cut short.
+     */
     private suspend fun runRelaySubscription(relayUrl: String) {
-        var backoffMs = 5_000L
-        val maxBackoffMs = 300_000L
-
-        while (scope.isActive) {
-            val state = group.state.value
-            if (state == null || !state.relayEnabled || !state.relays.contains(relayUrl)) {
-                break
+        val myPubkey = group.device.publicKey.toHex()
+        group.state
+            .map { state ->
+                if (state == null || !state.relayEnabled || relayUrl !in state.relays) {
+                    null
+                } else {
+                    state.members.map { it.publicKey.lowercase() }.filter { it != myPubkey.lowercase() }.sorted()
+                }
             }
+            .distinctUntilChanged()
+            .collectLatest { authors ->
+                if (authors.isNullOrEmpty()) return@collectLatest
+                var backoffMs = 5_000L
+                while (true) {
+                    val client = getOrCreateClient(relayUrl)
+                    try {
+                        val filter = buildJsonObject {
+                            put("kinds", buildJsonArray { add(KIND_APP_DATA) })
+                            put("authors", buildJsonArray { authors.forEach { add(it) } })
+                            val lastSeen = lastSeenPerRelay[relayUrl]
+                            if (lastSeen != null && lastSeen > 0L) {
+                                put("since", (lastSeen - 3600L).coerceAtLeast(0L))
+                            }
+                        }
 
-            val myPubkey = group.device.publicKey.toHex()
-            val otherMembers = state.members.filter {
-                !it.publicKey.equals(myPubkey, ignoreCase = true)
-            }
-
-            if (otherMembers.isEmpty()) {
-                delay(1000)
-                continue
-            }
-
-            val client = getOrCreateClient(relayUrl)
-            try {
-                val filter = buildJsonObject {
-                    put("kinds", buildJsonArray { add(KIND_APP_DATA) })
-                    put("authors", buildJsonArray {
-                        otherMembers.forEach { add(it.publicKey.lowercase()) }
-                    })
-                    val lastSeen = lastSeenPerRelay[relayUrl]
-                    if (lastSeen != null && lastSeen > 0L) {
-                        put("since", (lastSeen - 3600L).coerceAtLeast(0L))
+                        client.subscribeItems(SUBSCRIPTION_ID, filter).collect { item ->
+                            when (item) {
+                                is RelayItem.Event -> try {
+                                    group.state.value?.let { handleIncomingEvent(item.event, it, relayUrl) }
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (_: Exception) {
+                                    // One event that cannot be applied must not end the subscription for the rest.
+                                }
+                                RelayItem.StoredEventsEnd -> storedEventsEnds(relayUrl).update { it + 1 }
+                            }
+                            _relayErrors.update { it - relayUrl }
+                            backoffMs = 5_000L
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        _relayErrors.update { it + (relayUrl to (e.message ?: "Connection error")) }
                     }
+                    withTimeoutOrNull(backoffMs) { reconnectNow(relayUrl).receive() }
+                    backoffMs = (backoffMs * 2).coerceAtMost(MAX_BACKOFF_MS)
                 }
-
-                client.subscribe("umm-sync", filter).collect { event ->
-                    handleIncomingEvent(event, state, relayUrl)
-                    _relayErrors.update { it - relayUrl }
-                    backoffMs = 5_000L
-                }
-            } catch (e: Exception) {
-                if (!scope.isActive) break
-                val err = e.message ?: "Connection error"
-                _relayErrors.update { it + (relayUrl to err) }
-                delay(backoffMs)
-                backoffMs = (backoffMs * 2).coerceAtMost(maxBackoffMs)
             }
-        }
     }
+
+    /**
+     * Pulls what each relay stores, so that a sync also receives: asks every relay to replay its stored events and
+     * waits until it says they are all sent. A relay whose connection is dead (no answer in half the time) is
+     * reconnected at once. Returns, per relay, whether it answered within [timeoutMs].
+     */
+    open suspend fun catchUp(timeoutMs: Long = CATCH_UP_MS): Map<String, Boolean> = coroutineScope {
+        val state = group.state.value
+        if (state == null || !state.relayEnabled || groupWatchJob == null) return@coroutineScope emptyMap()
+        val myPubkey = group.device.publicKey.toHex()
+        if (state.members.none { !it.publicKey.equals(myPubkey, ignoreCase = true) }) return@coroutineScope emptyMap()
+
+        state.relays.map { url ->
+            async {
+                val ends = storedEventsEnds(url)
+                val before = ends.value
+                val client = clients[url]
+                val asked = client != null && client.isConnected && client.refresh(SUBSCRIPTION_ID)
+                if (!asked) reconnectNow(url).trySend(Unit)
+                var answered = withTimeoutOrNull(timeoutMs / 2) { ends.first { it > before } } != null
+                if (!answered) {
+                    if (asked) client?.dropConnection()
+                    reconnectNow(url).trySend(Unit)
+                    answered = withTimeoutOrNull(timeoutMs / 2) { ends.first { it > before } } != null
+                }
+                url to answered
+            }
+        }.awaitAll().toMap()
+    }
+
+    private companion object {
+        const val SUBSCRIPTION_ID = "umm-sync"
+        const val MAX_BACKOFF_MS = 300_000L
+        const val CATCH_UP_MS = 10_000L
+    }
+
+    private fun storedEventsEnds(relayUrl: String) = storedEventsEnds.computeIfAbsent(relayUrl) { MutableStateFlow(0L) }
+
+    private fun reconnectNow(relayUrl: String) = reconnectSignals.computeIfAbsent(relayUrl) { Channel(Channel.CONFLATED) }
 
     internal suspend fun handleIncomingEvent(event: NostrEvent, state: GroupState, relayUrl: String) {
         if (event.kind != KIND_APP_DATA) return

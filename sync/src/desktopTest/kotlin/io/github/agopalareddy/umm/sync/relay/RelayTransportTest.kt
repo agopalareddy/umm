@@ -95,7 +95,14 @@ class RelayTransportTest {
         val clientSockets = CopyOnWriteArrayList<WebSocket>()
         val subscriptions = ConcurrentHashMap<WebSocket, ConcurrentHashMap<String, JsonObject>>()
         val publishedEvents = CopyOnWriteArrayList<NostrEvent>()
+
+        /** Connections that look open but get nothing any more, like one a sleeping phone left behind. */
+        val deadSockets = CopyOnWriteArrayList<WebSocket>()
         private val json = Json { ignoreUnknownKeys = true }
+
+        fun killCurrentConnectionsSilently() {
+            deadSockets.addAll(clientSockets)
+        }
 
         override fun onOpen(webSocket: WebSocket, response: Response) {
             clientSockets.add(webSocket)
@@ -123,6 +130,7 @@ class RelayTransportTest {
                     webSocket.send(okMsg.toString())
 
                     for (otherSocket in clientSockets) {
+                        if (otherSocket in deadSockets) continue
                         val subs = subscriptions[otherSocket] ?: continue
                         for ((subId, filter) in subs) {
                             if (matchesFilter(event, filter)) {
@@ -140,12 +148,9 @@ class RelayTransportTest {
                     val subId = array.getOrNull(1)?.jsonPrimitive?.content ?: return
                     val filter = array.getOrNull(2)?.jsonObject ?: buildJsonObject {}
                     subscriptions[webSocket]?.put(subId, filter)
-                    val eoseMsg = buildJsonArray {
-                        add("EOSE")
-                        add(subId)
-                    }
-                    webSocket.send(eoseMsg.toString())
+                    if (webSocket in deadSockets) return
 
+                    // NIP-01 order: the stored events first, then EOSE.
                     for (event in publishedEvents) {
                         if (matchesFilter(event, filter)) {
                             val eventMsg = buildJsonArray {
@@ -156,6 +161,11 @@ class RelayTransportTest {
                             webSocket.send(eventMsg.toString())
                         }
                     }
+                    val eoseMsg = buildJsonArray {
+                        add("EOSE")
+                        add(subId)
+                    }
+                    webSocket.send(eoseMsg.toString())
                 }
                 "CLOSE" -> {
                     val subId = array.getOrNull(1)?.jsonPrimitive?.content ?: return
@@ -356,6 +366,107 @@ class RelayTransportTest {
         val bHistory = deviceB.history.observeRecent().first()
         assertEquals(1, bHistory.size)
         assertEquals("Meeting notes cleaned", bHistory.first().cleanText)
+    }
+
+    private suspend fun pair(vararg devices: TestDevice) {
+        val members = devices.map { Member(it.selfId, it.name, "desktop", it.groupStore.device.publicKey.toHex()) }
+        for (device in devices) {
+            device.groupStore.save(GroupState("test-group", "shared-secret-key-32-bytes-test!", 1, null, 0L, members, listOf(wsUrl)))
+        }
+    }
+
+    private suspend fun TestDevice.dictate(text: String) {
+        val id = history.createPending(
+            packageName = "org.notes",
+            appLabel = "Notes",
+            level = CleanupLevel.POLISHED,
+            script = ScriptPreference.LATIN,
+            language = "en",
+            audioPath = "dummy.wav",
+        )
+        history.markDone(id, raw = text, clean = text)
+    }
+
+    private fun newDevice(name: String) = TestDevice(name, tmp.newFolder()).also { device -> toClose.add { device.close() } }
+
+    private fun TestDevice.startedTransport() = transport(httpClient).also { transport ->
+        toClose.add { transport.stop() }
+        transport.start()
+    }
+
+    @Test
+    fun catchUpReplacesAConnectionThatDiedSilently() = runTest(timeout = 30.seconds) {
+        val deviceA = newDevice("DeviceA")
+        val deviceB = newDevice("DeviceB")
+        pair(deviceA, deviceB)
+
+        val transportB = deviceB.startedTransport()
+        withContext(Dispatchers.IO) {
+            assertEquals(mapOf(wsUrl to true), transportB.catchUp(4_000))
+        }
+
+        fakeRelay.killCurrentConnectionsSilently()
+        deviceA.dictate("Sent while B's connection was dead")
+        deviceA.transport(httpClient).also { toClose.add { it.stop() } }.publishPending()
+
+        withContext(Dispatchers.IO) {
+            delay(300)
+            assertTrue("nothing can arrive on the dead connection", deviceB.history.observeRecent().first().isEmpty())
+
+            // The stored events come before the relay's end marker, so the row is there when catchUp returns.
+            assertEquals(mapOf(wsUrl to true), transportB.catchUp(4_000))
+            assertEquals(
+                listOf("Sent while B's connection was dead"),
+                deviceB.history.observeRecent().first().map { it.cleanText },
+            )
+        }
+    }
+
+    @Test
+    fun aBurstOfStoredEventsIsAppliedInFull() = runTest(timeout = 60.seconds) {
+        val deviceA = newDevice("DeviceA")
+        val deviceB = newDevice("DeviceB")
+        pair(deviceA, deviceB)
+
+        // One event per op, so the relay replays far more events at once than the old 64-event buffer held.
+        val transportA = deviceA.transport(httpClient).also { toClose.add { it.stop() } }
+        withContext(Dispatchers.IO) {
+            for (originId in 1L..300L) {
+                deviceA.log.record(SyncOp.HistoryDelete(deviceA.selfId, originId))
+                transportA.publishPending()
+            }
+            assertEquals(300, fakeRelay.publishedEvents.size)
+
+            val transportB = deviceB.startedTransport()
+            assertEquals(mapOf(wsUrl to true), transportB.catchUp(20_000))
+            assertEquals(300L, deviceB.log.highWaterMarks()[deviceA.selfId])
+            assertEquals(300, deviceB.log.since(emptyMap()).count { it.origin == deviceA.selfId })
+        }
+    }
+
+    @Test
+    fun aMemberAddedLaterIsHeardWithoutARestart() = runTest(timeout = 30.seconds) {
+        val deviceA = newDevice("DeviceA")
+        val deviceB = newDevice("DeviceB")
+        val deviceC = newDevice("DeviceC")
+        pair(deviceA, deviceB)
+
+        val transportB = deviceB.startedTransport()
+        withContext(Dispatchers.IO) {
+            assertEquals(mapOf(wsUrl to true), transportB.catchUp(4_000))
+
+            pair(deviceA, deviceB, deviceC)
+            deviceC.dictate("From the device that joined later")
+            deviceC.transport(httpClient).also { toClose.add { it.stop() } }.publishPending()
+
+            withTimeout(10.seconds) {
+                while (deviceB.history.observeRecent().first().isEmpty()) delay(50)
+            }
+            assertEquals(
+                listOf("From the device that joined later"),
+                deviceB.history.observeRecent().first().map { it.cleanText },
+            )
+        }
     }
 
     @Test
