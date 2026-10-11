@@ -20,6 +20,8 @@ class OpApplier(
     suspend fun apply(envelopes: List<OpEnvelope>): Int {
         val sorted = envelopes.sortedWith(compareBy({ it.origin }, { it.seq }))
         var newlyApplied = 0
+        // Read once per batch and kept current below; a row deleted anywhere must not come back from an upsert.
+        val deletedHistory = if (sorted.any { it.op is SyncOp.HistoryUpsert }) deletedHistory().toMutableSet() else mutableSetOf()
         for (envelope in sorted) {
             clock.observe(envelope.hlc)
             val stored = log.store(envelope)
@@ -28,12 +30,13 @@ class OpApplier(
             when (val op = envelope.op) {
                 is SyncOp.HistoryUpsert -> {
                     if (!isCleared(DataKind.HISTORY, op.row.originDevice, op.row.createdAt) &&
-                        !isHistoryDeleted(op.row.originDevice, op.row.originId)
+                        (op.row.originDevice to op.row.originId) !in deletedHistory
                     ) {
                         applyHistoryUpsert(op.row)
                     }
                 }
                 is SyncOp.HistoryDelete -> {
+                    deletedHistory += op.origin to op.originId
                     applyHistoryDelete(op.origin, op.originId)
                 }
                 is SyncOp.StatsUpsert -> {
@@ -80,14 +83,7 @@ class OpApplier(
             applyClearBefore(clear)
         }
 
-        val deletedHistory = db.syncDao().opsByType("HistoryDelete").mapNotNull { entity ->
-            try {
-                val candidate = opJson.decodeFromString<SyncOp.HistoryDelete>(entity.payload)
-                candidate.origin to candidate.originId
-            } catch (_: Exception) {
-                null
-            }
-        }.toSet()
+        val deletedHistory = deletedHistory()
 
         for (row in snapshot.history) {
             if (!isCleared(DataKind.HISTORY, row.originDevice, row.createdAt) &&
@@ -207,17 +203,16 @@ class OpApplier(
         }
     }
 
-    private suspend fun isHistoryDeleted(origin: String, originId: Long): Boolean {
-        val deletes = db.syncDao().opsByType("HistoryDelete")
-        return deletes.any { entity ->
+    /** The (origin device, origin id) of every history row a delete in the op log names. */
+    private suspend fun deletedHistory(): Set<Pair<String, Long>> =
+        db.syncDao().opsByType("HistoryDelete").mapNotNull { entity ->
             try {
                 val candidate = opJson.decodeFromString<SyncOp.HistoryDelete>(entity.payload)
-                candidate.origin == origin && candidate.originId == originId
+                candidate.origin to candidate.originId
             } catch (_: Exception) {
-                false
+                null
             }
-        }
-    }
+        }.toSet()
 
     private fun isHigher(hlc1: Long, origin1: String, hlc2: Long, origin2: String): Boolean {
         if (hlc1 != hlc2) return hlc1 > hlc2

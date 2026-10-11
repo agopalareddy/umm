@@ -27,6 +27,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -288,6 +289,68 @@ class SyncSessionTest {
 
         // Nothing applied on B
         assertEquals(0, devB.log.since(emptyMap()).size)
+    }
+
+    private suspend fun CoroutineScope.runSession(a: TestSessionDevice, b: TestSessionDevice): SessionResult {
+        val wires = InMemoryWirePair()
+        val aJob = async { a.session.run(wires.wireA, initiator = true) }
+        val bJob = async { b.session.run(wires.wireB, initiator = false) }
+        bJob.await()
+        return aJob.await()
+    }
+
+    @Test
+    fun theRowWatermarkCoversEveryField() {
+        val row = SyncedHistory(
+            originDevice = "device-a",
+            originId = 1L,
+            appLabel = "Notes",
+            createdAt = 1000L,
+            packageName = "org.notes",
+            level = CleanupLevel.POLISHED,
+            script = ScriptPreference.LATIN,
+            language = "en",
+            rawText = "raw",
+            cleanText = "clean",
+            status = HistoryStatus.DONE,
+            error = null,
+        )
+        val watermark = computeOriginWatermark(listOf(row), emptyList())
+        val changedOnce = listOf(
+            row.copy(appLabel = "Renamed"),
+            row.copy(createdAt = 1001L),
+            row.copy(packageName = "org.other"),
+            row.copy(level = CleanupLevel.entries.first { it != row.level }),
+            row.copy(script = ScriptPreference.entries.first { it != row.script }),
+            row.copy(language = "de"),
+            row.copy(rawText = "other raw"),
+            row.copy(cleanText = "other clean"),
+            row.copy(status = HistoryStatus.CLEANUP_FAILED),
+            row.copy(error = "failed"),
+        )
+        for (changed in changedOnce) {
+            assertTrue("a change must change the watermark: $changed", computeOriginWatermark(listOf(changed), emptyList()) != watermark)
+        }
+        assertEquals(watermark, computeOriginWatermark(listOf(row.copy()), emptyList()))
+    }
+
+    @Test
+    fun anUnrelatedOutgoingOpDoesNotHoldBackOldRows() = runTest {
+        val sharedKey = ByteArray(32) { 42 }
+        val devA = createDevice("devA", this, key = sharedKey)
+        val devB = createDevice("devB", this, key = sharedKey)
+        devA.insertPreExisting(5, 0)
+        runSession(devA, devB)
+        assertEquals(5, devB.history.all().size)
+
+        // More rows without ops, and one op that A recorded but that touches none of A's rows.
+        devA.insertPreExisting(3, 0, baseTime = 5000L)
+        devA.log.record(SyncOp.HistoryDelete("some-other-device", 1L))
+
+        runSession(devA, devB)
+
+        assertEquals(8, devB.history.all().size)
+        assertEquals(SessionResult(0, 0), runSession(devA, devB))
     }
 
     @Test

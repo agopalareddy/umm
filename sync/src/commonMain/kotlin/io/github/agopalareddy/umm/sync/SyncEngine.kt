@@ -166,7 +166,15 @@ class SyncEngine(
                     val member = state.members.find { it.deviceId == peer.deviceId }
                     val devName = member?.name ?: peer.deviceId
                     try {
-                        val result = lan.syncWith(peer)
+                        var result = lan.syncWith(peer)
+                        // A session that moved anything can leave rows for the next one (old rows held back
+                        // behind a new change), so run one more; a settled pair exchanges nothing in it.
+                        if (result != null && (result.sent > 0 || result.received > 0)) {
+                            val second = lan.syncWith(peer)
+                            if (second != null) {
+                                result = SessionResult(result.sent + second.sent, result.received + second.received)
+                            }
+                        }
                         if (result != null) {
                             val t = now()
                             lastSeenMap[peer.deviceId] = Pair(t, "lan")

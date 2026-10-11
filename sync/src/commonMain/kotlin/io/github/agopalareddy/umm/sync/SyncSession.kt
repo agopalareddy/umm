@@ -4,6 +4,7 @@ import io.github.agopalareddy.umm.core.sync.OpApplier
 import io.github.agopalareddy.umm.core.sync.OpEnvelope
 import io.github.agopalareddy.umm.core.sync.OpLog
 import io.github.agopalareddy.umm.core.sync.Snapshot
+import io.github.agopalareddy.umm.core.sync.SyncOp
 import io.github.agopalareddy.umm.core.sync.SyncedHistory
 import io.github.agopalareddy.umm.core.sync.SyncedStats
 import io.github.agopalareddy.umm.sync.crypto.GroupCipher
@@ -19,20 +20,28 @@ interface Wire {
     suspend fun receive(): ByteArray
 }
 
+/**
+ * A digest of every synced field of the rows one device holds for one origin, so that two devices whose rows differ
+ * in any field notice it. The rows' own serialized form keeps the field order fixed.
+ */
 internal fun computeOriginWatermark(history: List<SyncedHistory>, stats: List<SyncedStats>): String {
     val md = MessageDigest.getInstance("SHA-256")
     val sortedHistory = history.sortedBy { it.originId }
     md.update("h:${sortedHistory.size};".encodeToByteArray())
     for (h in sortedHistory) {
-        md.update("${h.originId},${h.createdAt},${h.cleanText.orEmpty()},${h.status};".encodeToByteArray())
+        md.update(watermarkJson.encodeToString(SyncedHistory.serializer(), h).encodeToByteArray())
+        md.update(';'.code.toByte())
     }
     val sortedStats = stats.sortedBy { it.historyId }
     md.update("s:${sortedStats.size};".encodeToByteArray())
     for (s in sortedStats) {
-        md.update("${s.historyId},${s.createdAt},${s.cleanWords},${s.succeeded};".encodeToByteArray())
+        md.update(watermarkJson.encodeToString(SyncedStats.serializer(), s).encodeToByteArray())
+        md.update(';'.code.toByte())
     }
     return md.digest().joinToString("") { "%02x".format(it) }
 }
+
+private val watermarkJson = Json { encodeDefaults = true }
 
 @Serializable
 sealed interface SessionMessage {
@@ -149,10 +158,19 @@ class SyncSession(
                 return SessionMessage.SyncData(snapshot = snap, ops = emptyList())
             }
 
+            // An origin whose rows the outgoing ops add or change differs for that reason; those ops settle it, and
+            // the session the engine runs right after this one sends the rows if a difference is still left.
+            val originsWithOutgoingRows = outgoingOps.mapNotNull { envelope ->
+                when (val op = envelope.op) {
+                    is SyncOp.HistoryUpsert -> op.row.originDevice
+                    is SyncOp.StatsUpsert -> op.row.originDevice
+                    else -> null
+                }
+            }.toSet()
             val missingOrigins = originWatermarks.filter { (origin, wm) ->
                 origin != peerHello.deviceId && (
                     peerWatermarks[origin] == null || (
-                        peerWatermarks[origin] != wm && outgoingOps.none { it.origin == origin }
+                        peerWatermarks[origin] != wm && origin !in originsWithOutgoingRows
                     )
                 )
             }.keys
