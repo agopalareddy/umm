@@ -4,7 +4,10 @@ import io.github.agopalareddy.umm.core.sync.OpApplier
 import io.github.agopalareddy.umm.core.sync.OpEnvelope
 import io.github.agopalareddy.umm.core.sync.OpLog
 import io.github.agopalareddy.umm.core.sync.Snapshot
+import io.github.agopalareddy.umm.core.sync.SyncedHistory
+import io.github.agopalareddy.umm.core.sync.SyncedStats
 import io.github.agopalareddy.umm.sync.crypto.GroupCipher
+import java.security.MessageDigest
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -16,6 +19,21 @@ interface Wire {
     suspend fun receive(): ByteArray
 }
 
+internal fun computeOriginWatermark(history: List<SyncedHistory>, stats: List<SyncedStats>): String {
+    val md = MessageDigest.getInstance("SHA-256")
+    val sortedHistory = history.sortedBy { it.originId }
+    md.update("h:${sortedHistory.size};".encodeToByteArray())
+    for (h in sortedHistory) {
+        md.update("${h.originId},${h.createdAt},${h.cleanText.orEmpty()},${h.status};".encodeToByteArray())
+    }
+    val sortedStats = stats.sortedBy { it.historyId }
+    md.update("s:${sortedStats.size};".encodeToByteArray())
+    for (s in sortedStats) {
+        md.update("${s.historyId},${s.createdAt},${s.cleanWords},${s.succeeded};".encodeToByteArray())
+    }
+    return md.digest().joinToString("") { "%02x".format(it) }
+}
+
 @Serializable
 sealed interface SessionMessage {
     @Serializable
@@ -25,6 +43,7 @@ sealed interface SessionMessage {
         val epoch: Int,
         val marks: Map<String, Long>,
         val oldest: Map<String, Long>,
+        val watermarks: Map<String, String> = emptyMap(),
     ) : SessionMessage
 
     @Serializable
@@ -34,6 +53,13 @@ sealed interface SessionMessage {
     @Serializable
     @SerialName("SnapshotMsg")
     data class SnapshotMsg(val snapshot: Snapshot) : SessionMessage
+
+    @Serializable
+    @SerialName("SyncData")
+    data class SyncData(
+        val snapshot: Snapshot? = null,
+        val ops: List<OpEnvelope> = emptyList(),
+    ) : SessionMessage
 
     @Serializable
     @SerialName("Done")
@@ -78,38 +104,74 @@ class SyncSession(
     }
 
     suspend fun run(wire: Wire, initiator: Boolean): SessionResult {
-        val deviceId = selfId ?: snapshot().from
+        val snap = snapshot()
+        val deviceId = selfId ?: snap.from
         val currentCipher = cipher()
         val marks = log.highWaterMarks()
         val oldest = marks.keys.mapNotNull { origin ->
             log.oldestSeq(origin)?.let { origin to it }
         }.toMap()
 
+        val allOrigins = (snap.history.map { it.originDevice } + snap.stats.map { it.originDevice }).toSet()
+        val originWatermarks = allOrigins.associateWith { origin ->
+            val h = snap.history.filter { it.originDevice == origin }
+            val s = snap.stats.filter { it.originDevice == origin }
+            computeOriginWatermark(h, s)
+        }
+
         val myHello = SessionMessage.Hello(
             deviceId = deviceId,
             epoch = currentCipher.epoch,
             marks = marks,
             oldest = oldest,
+            watermarks = originWatermarks,
         )
 
         val peerHello: SessionMessage.Hello
         var sentCount = 0
         var receivedCount = 0
 
-        suspend fun decideOutgoing(peerMarks: Map<String, Long>): SessionMessage {
-            val needsSnapshot = marks.isNotEmpty() && (
-                peerMarks.isEmpty() ||
-                marks.keys.any { origin ->
-                    val peerMark = peerMarks[origin] ?: 0L
-                    val oldestKept = oldest[origin] ?: 1L
-                    oldestKept > 1L && peerMark < oldestKept
-                }
-            )
-            return if (needsSnapshot) {
-                SessionMessage.SnapshotMsg(snapshot())
-            } else {
-                SessionMessage.Ops(log.since(peerMarks))
+        suspend fun decideOutgoing(peerHello: SessionMessage.Hello): SessionMessage {
+            val peerMarks = peerHello.marks
+            val peerWatermarks = peerHello.watermarks
+
+            val isNewPeer = peerMarks.isEmpty() && peerWatermarks.isEmpty()
+            val hasPrunedMarks = marks.isNotEmpty() && marks.keys.any { origin ->
+                val peerMark = peerMarks[origin] ?: 0L
+                val oldestKept = oldest[origin] ?: 1L
+                oldestKept > 1L && peerMark < oldestKept
             }
+
+            val needsFullSnapshot = isNewPeer || hasPrunedMarks
+            val outgoingOps = log.since(peerMarks)
+
+            if (needsFullSnapshot) {
+                return SessionMessage.SyncData(snapshot = snap, ops = emptyList())
+            }
+
+            val missingOrigins = originWatermarks.filter { (origin, wm) ->
+                origin != peerHello.deviceId && (
+                    peerWatermarks[origin] == null || (
+                        peerWatermarks[origin] != wm && outgoingOps.none { it.origin == origin }
+                    )
+                )
+            }.keys
+
+            val snapshotToSend = if (missingOrigins.isNotEmpty()) {
+                snap.copy(
+                    history = snap.history.filter { it.originDevice in missingOrigins },
+                    stats = snap.stats.filter { it.originDevice in missingOrigins },
+                    settings = emptyMap(),
+                    categories = emptyList(),
+                    apps = emptyList(),
+                    clears = snap.clears,
+                    members = emptyList(),
+                )
+            } else {
+                null
+            }
+
+            return SessionMessage.SyncData(snapshot = snapshotToSend, ops = outgoingOps)
         }
 
         suspend fun applyIncoming(msg: SessionMessage): Int {
@@ -118,6 +180,17 @@ class SyncSession(
                 is SessionMessage.SnapshotMsg -> {
                     applier.applySnapshot(msg.snapshot)
                     msg.snapshot.history.size + msg.snapshot.stats.size
+                }
+                is SessionMessage.SyncData -> {
+                    var count = 0
+                    if (msg.snapshot != null) {
+                        applier.applySnapshot(msg.snapshot)
+                        count += msg.snapshot.history.size + msg.snapshot.stats.size
+                    }
+                    if (msg.ops.isNotEmpty()) {
+                        count += applier.apply(msg.ops)
+                    }
+                    count
                 }
                 else -> 0
             }
@@ -131,10 +204,14 @@ class SyncSession(
             }
             peerHello = received
 
-            val outgoing = decideOutgoing(peerHello.marks)
+            val outgoing = decideOutgoing(peerHello)
             sentCount = when (outgoing) {
                 is SessionMessage.Ops -> outgoing.list.size
                 is SessionMessage.SnapshotMsg -> outgoing.snapshot.history.size + outgoing.snapshot.stats.size
+                is SessionMessage.SyncData -> {
+                    val snapCount = outgoing.snapshot?.let { it.history.size + it.stats.size } ?: 0
+                    snapCount + outgoing.ops.size
+                }
                 else -> 0
             }
             sendMsg(wire, outgoing)
@@ -158,10 +235,14 @@ class SyncSession(
             val incomingData = receiveMsg(wire)
             receivedCount = applyIncoming(incomingData)
 
-            val outgoing = decideOutgoing(peerHello.marks)
+            val outgoing = decideOutgoing(peerHello)
             sentCount = when (outgoing) {
                 is SessionMessage.Ops -> outgoing.list.size
                 is SessionMessage.SnapshotMsg -> outgoing.snapshot.history.size + outgoing.snapshot.stats.size
+                is SessionMessage.SyncData -> {
+                    val snapCount = outgoing.snapshot?.let { it.history.size + it.stats.size } ?: 0
+                    snapCount + outgoing.ops.size
+                }
                 else -> 0
             }
             sendMsg(wire, outgoing)

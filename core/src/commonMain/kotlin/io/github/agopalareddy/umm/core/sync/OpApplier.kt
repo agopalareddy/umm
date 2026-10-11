@@ -15,6 +15,8 @@ class OpApplier(
     private val clock: HybridClock,
     private val onGroupOp: suspend (OpEnvelope) -> Unit,
 ) {
+    private val opJson = Json { ignoreUnknownKeys = true }
+
     suspend fun apply(envelopes: List<OpEnvelope>): Int {
         val sorted = envelopes.sortedWith(compareBy({ it.origin }, { it.seq }))
         var newlyApplied = 0
@@ -25,7 +27,9 @@ class OpApplier(
             newlyApplied++
             when (val op = envelope.op) {
                 is SyncOp.HistoryUpsert -> {
-                    if (!isCleared(DataKind.HISTORY, op.row.originDevice, op.row.createdAt)) {
+                    if (!isCleared(DataKind.HISTORY, op.row.originDevice, op.row.createdAt) &&
+                        !isHistoryDeleted(op.row.originDevice, op.row.originId)
+                    ) {
                         applyHistoryUpsert(op.row)
                     }
                 }
@@ -76,8 +80,19 @@ class OpApplier(
             applyClearBefore(clear)
         }
 
+        val deletedHistory = db.syncDao().opsByType("HistoryDelete").mapNotNull { entity ->
+            try {
+                val candidate = opJson.decodeFromString<SyncOp.HistoryDelete>(entity.payload)
+                candidate.origin to candidate.originId
+            } catch (_: Exception) {
+                null
+            }
+        }.toSet()
+
         for (row in snapshot.history) {
-            if (!isCleared(DataKind.HISTORY, row.originDevice, row.createdAt)) {
+            if (!isCleared(DataKind.HISTORY, row.originDevice, row.createdAt) &&
+                (row.originDevice to row.originId) !in deletedHistory
+            ) {
                 applyHistoryUpsert(row)
             }
         }
@@ -188,6 +203,18 @@ class OpApplier(
             }
             DataKind.STATS -> {
                 db.statsDao().deleteBefore(op.before, op.origin)
+            }
+        }
+    }
+
+    private suspend fun isHistoryDeleted(origin: String, originId: Long): Boolean {
+        val deletes = db.syncDao().opsByType("HistoryDelete")
+        return deletes.any { entity ->
+            try {
+                val candidate = opJson.decodeFromString<SyncOp.HistoryDelete>(entity.payload)
+                candidate.origin == origin && candidate.originId == originId
+            } catch (_: Exception) {
+                false
             }
         }
     }

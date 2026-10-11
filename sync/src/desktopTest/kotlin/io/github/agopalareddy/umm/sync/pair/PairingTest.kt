@@ -155,6 +155,44 @@ class PairingTest {
             handshakeDeadlineMs = handshakeDeadlineMs,
         )
 
+        suspend fun insertPreExisting(historyCount: Int, statsCount: Int, baseTime: Long = 1000L) {
+            val unrecordedHistory = HistoryRepository(db, clock = { baseTime }, recorder = io.github.agopalareddy.umm.core.sync.ChangeRecorder.None)
+            val unrecordedStats = StatsRepository(db, recorder = io.github.agopalareddy.umm.core.sync.ChangeRecorder.None)
+            for (i in 1..historyCount) {
+                val hid = unrecordedHistory.createPending(
+                    packageName = "app.pkg$i",
+                    appLabel = "App$i",
+                    level = CleanupLevel.POLISHED,
+                    script = ScriptPreference.LATIN,
+                    language = "en",
+                    audioPath = "",
+                )
+                unrecordedHistory.markDone(hid, raw = "Raw $i", clean = "Clean $i")
+            }
+            val devId = meta.deviceId()
+            for (i in 1..statsCount) {
+                unrecordedStats.record(
+                    io.github.agopalareddy.umm.core.stats.StatsEntry(
+                        originDevice = devId,
+                        historyId = i.toLong(),
+                        appLabel = "App$i",
+                        createdAt = baseTime + i * 10L,
+                        packageName = "app.pkg$i",
+                        level = CleanupLevel.POLISHED,
+                        rawWords = 5,
+                        cleanWords = 5,
+                        fillerWords = 0,
+                        audioMs = 1000L,
+                        latencyMs = 200L,
+                        costUsd = 0.001,
+                        sttModel = null,
+                        cleanupModel = null,
+                        succeeded = true,
+                    )
+                )
+            }
+        }
+
         fun close() {
             lanTransport.stop()
             relayTransport.stop()
@@ -308,6 +346,45 @@ class PairingTest {
         val bHistory = nodeB.history.observeRecent().first()
         assertEquals(1, bHistory.size)
         assertEquals("Hello from node A.", bHistory[0].cleanText)
+    }
+
+    @Test
+    fun pairingAndThenSyncSendsJoinerOldRowsToOfferer() = runTest(timeout = 20.seconds) {
+        val nodeA = TestNode("NodeA", tmp.newFolder()).also { toClose.add { it.close() } }
+        val nodeB = TestNode("NodeB", tmp.newFolder()).also { toClose.add { it.close() } }
+
+        // Offerer has 17 history and 17 stats rows
+        nodeA.insertPreExisting(17, 17, baseTime = 1000L)
+        // Joiner has 50 history and 62 stats rows
+        nodeB.insertPreExisting(50, 62, baseTime = 2000L)
+
+        // Pair through real pairing code path
+        val offer = nodeA.pairing.offer(sendKey = false)
+        nodeB.pairing.join(offer.code.encode(), sendKey = false)
+        offer.result.await()
+
+        // Directly after pairing:
+        // Joiner has 67 history rows (17 from offerer + 50 of its own)
+        // Offerer still has 17 history rows
+        assertEquals(67, nodeB.history.all().size)
+        assertEquals(17, nodeA.history.all().size)
+
+        // Now they perform a sync session over LAN / wire
+        val portA = nodeA.lanTransport.start()
+        val syncResult = nodeB.lanTransport.syncWith(
+            LanPeer(
+                deviceId = nodeA.selfId,
+                host = java.net.InetAddress.getByName("127.0.0.1"),
+                port = portA,
+            )
+        )
+        assertNotNull(syncResult)
+
+        // Now offerer has joiner's old rows! Both hold 67 history and 79 stats rows!
+        assertEquals(67, nodeA.history.all().size)
+        assertEquals(79, nodeA.stats.all().size)
+        assertEquals(67, nodeB.history.all().size)
+        assertEquals(79, nodeB.stats.all().size)
     }
 
     @Test

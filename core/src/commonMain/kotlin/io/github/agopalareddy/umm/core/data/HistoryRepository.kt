@@ -30,6 +30,8 @@ class HistoryRepository(
 
     suspend fun get(id: Long): HistoryItem? = dao.get(id)?.toItem()
 
+    suspend fun all(): List<HistoryItem> = dao.all().map { it.toItem() }
+
     suspend fun createPending(
         packageName: String,
         appLabel: String? = null,
