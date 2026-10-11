@@ -35,7 +35,7 @@ import java.util.zip.GZIPOutputStream
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
-class RelayTransport(
+open class RelayTransport(
     val group: GroupStore,
     val log: OpLog,
     val applier: OpApplier,
@@ -54,7 +54,7 @@ class RelayTransport(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun start() {
+    open fun start() {
         stop()
         groupWatchJob = scope.launch {
             group.state.collect { state ->
@@ -63,7 +63,7 @@ class RelayTransport(
         }
     }
 
-    fun stop() {
+    open fun stop() {
         groupWatchJob?.cancel()
         groupWatchJob = null
         relayJobs.values.forEach { it.cancel() }
@@ -72,7 +72,7 @@ class RelayTransport(
         clients.clear()
     }
 
-    suspend fun publishPending() = withContext(Dispatchers.IO) {
+    open suspend fun publishPending() = withContext(Dispatchers.IO) {
         publishMutex.withLock {
             val state = group.state.value ?: return@withLock
             if (!state.relayEnabled || state.relays.isEmpty()) return@withLock

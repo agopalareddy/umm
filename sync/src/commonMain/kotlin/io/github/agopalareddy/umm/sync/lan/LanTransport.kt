@@ -41,7 +41,7 @@ private class SocketWire(private val socket: Socket) : Wire {
     }
 }
 
-class LanTransport(
+open class LanTransport(
     val session: SyncSession,
     val discovery: Discovery,
     val group: GroupStore,
@@ -56,7 +56,7 @@ class LanTransport(
     private var groupWatchJob: Job? = null
 
     private val _peers = MutableStateFlow<List<LanPeer>>(emptyList())
-    val peers: StateFlow<List<LanPeer>> = _peers.asStateFlow()
+    open val peers: StateFlow<List<LanPeer>> = _peers.asStateFlow()
 
     private val peerMutexes = ConcurrentHashMap<String, Mutex>()
     private fun mutexFor(deviceId: String): Mutex = peerMutexes.getOrPut(deviceId) { Mutex() }
@@ -67,7 +67,7 @@ class LanTransport(
         }
     }
 
-    suspend fun start(): Int = withContext(Dispatchers.IO) {
+    open suspend fun start(): Int = withContext(Dispatchers.IO) {
         val server = ServerSocket(0)
         serverSocket = server
         val port = server.localPort
@@ -119,7 +119,7 @@ class LanTransport(
         port
     }
 
-    suspend fun syncWith(peer: LanPeer): SessionResult = withContext(Dispatchers.IO) {
+    open suspend fun syncWith(peer: LanPeer): SessionResult = withContext(Dispatchers.IO) {
         val mutex = mutexFor(peer.deviceId)
         mutex.withLock {
             val socket = Socket(peer.host, peer.port)
@@ -134,7 +134,7 @@ class LanTransport(
         }
     }
 
-    fun stop() {
+    open fun stop() {
         groupWatchJob?.cancel()
         groupWatchJob = null
         browseJob?.cancel()

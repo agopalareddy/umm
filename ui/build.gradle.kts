@@ -18,6 +18,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":core"))
+            api(project(":sync"))
             api(libs.jb.compose.runtime)
             api(libs.jb.compose.foundation)
             api(libs.jb.compose.ui)

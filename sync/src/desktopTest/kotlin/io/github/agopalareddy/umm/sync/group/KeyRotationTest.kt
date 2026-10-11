@@ -314,13 +314,16 @@ class KeyRotationTest {
         assertEquals(1, bHistory.size)
         assertEquals("B local text.", bHistory[0].cleanText)
 
-        // Ops from B reach A
+        // Ops from B reach remaining nodes A and C
         val opsFromB = nodeB.log.since(emptyMap())
         nodeA.applier.apply(opsFromB)
+        nodeC.applier.apply(opsFromB)
 
-        // Ops from A reach C
+        // Rotation ops propagate between remaining nodes
         val opsFromA = nodeA.log.since(emptyMap())
+        val opsFromC = nodeC.log.since(emptyMap())
         nodeC.applier.apply(opsFromA)
+        nodeA.applier.apply(opsFromC)
 
         val stateA = nodeA.groupStore.state.value
         val stateC = nodeC.groupStore.state.value

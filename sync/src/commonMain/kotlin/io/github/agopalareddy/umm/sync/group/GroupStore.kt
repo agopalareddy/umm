@@ -62,7 +62,9 @@ class GroupStore(
     }
 
     private fun defaultDeviceName(): String {
-        return System.getenv("HOSTNAME")
+        return System.getenv("HOSTNAME")?.takeIf { it.isNotBlank() }
+            ?: runCatching { java.io.File("/etc/hostname").readText().trim() }.getOrNull()?.takeIf { it.isNotEmpty() }
+            ?: runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrNull()?.takeIf { it.isNotEmpty() }
             ?: System.getProperty("user.name")
             ?: "Umm"
     }

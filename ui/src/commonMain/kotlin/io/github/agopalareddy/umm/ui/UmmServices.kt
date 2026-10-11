@@ -12,6 +12,7 @@ import io.github.agopalareddy.umm.core.policy.ModelCatalog
 import io.github.agopalareddy.umm.core.policy.ModelPlan
 import io.github.agopalareddy.umm.core.policy.RecommendationRepository
 import io.github.agopalareddy.umm.core.stats.StatsRepository
+import io.github.agopalareddy.umm.sync.SyncEngine
 
 /** What the shared screens need from the app: core objects plus the [Platform]. */
 class UmmServices(
@@ -28,6 +29,7 @@ class UmmServices(
     lazyPipeline: Lazy<DictationPipeline>,
     val modelPlan: suspend () -> ModelPlan,
     val platform: Platform,
+    val sync: SyncEngine? = null,
 ) {
     val pipeline by lazyPipeline
 }
