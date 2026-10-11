@@ -18,6 +18,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
@@ -48,6 +52,9 @@ open class LanTransport(
     val selfId: String,
     val scope: CoroutineScope,
     val db: UmmDatabase? = null,
+    val connectTimeoutMs: Int = 5_000,
+    val readTimeoutMs: Int = 15_000,
+    val sessionDeadlineMs: Long = 60_000L,
 ) {
     private var serverSocket: ServerSocket? = null
     private var advertiseHandle: AutoCloseable? = null
@@ -76,10 +83,13 @@ open class LanTransport(
             while (isActive && !server.isClosed) {
                 try {
                     val socket = server.accept()
+                    socket.soTimeout = readTimeoutMs
                     launch(Dispatchers.IO) {
                         try {
-                            val wire = SocketWire(socket)
-                            session.run(wire, initiator = false)
+                            withTimeout(sessionDeadlineMs) {
+                                val wire = SocketWire(socket)
+                                session.run(wire, initiator = false)
+                            }
                         } catch (_: Exception) {
                         } finally {
                             runCatching { socket.close() }
@@ -119,15 +129,22 @@ open class LanTransport(
         port
     }
 
-    open suspend fun syncWith(peer: LanPeer): SessionResult = withContext(Dispatchers.IO) {
+    open suspend fun syncWith(peer: LanPeer): SessionResult? = withContext(Dispatchers.IO) {
         val mutex = mutexFor(peer.deviceId)
         mutex.withLock {
-            val socket = Socket(peer.host, peer.port)
+            val socket = Socket()
             try {
-                val wire = SocketWire(socket)
-                val result = session.run(wire, initiator = true)
-                updateSyncPeer(peer.deviceId)
-                result
+                withTimeout(sessionDeadlineMs) {
+                    socket.soTimeout = readTimeoutMs
+                    socket.connect(InetSocketAddress(peer.host, peer.port), connectTimeoutMs)
+                    val wire = SocketWire(socket)
+                    val result = session.run(wire, initiator = true)
+                    updateSyncPeer(peer.deviceId)
+                    result
+                }
+            } catch (e: Throwable) {
+                if (e is CancellationException && e !is TimeoutCancellationException) throw e
+                null
             } finally {
                 runCatching { socket.close() }
             }

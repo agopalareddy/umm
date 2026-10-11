@@ -58,4 +58,35 @@ class FrameCodecTest {
             FrameCodec.read(input)
         }
     }
+
+    @Test
+    fun frameHeaderDeclaring1GiBIsRejectedWithoutAllocating() {
+        val oneGiB = 1 shl 30 // 1 GiB
+        val out = ByteArrayOutputStream()
+        out.write((oneGiB ushr 24) and 0xFF)
+        out.write((oneGiB ushr 16) and 0xFF)
+        out.write((oneGiB ushr 8) and 0xFF)
+        out.write(oneGiB and 0xFF)
+
+        val input = ByteArrayInputStream(out.toByteArray())
+        assertThrows(IOException::class.java) {
+            FrameCodec.read(input)
+        }
+    }
+
+    @Test
+    fun peerClosesMidFrameHandledAsError() {
+        val out = ByteArrayOutputStream()
+        val len = 1000
+        out.write((len ushr 24) and 0xFF)
+        out.write((len ushr 16) and 0xFF)
+        out.write((len ushr 8) and 0xFF)
+        out.write(len and 0xFF)
+        out.write(ByteArray(50)) // Stream closes after only 50 bytes
+
+        val input = ByteArrayInputStream(out.toByteArray())
+        assertThrows(EOFException::class.java) {
+            FrameCodec.read(input)
+        }
+    }
 }

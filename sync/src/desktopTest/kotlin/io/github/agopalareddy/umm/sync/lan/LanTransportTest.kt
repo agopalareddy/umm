@@ -1,6 +1,7 @@
 package io.github.agopalareddy.umm.sync.lan
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import io.github.agopalareddy.umm.core.auth.ApiKeyStore
 import io.github.agopalareddy.umm.core.auth.KeyValueStore
 import io.github.agopalareddy.umm.core.auth.SecretCipher
 import io.github.agopalareddy.umm.core.cleanup.CleanupLevel
@@ -16,23 +17,34 @@ import io.github.agopalareddy.umm.core.sync.OpApplier
 import io.github.agopalareddy.umm.core.sync.OpLog
 import io.github.agopalareddy.umm.core.sync.SyncMeta
 import io.github.agopalareddy.umm.core.sync.buildSnapshot
+import io.github.agopalareddy.umm.sync.SyncEngine
 import io.github.agopalareddy.umm.sync.SyncSession
 import io.github.agopalareddy.umm.sync.crypto.GroupCipher
 import io.github.agopalareddy.umm.sync.group.GroupState
 import io.github.agopalareddy.umm.sync.group.GroupStore
+import io.github.agopalareddy.umm.sync.group.Membership
+import io.github.agopalareddy.umm.sync.pair.Pairing
+import io.github.agopalareddy.umm.sync.relay.RelayTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.net.InetAddress
+import java.net.ServerSocket
+import kotlin.time.Duration.Companion.seconds
 
 class LanTransportTest {
 
@@ -71,6 +83,9 @@ class LanTransportTest {
         val name: String,
         tmpFolder: File,
         sharedGroupKey: ByteArray,
+        connectTimeoutMs: Int = 5_000,
+        readTimeoutMs: Int = 15_000,
+        sessionDeadlineMs: Long = 60_000L,
     ) {
         val deviceScope = CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
         val db = inMemoryUmmDatabase()
@@ -88,6 +103,7 @@ class LanTransportTest {
 
         val kv = FakeKeyValueStore()
         val groupStore = GroupStore(kv, FakeCipher())
+        val apiKeyStore = ApiKeyStore(kv, FakeCipher())
         val selfId = kotlinx.coroutines.runBlocking { meta.deviceId() }
 
         init {
@@ -120,10 +136,46 @@ class LanTransportTest {
             selfId = selfId,
             scope = deviceScope,
             db = db,
+            connectTimeoutMs = connectTimeoutMs,
+            readTimeoutMs = readTimeoutMs,
+            sessionDeadlineMs = sessionDeadlineMs,
+        )
+
+        val relayTransport = RelayTransport(
+            group = groupStore,
+            log = log,
+            applier = applier,
+            http = OkHttpClient(),
+            scope = deviceScope,
+        )
+
+        val pairing = Pairing(
+            group = groupStore,
+            apiKey = apiKeyStore,
+            lan = transport,
+            relay = relayTransport,
+            applier = applier,
+            snapshot = { buildSnapshot(db, log, settings, members = emptyList()) },
+            now = { 2000L },
+        )
+
+        val membership = Membership(groupStore, log, now = { 2000L })
+
+        val engine = SyncEngine(
+            group = groupStore,
+            lan = transport,
+            relay = relayTransport,
+            pairing = pairing,
+            membership = membership,
+            log = log,
+            scope = deviceScope,
+            now = { 2000L },
         )
 
         fun close() {
+            engine.stop()
             transport.stop()
+            relayTransport.stop()
             db.close()
             deviceScope.cancel()
         }
@@ -162,10 +214,76 @@ class LanTransportTest {
         devA.history.markDone(id, raw = "Hello over LAN", clean = "Hello over LAN")
 
         val result = devA.transport.syncWith(peerB)
-        assertEquals(1, result.sent)
+        assertNotNull(result)
+        assertEquals(1, result!!.sent)
 
         val bHistory = devB.history.observeRecent().first()
         assertEquals(1, bHistory.size)
         assertEquals("Hello over LAN", bHistory[0].cleanText)
+    }
+
+    @Test
+    fun peerAcceptsAndNeverWritesSyncNowReturnsWithinDeadlineAndSecondSyncWorks() = runTest(timeout = 20.seconds) {
+        val sharedKey = ByteArray(32) { 99 }
+        val devA = FullStackDevice("DeviceA", tmp.root, sharedKey, readTimeoutMs = 200, sessionDeadlineMs = 500L)
+        val devB = FullStackDevice("DeviceB", tmp.root, sharedKey)
+
+        toClose.add { devA.close() }
+        toClose.add { devB.close() }
+
+        val portA = devA.transport.start()
+        val portB = devB.transport.start()
+        devA.engine.start()
+        devB.engine.start()
+
+        // Silent server: accepts connection, never writes
+        val silentServer = ServerSocket(0)
+        toClose.add { runCatching { silentServer.close() } }
+        val silentPort = silentServer.localPort
+
+        CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                val sock = silentServer.accept()
+                toClose.add { runCatching { sock.close() } }
+                // Hold open without sending anything
+            } catch (_: Exception) {}
+        }
+
+        val silentPeer = LanPeer("silent-device", InetAddress.getByName("127.0.0.1"), silentPort)
+        devA.discovery.emitPeer(silentPeer)
+
+        var attempts = 0
+        while (devA.transport.peers.value.none { it.deviceId == "silent-device" } && attempts++ < 50) {
+            delay(20)
+        }
+
+        // syncNow() to silent peer returns within deadline without throwing
+        devA.engine.syncNow()
+
+        // Now emit good peerB and insert history on A
+        val id = devA.history.createPending(
+            appLabel = "Notes",
+            packageName = "org.notes",
+            level = CleanupLevel.POLISHED,
+            script = ScriptPreference.LATIN,
+            language = "en",
+            audioPath = "dummy.wav",
+        )
+        devA.history.markDone(id, raw = "Hello good peer", clean = "Hello good peer")
+
+        val peerB = LanPeer(devB.selfId, InetAddress.getByName("127.0.0.1"), portB)
+        devA.discovery.emitPeer(peerB)
+
+        attempts = 0
+        while (devA.transport.peers.value.none { it.deviceId == devB.selfId } && attempts++ < 50) {
+            delay(20)
+        }
+
+        // Second syncNow() succeeds
+        devA.engine.syncNow()
+
+        val bHistory = devB.history.observeRecent().first()
+        assertEquals(1, bHistory.size)
+        assertEquals("Hello good peer", bHistory[0].cleanText)
     }
 }

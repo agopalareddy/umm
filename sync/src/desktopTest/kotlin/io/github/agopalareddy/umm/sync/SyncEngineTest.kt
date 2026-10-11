@@ -107,7 +107,7 @@ class SyncEngineTest {
             started = false
         }
 
-        override suspend fun syncWith(peer: LanPeer): SessionResult {
+        override suspend fun syncWith(peer: LanPeer): SessionResult? {
             if (shouldThrow) throw IOException("LAN sync error")
             syncCount++
             return SessionResult(1, 1)

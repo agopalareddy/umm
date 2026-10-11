@@ -135,10 +135,12 @@ class SyncEngine(
             if (state.lanEnabled && lan != null) {
                 val peers = lan.peers.value
                 for (peer in peers) {
-                    lan.syncWith(peer)
-                    val t = now()
-                    lastSeenMap[peer.deviceId] = Pair(t, "lan")
-                    via = "lan"
+                    val result = lan.syncWith(peer)
+                    if (result != null) {
+                        val t = now()
+                        lastSeenMap[peer.deviceId] = Pair(t, "lan")
+                        via = "lan"
+                    }
                 }
             }
             if (state.relayEnabled) {

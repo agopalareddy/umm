@@ -91,6 +91,7 @@ class PairingTest {
         val now: () -> Long = { 10_000L },
         val okHttpClient: OkHttpClient = OkHttpClient(),
         val relayUrls: List<String> = GroupState.DEFAULT_RELAYS,
+        val handshakeDeadlineMs: Long = 30_000L,
     ) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val db = inMemoryUmmDatabase()
@@ -150,6 +151,7 @@ class PairingTest {
             snapshot = { buildSnapshot(db, log, settings, groupStore.state.value?.members ?: emptyList()) },
             now = now,
             defaultRelays = relayUrls,
+            handshakeDeadlineMs = handshakeDeadlineMs,
         )
 
         fun close() {
@@ -772,6 +774,105 @@ class PairingTest {
         val groupA = nodeA.groupStore.state.value
         assertNotNull(groupA)
         assertEquals(2, groupA!!.members.size)
+        assertTrue(groupA.members.any { it.deviceId == nodeC.selfId })
+    }
+
+    @Test
+    fun relayJoinerStallsDoesNotBlockSecondJoinerAfterDeadline() = runTest(timeout = 20.seconds) {
+        val fakeRelay = FakeRelay()
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return MockResponse.Builder().webSocketUpgrade(fakeRelay).build()
+            }
+        }
+        server.start()
+        toClose.add {
+            fakeRelay.clientSockets.forEach { runCatching { it.close(1000, "close") } }
+            server.close()
+        }
+
+        val relayUrl = "ws://${server.hostName}:${server.port}/"
+        val nodeA = TestNode("NodeA", tmp.newFolder(), relayUrls = listOf(relayUrl), handshakeDeadlineMs = 300L).also { toClose.add { it.close() } }
+        val nodeB = TestNode("NodeB", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+        val nodeC = TestNode("NodeC", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+
+        val offer = nodeA.pairing.offer(sendKey = false)
+        val unreachableCode = offer.code.copy(
+            lan = emptyList(),
+            port = 0,
+            relays = listOf(relayUrl),
+        )
+
+        // Node B has an existing group so shouldJoinerSendWelcome is true
+        val myPubkeyB = nodeB.groupStore.device.publicKey.joinToString("") { "%02x".format(it) }
+        nodeB.groupStore.save(
+            GroupState(
+                groupId = "group-b",
+                key = "b-key",
+                epoch = 0,
+                previousKey = null,
+                previousUntil = 0L,
+                members = listOf(Member(nodeB.selfId, "NodeB", "desktop", myPubkeyB)),
+                relays = listOf(relayUrl),
+            )
+        )
+
+        // Node B sends valid Hello over relay then stalls (never sends Welcome)
+        val agreeB = nodeB.groupStore.device.agree(hexToBytes(unreachableCode.publicKey))
+        val saltB = unreachableCode.deviceId.encodeToByteArray() + nodeB.selfId.encodeToByteArray()
+        val kB = Hkdf.derive(agreeB + unreachableCode.secret.encodeToByteArray(), saltB, "umm-pair", 32)
+
+        val bos = java.io.ByteArrayOutputStream()
+        val dos = java.io.DataOutputStream(bos)
+        for (f in listOf(
+            "hello".encodeToByteArray(),
+            unreachableCode.deviceId.encodeToByteArray(),
+            nodeB.selfId.encodeToByteArray(),
+            unreachableCode.publicKey.encodeToByteArray(),
+            myPubkeyB.encodeToByteArray(),
+            byteArrayOf(1), // inGroup = true
+            "NodeB".encodeToByteArray(),
+            "desktop".encodeToByteArray(),
+        )) {
+            dos.writeInt(f.size)
+            dos.write(f)
+        }
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(kB, "HmacSHA256"))
+        val hmacB = mac.doFinal(bos.toByteArray()).toHex()
+
+        val helloB = PairMsg.Hello(
+            deviceId = nodeB.selfId,
+            name = "NodeB",
+            publicKey = myPubkeyB,
+            platform = "desktop",
+            inGroup = true,
+            hmac = hmacB,
+        )
+        val clientB = io.github.agopalareddy.umm.sync.relay.RelayClient(relayUrl, OkHttpClient())
+        toClose.add { runCatching { clientB.close() } }
+        val helloEvent = NostrEvent.sign(
+            keys = nodeB.groupStore.device,
+            kind = io.github.agopalareddy.umm.sync.relay.KIND_PAIRING,
+            tags = listOf(listOf("p", unreachableCode.publicKey.lowercase())),
+            content = kotlinx.serialization.json.Json.encodeToString(PairMsg.serializer(), helloB),
+            createdAt = 10_000L / 1000L,
+        )
+        clientB.publish(helloEvent)
+
+        // Wait for handshake deadline (300 ms) on Dispatchers.IO to pass in wall-clock time
+        Thread.sleep(600)
+
+        // Now Node C joins with the same code over relay
+        val joinResultC = nodeC.pairing.join(unreachableCode.encode(), sendKey = false)
+        val offererResult = offer.result.await()
+
+        val groupA = nodeA.groupStore.state.value
+        val groupC = nodeC.groupStore.state.value
+        assertNotNull(groupA)
+        assertNotNull(groupC)
+        assertEquals(groupA!!.groupId, groupC!!.groupId)
         assertTrue(groupA.members.any { it.deviceId == nodeC.selfId })
     }
 }
