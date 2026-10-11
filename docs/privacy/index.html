@@ -15,38 +15,50 @@
 </head>
 <body>
 <h1>Umm privacy policy</h1>
-<p class="meta">Effective September 30, 2026</p>
+<p class="meta">Effective October 11, 2026</p>
 
-<p>Umm is a voice keyboard and floating dictation button for Android made by Aadarsha Gopala Reddy. This policy explains what Umm does with your
-data. The short version: Umm has no server and no account. Your recordings go from your phone to OpenRouter, using
+<p>Umm is a voice typing app for Android and Linux desktop made by Aadarsha Gopala Reddy. This policy explains what Umm does with your
+data. The short version: Umm has no server and no account. Your recordings go from your device to OpenRouter, using
 your own OpenRouter key, and nowhere else.</p>
 
 <h2>What Umm records and sends</h2>
-<p>Umm records from the microphone only while its keyboard or floating button is actively listening. When you stop talking, Umm sends
+<p>Umm records from the microphone only while its keyboard, floating button, or desktop shortcut is actively listening. When you stop talking, Umm sends
 the recording to <a href="https://openrouter.ai">OpenRouter</a> to be transcribed, then sends the transcript to
 OpenRouter again to be cleaned up (unless you choose the Raw level). OpenRouter passes each request to an AI model
 provider, such as OpenAI, Mistral, or Google, to do the work. Umm sends these requests with your OpenRouter key,
 so they fall under your agreement with OpenRouter and its
 <a href="https://openrouter.ai/privacy">privacy policy</a>.</p>
-<p>If a recording contains no speech, Umm discards it on the phone and sends nothing.</p>
+<p>If a recording contains no speech, Umm discards it on the device and sends nothing.</p>
 <p>If you turn on zero data retention in your OpenRouter account's privacy settings, or choose "Zero data retention
 only" in Umm, Umm only uses models from providers that do not keep your data. To detect the account setting, Umm
 sends OpenRouter a few bytes of invalid audio; it contains nothing from your microphone.</p>
 <p>Umm also asks OpenRouter for your key's name, spending, and credit limit to show them on the Account page, and
 for the list of available models.</p>
 
-<h2>What stays on your phone</h2>
+<h2>What stays on your device</h2>
 <ul>
-  <li>Your OpenRouter key, encrypted with a key held in the Android Keystore.</li>
+  <li>Your OpenRouter key, encrypted with a key held in the Android Keystore or your desktop system keyring.</li>
   <li>Your settings, app categories, and the names of apps you assigned to them.</li>
   <li>The text of your last 50 dictations (History), and usage statistics such as word counts, durations, and
-      cost.</li>
+      cost (which sync between your devices only if you turn on sync).</li>
   <li>A recording that failed to process, so you can retry it. It is deleted when the retry succeeds, or after
-      7 days.</li>
+      7 days. Audio recordings never sync between devices.</li>
 </ul>
 <p>None of this is sent to the developer. It is excluded from Android backups and device-to-device transfers, and
 it is deleted when you uninstall Umm. You can delete your history at any time in the app. In Settings → Stats you
 can hide the statistics on the home screen, stop recording them, or delete them.</p>
+
+<h2>Sync between your devices</h2>
+<p>Sync is off until you pair two devices.</p>
+<p>When you pair devices, Umm syncs:</p>
+<ul>
+  <li>The text of your recent dictations (History).</li>
+  <li>Usage statistics such as word counts, durations, and cost.</li>
+  <li>Shared settings such as cleanup levels, language choices, and silence timeout.</li>
+  <li>Your OpenRouter key, but only during pairing and only if you choose to share it.</li>
+</ul>
+<p>Sync runs direct over your network (when devices are on the same Wi-Fi) or through public Nostr relays (when they are on different networks). All sync traffic is end-to-end encrypted with a key only your devices hold (AES-256-GCM). Public Nostr relays forward encrypted payloads without being able to read them; relays can see device public keys, timing, and size.</p>
+<p>You can stop syncing at any time: tap <strong>Leave group</strong> in Settings → Sync, or turn off the Wi-Fi or Relays toggles.</p>
 
 <h2>What the keyboard can see</h2>
 <p>Like any keyboard, Umm is told which app a text field belongs to and what kind of field it is. Umm uses this to
