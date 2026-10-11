@@ -161,6 +161,7 @@ sourceSets.main {
 }
 
 dependencies {
+    implementation(project(":sync"))
     implementation(project(":ui"))
     implementation(project(":linux"))
     implementation(compose.desktop.currentOs)

@@ -30,6 +30,7 @@ import io.github.agopalareddy.umm.core.stats.StatsRepository
 import io.github.agopalareddy.umm.core.sync.HybridClock
 import io.github.agopalareddy.umm.core.sync.OpLog
 import io.github.agopalareddy.umm.core.sync.SyncMeta
+import io.github.agopalareddy.umm.sync.group.GroupStore
 import java.io.File
 
 import kotlinx.coroutines.CoroutineScope
@@ -59,7 +60,13 @@ class AppGraph(private val app: Application) {
     val database by lazy { buildUmmDatabase(app) }
     val syncMeta by lazy { SyncMeta(database) }
     val hybridClock by lazy { HybridClock(clock) }
-    val opLog by lazy { OpLog(database, syncMeta, hybridClock, active = { false }) }
+    val groupStore by lazy {
+        GroupStore(
+            SharedPreferencesKeyValueStore(app.getSharedPreferences("sync", Context.MODE_PRIVATE)),
+            KeystoreCipher("umm_sync"),
+        )
+    }
+    val opLog by lazy { OpLog(database, syncMeta, hybridClock, active = { groupStore.state.value != null }) }
     val categories by lazy { CategoryRepository(database, opLog) }
     val history by lazy { HistoryRepository(database, clock, opLog) }
     val settings by lazy { SettingsRepository(app.settingsStore, opLog) }

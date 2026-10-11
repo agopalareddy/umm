@@ -24,6 +24,7 @@ import io.github.agopalareddy.umm.core.stats.StatsRepository
 import io.github.agopalareddy.umm.core.sync.HybridClock
 import io.github.agopalareddy.umm.core.sync.OpLog
 import io.github.agopalareddy.umm.core.sync.SyncMeta
+import io.github.agopalareddy.umm.sync.group.GroupStore
 import io.github.agopalareddy.umm.ui.Platform
 
 import io.github.agopalareddy.umm.ui.UmmServices
@@ -72,7 +73,11 @@ class DesktopGraph(
     val database by lazy { buildUmmDatabase(File(paths.dataDir, "umm.db")) }
     val syncMeta by lazy { SyncMeta(database) }
     val hybridClock by lazy { HybridClock(clock) }
-    val opLog by lazy { OpLog(database, syncMeta, hybridClock, active = { false }) }
+    val groupStore by lazy {
+        val store = keyring ?: InMemoryKeyValueStore()
+        GroupStore(store, PassThroughCipher)
+    }
+    val opLog by lazy { OpLog(database, syncMeta, hybridClock, active = { groupStore.state.value != null }) }
     val categories by lazy { CategoryRepository(database, opLog) }
     val history by lazy { HistoryRepository(database, clock, opLog) }
     val settings by lazy { SettingsRepository(buildSettingsStore(File(paths.configDir, "settings.preferences_pb")), opLog) }

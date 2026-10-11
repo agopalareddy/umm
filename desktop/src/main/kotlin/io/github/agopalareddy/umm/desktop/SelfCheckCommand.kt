@@ -3,6 +3,7 @@ package io.github.agopalareddy.umm.desktop
 import androidx.compose.ui.graphics.ImageBitmap
 import io.github.agopalareddy.umm.core.data.CategoryRepository
 import io.github.agopalareddy.umm.core.data.inMemoryUmmDatabase
+import io.github.agopalareddy.umm.sync.crypto.DeviceKeys
 import java.security.KeyPairGenerator
 import java.util.ServiceLoader
 import javax.crypto.Cipher
@@ -57,6 +58,13 @@ object SelfCheck {
             keyGen.initialize(256)
             val pair = keyGen.generateKeyPair()
             check(pair.public != null && pair.private != null) { "EC key pair generation failed" }
+        }
+
+        check("secp256k1") {
+            val keys = DeviceKeys.generate()
+            val msg = ByteArray(32) { 42 }
+            val sig = keys.sign(msg)
+            check(DeviceKeys.verify(keys.publicKey, msg, sig)) { "secp256k1 sign/verify failed" }
         }
 
         check("tls") {
