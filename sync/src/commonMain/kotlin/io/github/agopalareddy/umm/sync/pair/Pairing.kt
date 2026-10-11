@@ -294,7 +294,7 @@ class Pairing(
 
             // State handover
             val offererHasGroup = group.state.value != null
-            if (hello.inGroup && !offererHasGroup) {
+            if (shouldJoinerSendWelcome(joinerInGroup = hello.inGroup, offererHasGroup = offererHasGroup)) {
                 // Joiner has group and offerer does not: joiner sends group
                 val myTranscript = confirmTranscript(
                     offererDeviceId = code.deviceId,
@@ -509,6 +509,8 @@ class Pairing(
             }
 
             var boundPeerPubKey: String? = null
+            var boundPeerName: String? = null
+            var boundSessionKey: ByteArray? = null
             client.subscribe("pair-offer", filter).collect { event ->
                 if (event.kind != KIND_PAIRING || completed.get()) return@collect
                 if (!event.verify()) return@collect
@@ -521,6 +523,37 @@ class Pairing(
                 if (msg is PairMsg.Error) {
                     if (boundPeerPubKey != null && event.pubkey.equals(boundPeerPubKey, ignoreCase = true)) {
                         deferred.completeExceptionally(PairingException(msg.error, msg.message))
+                    }
+                    return@collect
+                }
+
+                if (msg is PairMsg.Welcome) {
+                    if (boundPeerPubKey != null && event.pubkey.equals(boundPeerPubKey, ignoreCase = true) && boundSessionKey != null) {
+                        val payload = openPayload(boundSessionKey!!, msg.sealedPayload)
+                        group.save(payload.group)
+                        val keyRecv = if (payload.apiKey != null) {
+                            apiKey.set(payload.apiKey)
+                            true
+                        } else false
+                        if (payload.snapshot != null) {
+                            applier.applySnapshot(payload.snapshot)
+                        }
+
+                        val ack = PairMsg.Ack(true)
+                        val ackEvent = NostrEvent.sign(
+                            keys = group.device,
+                            kind = KIND_PAIRING,
+                            tags = listOf(listOf("p", boundPeerPubKey!!.lowercase())),
+                            content = json.encodeToString(PairMsg.serializer(), ack),
+                            createdAt = now() / 1000L,
+                        )
+                        client.publish(ackEvent)
+
+                        if (completed.compareAndSet(false, true)) {
+                            markSecretUsed(code.secret)
+                            deferred.complete(PairedDevice(name = boundPeerName ?: "", keyReceived = keyRecv))
+                            runCatching { server?.close() }
+                        }
                     }
                     return@collect
                 }
@@ -570,58 +603,82 @@ class Pairing(
                     }
 
                     boundPeerPubKey = msg.publicKey
+                    boundPeerName = msg.name
+                    boundSessionKey = k
 
-                    val myTranscript = confirmTranscript(
-                        offererDeviceId = code.deviceId,
-                        joinerDeviceId = msg.deviceId,
-                        offererPubKey = code.publicKey,
-                        joinerPubKey = msg.publicKey,
-                        name = group.deviceName,
-                        hasWelcome = true,
-                    )
-                    val myHmac = computeHmac(k, myTranscript)
-
-                    // Send Confirm + Welcome
-                    val joinerMember = Member(deviceId = msg.deviceId, name = msg.name, platform = msg.platform, publicKey = msg.publicKey)
                     val offererHasGroup = group.state.value != null
-                    val finalGroup = if (offererHasGroup) {
-                        val existing = group.state.value!!
-                        existing.copy(members = existing.members.filter { it.deviceId != joinerMember.deviceId } + joinerMember)
-                    } else {
-                        GroupState(
-                            groupId = UUID.randomUUID().toString(),
-                            key = Base64.UrlSafe.encode(ByteArray(32).also { SecureRandom().nextBytes(it) }),
-                            epoch = 0,
-                            previousKey = null,
-                            previousUntil = 0L,
-                            members = listOf(
-                                Member(myDeviceId, group.deviceName, "desktop", group.device.publicKey.toHex()),
-                                joinerMember
-                            ),
-                            relays = code.relays,
+                    if (shouldJoinerSendWelcome(joinerInGroup = msg.inGroup, offererHasGroup = offererHasGroup)) {
+                        // Joiner has group and offerer does not: joiner sends group
+                        val myTranscript = confirmTranscript(
+                            offererDeviceId = code.deviceId,
+                            joinerDeviceId = msg.deviceId,
+                            offererPubKey = code.publicKey,
+                            joinerPubKey = msg.publicKey,
+                            name = group.deviceName,
+                            hasWelcome = false,
                         )
-                    }
+                        val myHmac = computeHmac(k, myTranscript)
+                        val confirm = PairMsg.Confirm(deviceId = myDeviceId, name = group.deviceName, hmac = myHmac, sealedWelcome = null)
+                        val confirmEvent = NostrEvent.sign(
+                            keys = group.device,
+                            kind = KIND_PAIRING,
+                            tags = listOf(listOf("p", event.pubkey.lowercase())),
+                            content = json.encodeToString(PairMsg.serializer(), confirm),
+                            createdAt = now() / 1000L,
+                        )
+                        client.publish(confirmEvent)
+                    } else {
+                        // Offerer sends group (either offerer has group, or neither has group)
+                        val myTranscript = confirmTranscript(
+                            offererDeviceId = code.deviceId,
+                            joinerDeviceId = msg.deviceId,
+                            offererPubKey = code.publicKey,
+                            joinerPubKey = msg.publicKey,
+                            name = group.deviceName,
+                            hasWelcome = true,
+                        )
+                        val myHmac = computeHmac(k, myTranscript)
 
-                    val keyToSend = if (sendKey) apiKey.get() else null
-                    val snap = snapshot()
-                    val payload = WelcomePayload(group = finalGroup, apiKey = keyToSend, snapshot = snap)
-                    val sealedWelcome = sealPayload(k, payload)
+                        val joinerMember = Member(deviceId = msg.deviceId, name = msg.name, platform = msg.platform, publicKey = msg.publicKey)
+                        val finalGroup = if (offererHasGroup) {
+                            val existing = group.state.value!!
+                            existing.copy(members = existing.members.filter { it.deviceId != joinerMember.deviceId } + joinerMember)
+                        } else {
+                            GroupState(
+                                groupId = UUID.randomUUID().toString(),
+                                key = Base64.UrlSafe.encode(ByteArray(32).also { SecureRandom().nextBytes(it) }),
+                                epoch = 0,
+                                previousKey = null,
+                                previousUntil = 0L,
+                                members = listOf(
+                                    Member(myDeviceId, group.deviceName, "desktop", group.device.publicKey.toHex()),
+                                    joinerMember
+                                ),
+                                relays = code.relays,
+                            )
+                        }
 
-                    val confirm = PairMsg.Confirm(deviceId = myDeviceId, name = group.deviceName, hmac = myHmac, sealedWelcome = sealedWelcome)
-                    val confirmEvent = NostrEvent.sign(
-                        keys = group.device,
-                        kind = KIND_PAIRING,
-                        tags = listOf(listOf("p", event.pubkey.lowercase())),
-                        content = json.encodeToString(PairMsg.serializer(), confirm),
-                        createdAt = now() / 1000L,
-                    )
-                    client.publish(confirmEvent)
+                        val keyToSend = if (sendKey) apiKey.get() else null
+                        val snap = snapshot()
+                        val payload = WelcomePayload(group = finalGroup, apiKey = keyToSend, snapshot = snap)
+                        val sealedWelcome = sealPayload(k, payload)
 
-                    group.save(finalGroup)
-                    if (completed.compareAndSet(false, true)) {
-                        markSecretUsed(code.secret)
-                        deferred.complete(PairedDevice(name = msg.name, keyReceived = false))
-                        runCatching { server?.close() }
+                        val confirm = PairMsg.Confirm(deviceId = myDeviceId, name = group.deviceName, hmac = myHmac, sealedWelcome = sealedWelcome)
+                        val confirmEvent = NostrEvent.sign(
+                            keys = group.device,
+                            kind = KIND_PAIRING,
+                            tags = listOf(listOf("p", event.pubkey.lowercase())),
+                            content = json.encodeToString(PairMsg.serializer(), confirm),
+                            createdAt = now() / 1000L,
+                        )
+                        client.publish(confirmEvent)
+
+                        group.save(finalGroup)
+                        if (completed.compareAndSet(false, true)) {
+                            markSecretUsed(code.secret)
+                            deferred.complete(PairedDevice(name = msg.name, keyReceived = false))
+                            runCatching { server?.close() }
+                        }
                     }
                 }
             }
@@ -637,6 +694,8 @@ class Pairing(
         sendKey: Boolean,
     ): PairedDevice = withContext(Dispatchers.IO) {
         val client = RelayClient(relayUrl, relay.http)
+        var resultDevice: PairedDevice? = null
+        var pendingUpdatedGroup: GroupState? = null
         try {
             val myDeviceId = getOwnDeviceId()
             val myPubKey = group.device.publicKey.toHex()
@@ -677,7 +736,6 @@ class Pairing(
                 createdAt = now() / 1000L,
             )
 
-            var resultDevice: PairedDevice? = null
             withTimeout(15_000) {
                 val sub = client.subscribe("pair-join", filter)
                 val publishResult = client.publish(helloEvent)
@@ -732,13 +790,42 @@ class Pairing(
 
                                 resultDevice = PairedDevice(name = code.name, keyReceived = keyRecv)
                                 throw CancellationException("Done")
+                            } else {
+                                val currentState = group.state.value ?: throw IllegalStateException("Joiner has no group")
+                                val offererMember = Member(deviceId = msg.deviceId, name = msg.name, platform = "desktop", publicKey = code.publicKey)
+                                val updatedGroup = currentState.copy(
+                                    members = currentState.members.filter { it.deviceId != offererMember.deviceId } + offererMember
+                                )
+                                val keyToSend = if (sendKey) apiKey.get() else null
+                                val snap = snapshot()
+                                val payload = WelcomePayload(group = updatedGroup, apiKey = keyToSend, snapshot = snap)
+                                val sealedWelcome = sealPayload(k, payload)
+
+                                val welcomeMsg = PairMsg.Welcome(sealedWelcome)
+                                val welcomeEvent = NostrEvent.sign(
+                                    keys = group.device,
+                                    kind = KIND_PAIRING,
+                                    tags = listOf(listOf("p", code.publicKey.lowercase())),
+                                    content = json.encodeToString(PairMsg.serializer(), welcomeMsg),
+                                    createdAt = now() / 1000L,
+                                )
+                                pendingUpdatedGroup = updatedGroup
+                                client.publish(welcomeEvent)
+                            }
+                        }
+                        is PairMsg.Ack -> {
+                            val updated = pendingUpdatedGroup
+                            if (updated != null) {
+                                group.save(updated)
+                                resultDevice = PairedDevice(name = code.name, keyReceived = false)
+                                throw CancellationException("Done")
                             }
                         }
                         else -> Unit
                     }
                 }
             }
-            resultDevice ?: throw IOException("Did not receive Welcome over relay")
+            resultDevice ?: throw IOException("Did not receive Welcome or Ack over relay")
         } catch (e: CancellationException) {
             if (e.message == "Done") {
                 // Succeeded
@@ -747,10 +834,11 @@ class Pairing(
             runCatching { client.close() }
         }
 
-        val myPubKey = group.device.publicKey.toHex()
-        val st = group.state.value ?: throw IOException("Pairing did not complete state")
-        val isKeyRecv = apiKey.get() != null
-        PairedDevice(name = code.name, keyReceived = isKeyRecv)
+        resultDevice ?: throw IOException("Pairing did not complete state")
+    }
+
+    internal fun shouldJoinerSendWelcome(joinerInGroup: Boolean, offererHasGroup: Boolean): Boolean {
+        return joinerInGroup && !offererHasGroup
     }
 
     private fun sealPayload(k: ByteArray, payload: WelcomePayload): String {

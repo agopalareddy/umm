@@ -11,6 +11,7 @@ import io.github.agopalareddy.umm.core.data.SettingsRepository
 import io.github.agopalareddy.umm.core.data.inMemoryUmmDatabase
 import io.github.agopalareddy.umm.core.stats.StatsRepository
 import io.github.agopalareddy.umm.core.sync.HybridClock
+import io.github.agopalareddy.umm.core.sync.Member
 import io.github.agopalareddy.umm.core.sync.OpApplier
 import io.github.agopalareddy.umm.core.sync.OpEnvelope
 import io.github.agopalareddy.umm.core.sync.OpLog
@@ -623,5 +624,92 @@ class PairingTest {
         assertNotNull(nodeA.groupStore.state.value)
         assertNotNull(nodeB.groupStore.state.value)
         assertEquals(nodeA.groupStore.state.value!!.groupId, nodeB.groupStore.state.value!!.groupId)
+    }
+
+    @Test
+    fun relayPairingKeepsExistingGroup() = runTest(timeout = 20.seconds) {
+        val fakeRelay = FakeRelay()
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return MockResponse.Builder().webSocketUpgrade(fakeRelay).build()
+            }
+        }
+        server.start()
+        toClose.add {
+            fakeRelay.clientSockets.forEach { runCatching { it.close(1000, "close") } }
+            server.close()
+        }
+
+        val relayUrl = "ws://${server.hostName}:${server.port}/"
+        val nodeA = TestNode("NodeA", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+        val nodeB = TestNode("NodeB", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+        val nodeC = TestNode("NodeC", tmp.newFolder(), relayUrls = listOf(relayUrl)).also { toClose.add { it.close() } }
+
+        val initialGroupId = "existing-group-bc"
+        val initialKey = "0123456789abcdef0123456789abcdef"
+        val initialGroup = GroupState(
+            groupId = initialGroupId,
+            key = initialKey,
+            epoch = 0,
+            previousKey = null,
+            previousUntil = 0L,
+            members = listOf(
+                Member(nodeB.selfId, nodeB.groupStore.deviceName, "desktop", nodeB.groupStore.device.publicKey.toHex()),
+                Member(nodeC.selfId, nodeC.groupStore.deviceName, "desktop", nodeC.groupStore.device.publicKey.toHex()),
+            ),
+            relays = listOf(relayUrl),
+        )
+        nodeB.groupStore.save(initialGroup)
+        nodeC.groupStore.save(initialGroup)
+
+        val offer = nodeA.pairing.offer(sendKey = false)
+        val unreachableCode = offer.code.copy(
+            lan = listOf("192.0.2.1"),
+            port = 54321,
+            relays = listOf(relayUrl),
+        )
+
+        val joinerResult = nodeB.pairing.join(unreachableCode.encode(), sendKey = false)
+        val offererResult = offer.result.await()
+
+        val bGroup = nodeB.groupStore.state.value
+        assertNotNull(bGroup)
+        assertEquals(initialGroupId, bGroup!!.groupId)
+        assertEquals(initialKey, bGroup.key)
+
+        val aGroup = nodeA.groupStore.state.value
+        assertNotNull(aGroup)
+        assertEquals(initialGroupId, aGroup!!.groupId)
+        assertEquals(initialKey, aGroup.key)
+        assertTrue(aGroup.members.any { it.deviceId == nodeA.selfId })
+        assertTrue(bGroup.members.any { it.deviceId == nodeA.selfId })
+
+        nodeC.relayTransport.start()
+        toClose.add { nodeC.relayTransport.stop() }
+        kotlinx.coroutines.delay(200)
+
+        val id = nodeB.history.createPending(
+            packageName = "org.test",
+            appLabel = "TestApp",
+            level = CleanupLevel.POLISHED,
+            script = ScriptPreference.LATIN,
+            language = "en",
+            audioPath = "",
+        )
+        nodeB.history.markDone(id, raw = "Raw text from B", clean = "Clean text from B")
+        nodeB.relayTransport.publishPending()
+
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            kotlinx.coroutines.withTimeout(10.seconds) {
+                while (nodeC.history.observeRecent().first().isEmpty()) {
+                    kotlinx.coroutines.delay(50)
+                }
+            }
+        }
+
+        val cHistory = nodeC.history.observeRecent().first()
+        assertEquals(1, cHistory.size)
+        assertEquals("Clean text from B", cHistory.first().cleanText)
     }
 }
