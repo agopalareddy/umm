@@ -26,6 +26,7 @@ import io.github.agopalareddy.umm.linux.portal.Portal
 import java.io.File
 import java.time.LocalDate
 import io.github.agopalareddy.umm.ui.SystemAppearance
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,6 +36,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Everything that runs behind the window: hotkey, controller, tray, sounds and sign-in. */
 class DesktopEngine(
@@ -42,6 +44,7 @@ class DesktopEngine(
     val graph: DesktopGraph,
     secretStore: KeyValueStore?,
     env: Map<String, String> = System.getenv(),
+    private val autostart: LoginStart = loginStartFor(env, File(System.getProperty("user.home")), portal = { portal }),
 ) {
     /** Set by the app: show the settings window. */
     @Volatile var onOpenWindow: () -> Unit = {}
@@ -89,8 +92,6 @@ class DesktopEngine(
     val appearance: StateFlow<SystemAppearance> = portalAppearance.appearance
         .map { SystemAppearance(it.dark, it.accentArgb) }
         .stateIn(graph.scope, SharingStarted.Eagerly, portalAppearance.appearance.value.let { SystemAppearance(it.dark, it.accentArgb) })
-
-    private val autostart: LoginStart = loginStartFor(env, File(System.getProperty("user.home")), portal = { portal })
 
     /** The installed launcher's path; null when running from Gradle, where there is nothing to start at login. */
     val launcher: String? = System.getProperty("jpackage.app-path") ?: if (File("/.flatpak-info").exists()) "umm" else null
@@ -150,10 +151,8 @@ class DesktopEngine(
     }
 
     /** Turns "start at login" on or off (the autostart entry, and the setting that shows it). */
-    suspend fun setStartAtLogin(on: Boolean) {
-        launcher?.let { if (on) autostart.enable(it) else autostart.disable() }
-        graph.desktopSettings.update { it.copy(startAtLogin = on && launcher != null) }
-    }
+    suspend fun setStartAtLogin(on: Boolean): Boolean =
+        updateStartAtLogin(autostart, graph.desktopSettings, launcher, on)
 
     fun close() {
         tray.hide()
@@ -187,5 +186,22 @@ class DesktopEngine(
 
     companion object {
         const val APP_ID = "io.github.agopalareddy.Umm"
+    }
+}
+
+internal suspend fun updateStartAtLogin(
+    autostart: LoginStart,
+    desktopSettings: DesktopSettings,
+    launcher: String?,
+    on: Boolean,
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
+): Boolean = withContext(dispatcher) {
+    if (on && launcher == null) return@withContext false
+    try {
+        if (on) autostart.enable(launcher!!) else autostart.disable()
+        desktopSettings.update { it.copy(startAtLogin = on) }
+        true
+    } catch (_: Exception) {
+        false
     }
 }

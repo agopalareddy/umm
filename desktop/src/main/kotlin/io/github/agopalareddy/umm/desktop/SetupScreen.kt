@@ -27,6 +27,7 @@ import io.github.agopalareddy.umm.linux.BindResult
 import io.github.agopalareddy.umm.linux.InsertException
 import io.github.agopalareddy.umm.settings.Page
 import io.github.agopalareddy.umm.settings.PasteKeyField
+import io.github.agopalareddy.umm.ui.LocalUmm
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -36,6 +37,7 @@ private enum class Step { TODO, WORKING, DONE, FAILED }
 @Composable
 fun SetupScreen(engine: DesktopEngine, onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val platform = LocalUmm.current.platform
     val key by engine.graph.apiKeyStore.key.collectAsState()
     val bind by engine.bindResult.collectAsState()
     val keyringFailed by engine.graph.keyringFailed.collectAsState()
@@ -122,7 +124,9 @@ fun SetupScreen(engine: DesktopEngine, onDone: () -> Unit) {
                 onClick = {
                     scope.launch {
                         engine.graph.desktopSettings.update { it.copy(setupDone = true) }
-                        engine.setStartAtLogin(true)
+                        if (!engine.setStartAtLogin(true)) {
+                            platform.showMessage("Couldn't change start at login.")
+                        }
                         onDone()
                     }
                 },
