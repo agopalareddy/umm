@@ -48,6 +48,9 @@ fun Category.title() = name.lowercase().replaceFirstChar { it.uppercase() }
 
 const val SUPPORT_EMAIL = "agr@agreddy.com"
 const val OPENROUTER_PRIVACY_URL = "https://openrouter.ai/settings/privacy"
+const val BUY_ME_A_COFFEE_URL = "https://buymeacoffee.com/agopalareddy"
+const val KO_FI_URL = "https://ko-fi.com/agopalareddy"
+const val PATREON_URL = "https://patreon.com/agopalareddy"
 
 /** Languages offered for the default and the keyboard's language chip. */
 val LANGUAGES = linkedMapOf(

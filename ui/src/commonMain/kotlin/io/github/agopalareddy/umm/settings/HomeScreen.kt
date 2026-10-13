@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilterChip
 import androidx.compose.material.icons.filled.Settings
@@ -76,6 +77,30 @@ fun HomeScreen(home: HomeSetup, onOpen: (String) -> Unit) {
     val zdr by remember { umm.dataPolicy.observe() }.collectAsStateWithLifecycle(null)
     LaunchedEffect(zdr) { plan = runCatching { umm.modelPlan() }.getOrNull() }
     if (zdr?.noticePending == true) ZdrNotice(plan)
+
+    val allStats by remember { umm.stats.observeAll() }.collectAsStateWithLifecycle(emptyList())
+    val successfulCount = remember(allStats) { allStats.count { it.succeeded } }
+    val now = System.currentTimeMillis()
+    val showSupportPrompt = settings?.let { s ->
+        !s.supportPromptDismissed &&
+            successfulCount >= 20 &&
+            (now - s.lastSupportPromptAt >= 30L * 24 * 60 * 60 * 1000)
+    } ?: false
+
+    if (showSupportPrompt) {
+        SupportPromptDialog(
+            onSupport = { url ->
+                umm.platform.openUrl(url)
+                change { it.copy(lastSupportPromptAt = System.currentTimeMillis()) }
+            },
+            onRemindLater = {
+                change { it.copy(lastSupportPromptAt = System.currentTimeMillis()) }
+            },
+            onNeverShowAgain = {
+                change { it.copy(supportPromptDismissed = true) }
+            },
+        )
+    }
 
     Page(
         title = {
@@ -204,6 +229,60 @@ private fun ZdrNotice(plan: ModelPlan?) {
                 acknowledge()
                 umm.platform.openUrl(OPENROUTER_PRIVACY_URL)
             }) { Text("Privacy settings") }
+        },
+    )
+}
+
+/** Periodic supporter prompt shown after milestones, with options to support, remind later, or never show again. */
+@Composable
+private fun SupportPromptDialog(
+    onSupport: (String) -> Unit,
+    onRemindLater: () -> Unit,
+    onNeverShowAgain: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onRemindLater,
+        title = { Text("Support Umm") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Enjoying Umm? Umm has no subscriptions, ads, or tracking, and runs entirely on your own OpenRouter key. " +
+                        "If it saves you time, consider supporting ongoing open-source development with a coffee or membership!",
+                )
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilledTonalButton(
+                        onClick = { onSupport(BUY_ME_A_COFFEE_URL) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Buy Me a Coffee")
+                    }
+                    FilledTonalButton(
+                        onClick = { onSupport(KO_FI_URL) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Ko-fi")
+                    }
+                    FilledTonalButton(
+                        onClick = { onSupport(PATREON_URL) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Patreon")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onRemindLater) {
+                Text("Remind me later")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onNeverShowAgain) {
+                Text("Don't show again")
+            }
         },
     )
 }

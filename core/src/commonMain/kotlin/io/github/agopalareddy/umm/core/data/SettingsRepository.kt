@@ -61,6 +61,10 @@ data class UmmSettings(
     val bubbleYLandscape: Float = 0.5f,
     /** Epoch ms when the bubble disclosure was accepted; 0 means not yet. */
     val disclosureAcceptedAt: Long = 0,
+    /** Whether the user dismissed the support prompt permanently. */
+    val supportPromptDismissed: Boolean = false,
+    /** Epoch ms when the support prompt was last shown or postponed. */
+    val lastSupportPromptAt: Long = 0,
 )
 
 class SettingsRepository(
@@ -128,6 +132,8 @@ class SettingsRepository(
         this[BUBBLE_Y_PORTRAIT] = next.bubbleYPortrait.coerceIn(0f, 1f)
         this[BUBBLE_Y_LANDSCAPE] = next.bubbleYLandscape.coerceIn(0f, 1f)
         this[DISCLOSURE_ACCEPTED_AT] = next.disclosureAcceptedAt
+        this[SUPPORT_PROMPT_DISMISSED] = next.supportPromptDismissed
+        this[LAST_SUPPORT_PROMPT_AT] = next.lastSupportPromptAt
     }
 
 
@@ -185,6 +191,8 @@ class SettingsRepository(
             bubbleYPortrait = this[BUBBLE_Y_PORTRAIT] ?: defaults.bubbleYPortrait,
             bubbleYLandscape = this[BUBBLE_Y_LANDSCAPE] ?: defaults.bubbleYLandscape,
             disclosureAcceptedAt = this[DISCLOSURE_ACCEPTED_AT] ?: defaults.disclosureAcceptedAt,
+            supportPromptDismissed = this[SUPPORT_PROMPT_DISMISSED] ?: defaults.supportPromptDismissed,
+            lastSupportPromptAt = this[LAST_SUPPORT_PROMPT_AT] ?: defaults.lastSupportPromptAt,
         )
     }
 
@@ -215,6 +223,8 @@ class SettingsRepository(
         val BUBBLE_Y_PORTRAIT = floatPreferencesKey("bubble_y_portrait")
         val BUBBLE_Y_LANDSCAPE = floatPreferencesKey("bubble_y_landscape")
         val DISCLOSURE_ACCEPTED_AT = longPreferencesKey("disclosure_accepted_at")
+        val SUPPORT_PROMPT_DISMISSED = booleanPreferencesKey("support_prompt_dismissed")
+        val LAST_SUPPORT_PROMPT_AT = longPreferencesKey("last_support_prompt_at")
         fun cacheKey(name: String) = stringPreferencesKey("cache_$name")
         fun cacheTimeKey(name: String) = longPreferencesKey("cache_${name}_at")
     }

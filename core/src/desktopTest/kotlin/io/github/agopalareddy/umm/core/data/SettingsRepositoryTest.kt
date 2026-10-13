@@ -50,6 +50,8 @@ class SettingsRepositoryTest {
         assertEquals(0.6f, s.bubbleYPortrait, 0f)
         assertEquals(0.5f, s.bubbleYLandscape, 0f)
         assertEquals(0L, s.disclosureAcceptedAt)
+        assertEquals(false, s.supportPromptDismissed)
+        assertEquals(0L, s.lastSupportPromptAt)
     }
 
     @Test fun roundTripsEveryField() = runTest {
@@ -78,6 +80,8 @@ class SettingsRepositoryTest {
             bubbleYPortrait = 0.25f,
             bubbleYLandscape = 0.8f,
             disclosureAcceptedAt = 1_700_000_000_000L,
+            supportPromptDismissed = true,
+            lastSupportPromptAt = 1_700_000_001_000L,
         )
         repo.update { changed }
         assertEquals(changed, repo.settings.first())

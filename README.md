@@ -199,6 +199,14 @@ You need JDK 21 and the Android SDK.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) covers development setup, tests, and how releases are made.
 
+## Support
+
+Umm has no subscriptions, ads, or telemetry, and runs completely on your own OpenRouter key. If you find Umm useful, consider supporting ongoing development:
+
+- ☕ [Buy Me a Coffee](https://buymeacoffee.com/agopalareddy)
+- 💖 [Ko-fi](https://ko-fi.com/agopalareddy)
+- 🌟 [Patreon](https://patreon.com/agopalareddy)
+
 ## Maintainers
 
 [@agopalareddy](https://github.com/agopalareddy) · [agr@agreddy.com](mailto:agr@agreddy.com)

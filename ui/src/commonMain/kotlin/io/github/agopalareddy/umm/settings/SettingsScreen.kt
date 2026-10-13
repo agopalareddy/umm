@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
@@ -90,6 +91,11 @@ fun SettingsHome(
         }
         NavRow(Icons.Default.Lock, "Privacy policy", null) {
             platform.openUrl(PRIVACY_POLICY_URL)
+        }
+        Section("Support Umm") {
+            NavRow(Icons.Default.Favorite, "Buy Me a Coffee", "One-off support") { platform.openUrl(BUY_ME_A_COFFEE_URL) }
+            NavRow(Icons.Default.Favorite, "Ko-fi", "0% fee tips & monthly support") { platform.openUrl(KO_FI_URL) }
+            NavRow(Icons.Default.Favorite, "Patreon", "Monthly membership") { platform.openUrl(PATREON_URL) }
         }
     }
 }

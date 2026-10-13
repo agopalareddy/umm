@@ -4,8 +4,9 @@ This file is the "What's new" page in the app and the top of each release's note
 Umm: what changed for them, in plain words. One `## version` heading per release, newest first, with an optional
 date after a dash, then one `- ` line per change. A line may start with a short `**bold title.**`.
 
-## 1.3.0
+## 1.3.0 - 2026-10-13
 
+- **Support Umm.** Help fund development directly from Settings or the occasional supporter prompt, with links to Buy Me a Coffee, Ko-fi, and Patreon.
 - **Umm for Linux.** A desktop app, tested on KDE Plasma and GNOME: press a hotkey, speak, and the text is typed into the window you are in. It sits in the tray, can start at login, and has the same settings, history and stats pages as the phone app.
 - **Linux packages.** Install from a tarball, a .deb, an .rpm or a Flatpak.
 - **Sync between your devices.** Pair a phone and a computer with a code or a QR scan. History, stats, settings and app categories then stay the same on both. Devices sync directly over Wi-Fi when they can reach each other, and through encrypted relay messages when they cannot. The relays cannot read anything, and there is no Umm account or server.
