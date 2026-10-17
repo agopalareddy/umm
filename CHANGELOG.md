@@ -4,6 +4,10 @@ This file is the "What's new" page in the app and the top of each release's note
 Umm: what changed for them, in plain words. One `## version` heading per release, newest first, with an optional
 date after a dash, then one `- ` line per change. A line may start with a short `**bold title.**`.
 
+## 1.3.1 - 2026-10-16
+
+- Updated a library used by the QR code scanner for pairing devices.
+
 ## 1.3.0 - 2026-10-13
 
 - **Support Umm.** Help fund development directly from Settings or the occasional supporter prompt, with links to Buy Me a Coffee, Ko-fi, and Patreon.
