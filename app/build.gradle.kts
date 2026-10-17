@@ -121,6 +121,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.play.services.code.scanner)
+    // play-services-base still declares fragment 1.0.0, which Play Console flags as outdated.
+    implementation(libs.androidx.fragment)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.browser)
     implementation(platform(libs.compose.bom))
